@@ -1,4 +1,7 @@
-import type { Filter, CompiledFilter, ViewResult, Segment } from "./types";
+import type {
+  Filter, CompiledFilter, ViewResult, Segment,
+  FieldType, FieldDef, ParseProfile, FieldValue, CompiledPattern, CompiledProfile,
+} from "./types";
 
 export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -52,7 +55,100 @@ export function segments(text: string, re: RegExp | null): Segment[] {
   return out;
 }
 
-export function computeView(lines: string[], compiled: CompiledFilter[]): ViewResult {
+// --- Parsing: extract structured fields from each line ---------------------
+
+const NAMED_GROUP_RE = /\(\?<([A-Za-z_][A-Za-z0-9_]*)>/g;
+
+/** Guess a field's type from its capture-group name (the UI lets users override). */
+function guessType(name: string): FieldType {
+  const n = name.toLowerCase();
+  if (/^(ts|time|timestamp|clock|uptime)$/.test(n)) return "time";
+  return "string";
+}
+
+/** List the named capture groups in a regex source, as default field defs. */
+export function deriveFields(regexSource: string): FieldDef[] {
+  const fields: FieldDef[] = [];
+  const seen = new Set<string>();
+  NAMED_GROUP_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = NAMED_GROUP_RE.exec(regexSource)) !== null) {
+    if (seen.has(m[1])) continue;
+    seen.add(m[1]);
+    fields.push({ name: m[1], type: guessType(m[1]) });
+  }
+  return fields;
+}
+
+/** Parse a clock-style ("H:M:S.mmm") or plain-numeric timestamp into a number. */
+function parseTime(raw: string): number {
+  let m = /^(\d+):(\d{2}):(\d{2})(?:[.,](\d+))?$/.exec(raw);
+  if (m) {
+    const frac = m[4] ? Number("0." + m[4]) : 0;
+    return ((+m[1] * 60 + +m[2]) * 60 + +m[3] + frac) * 1000;
+  }
+  m = /^(\d+):(\d{2})(?:[.,](\d+))?$/.exec(raw);
+  if (m) {
+    const frac = m[3] ? Number("0." + m[3]) : 0;
+    return (+m[1] * 60 + +m[2] + frac) * 1000;
+  }
+  return Number(raw.replace(",", "."));
+}
+
+/** Coerce raw matched text per field type; fall back to the raw string on NaN. */
+export function coerceValue(raw: string, type: FieldType): number | string {
+  let v: number;
+  switch (type) {
+    case "int":   v = parseInt(raw, 10); break;
+    case "hex":   v = parseInt(raw.replace(/^0x/i, ""), 16); break;
+    case "float": v = parseFloat(raw); break;
+    case "time":  v = parseTime(raw); break;
+    default:      return raw;
+  }
+  return Number.isNaN(v) ? raw : v;
+}
+
+export function compileProfile(profile: ParseProfile): CompiledProfile {
+  const patterns = profile.patterns.map((p): CompiledPattern => {
+    if (!p.enabled) return { p, re: null, ok: true };
+    try {
+      return { p, re: new RegExp(p.regex), ok: true };
+    } catch (e) {
+      return { p, re: null, ok: false, err: (e as Error).message };
+    }
+  });
+  return { profile, patterns };
+}
+
+export interface ParsedLine {
+  patternId: string;
+  fields: Record<string, FieldValue>;
+}
+
+/** Try each enabled pattern in order; the first match extracts this line's fields. */
+export function parseLine(line: string, cp: CompiledProfile): ParsedLine | null {
+  for (const c of cp.patterns) {
+    if (!c.re) continue;
+    c.re.lastIndex = 0;
+    const m = c.re.exec(line);
+    if (!m) continue;
+    const groups = m.groups ?? {};
+    const fields: Record<string, FieldValue> = {};
+    for (const def of c.p.fields) {
+      const raw = groups[def.name];
+      if (raw === undefined) continue;
+      fields[def.name] = { raw, value: coerceValue(raw, def.type) };
+    }
+    return { patternId: c.p.id, fields };
+  }
+  return null;
+}
+
+export function computeView(
+  lines: string[],
+  compiled: CompiledFilter[],
+  profile?: CompiledProfile | null,
+): ViewResult {
   const active = compiled.filter((c) => c.f.enabled && !c.empty && c.ok && c.re);
   const excludes = active.filter((c) => c.f.exclude);
   const highlights = active.filter((c) => !c.f.exclude);
@@ -71,7 +167,12 @@ export function computeView(lines: string[], compiled: CompiledFilter[]): ViewRe
     for (const h of highlights) {
       if (testRe(h.re!, text)) { winner = h; break; }
     }
-    return { n: i + 1, text, winner, excluded };
+    const parsed = profile ? parseLine(text, profile) : null;
+    return {
+      n: i + 1, text, winner, excluded,
+      fields: parsed?.fields,
+      patternId: parsed?.patternId,
+    };
   });
 
   return {
