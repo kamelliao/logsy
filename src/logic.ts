@@ -66,6 +66,20 @@ function guessType(name: string): FieldType {
   return "string";
 }
 
+/** The ordered, de-duplicated set of fields a profile can produce (its columns). */
+export function profileColumns(profile: ParseProfile): FieldDef[] {
+  const out: FieldDef[] = [];
+  const seen = new Set<string>();
+  for (const p of profile.patterns) {
+    for (const f of p.fields) {
+      if (seen.has(f.name)) continue;
+      seen.add(f.name);
+      out.push(f);
+    }
+  }
+  return out;
+}
+
 /** List the named capture groups in a regex source, as default field defs. */
 export function deriveFields(regexSource: string): FieldDef[] {
   const fields: FieldDef[] = [];
@@ -110,7 +124,8 @@ export function coerceValue(raw: string, type: FieldType): number | string {
 
 export function compileProfile(profile: ParseProfile): CompiledProfile {
   const patterns = profile.patterns.map((p): CompiledPattern => {
-    if (!p.enabled) return { p, re: null, ok: true };
+    // Disabled or blank patterns never match (a blank regex would match every line).
+    if (!p.enabled || !p.regex.trim()) return { p, re: null, ok: true };
     try {
       return { p, re: new RegExp(p.regex), ok: true };
     } catch (e) {
@@ -124,6 +139,7 @@ export interface ParsedLine {
   patternId: string;
   fields: Record<string, FieldValue>;
 }
+
 
 /** Try each enabled pattern in order; the first match extracts this line's fields. */
 export function parseLine(line: string, cp: CompiledProfile): ParsedLine | null {
