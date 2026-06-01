@@ -124,6 +124,9 @@ export function initialState(): AppState {
     mapWidth: 14,
     fontSize: 12.5,
     showLineNumbers: true,
+    profiles: [],
+    activeProfileId: null,
+    structuredView: false,
   };
 }
 
@@ -162,5 +165,12 @@ export function normalizeState(state: AppState): AppState {
   if (!state.mapWidth) state.mapWidth = 14;
   if (!state.fontSize) state.fontSize = 12.5;
   if (state.showLineNumbers === undefined) state.showLineNumbers = true;
+  // Parse-profile fields (added after v6); backfill so older states load cleanly.
+  if (!Array.isArray(state.profiles)) state.profiles = [];
+  if (state.activeProfileId === undefined) state.activeProfileId = null;
+  if (state.activeProfileId && !state.profiles.find((p) => p.id === state.activeProfileId)) {
+    state.activeProfileId = null;
+  }
+  if (state.structuredView === undefined) state.structuredView = false;
   return state;
 }
