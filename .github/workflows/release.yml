@@ -77,3 +77,23 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
+
+      # Some corporate networks block .msi/.exe downloads outright. A zipped
+      # portable binary usually gets through, so publish one as an extra asset.
+      # Windows only — that's where the blocking bites. Note: the portable exe
+      # still needs the WebView2 runtime, which ships with modern Edge/Windows.
+      - name: Package & upload portable Windows zip
+        if: matrix.platform == 'windows-latest'
+        shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart('v')
+          $stage = Join-Path $env:RUNNER_TEMP "logsy-portable"
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          # The raw binary is app.exe (Cargo package name); rename it on the
+          # way in so users get a sensibly-named logsy.exe.
+          Copy-Item "src-tauri/target/release/app.exe" (Join-Path $stage "logsy.exe")
+          $zip = "logsy_${version}_x64-portable.zip"
+          Compress-Archive -Path (Join-Path $stage "*") -DestinationPath $zip -Force
+          gh release upload "${{ github.ref_name }}" $zip --clobber
