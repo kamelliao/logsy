@@ -58,6 +58,12 @@ export interface AppState {
   fontSize: number;
   /** Show the line-number gutter in the log view (and include numbers when copying). */
   showLineNumbers: boolean;
+  /** Reusable parse profiles (field-extraction rule sets), shared across files. */
+  profiles: ParseProfile[];
+  /** Which profile drives the structured view; null = none selected. */
+  activeProfileId: string | null;
+  /** Whether the log view renders extracted fields as columns. */
+  structuredView: boolean;
 }
 
 export interface PaletteEntry {

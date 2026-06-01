@@ -45,7 +45,7 @@ function buildGroupFromImport(
   }
   return null;
 }
-import { compileAll, computeView } from "./logic";
+import { compileAll, compileProfile, computeView } from "./logic";
 import { Sidebar } from "./components/Sidebar";
 import { LogView } from "./components/LogView";
 import { FilterPanel } from "./components/FilterPanel";
@@ -106,7 +106,14 @@ export function App() {
     [file?.id, linesVersion]
   );
   const compiled = useMemo(() => compileAll(group?.filters ?? []), [group?.filters]);
-  const view = useMemo(() => computeView(lines, compiled), [lines, compiled]);
+  // Compile the active parse profile only while the structured view is on, so
+  // plain viewing pays no parsing cost.
+  const activeProfile = useMemo(() => {
+    if (!state.structuredView || !state.activeProfileId) return null;
+    const p = state.profiles.find((p) => p.id === state.activeProfileId);
+    return p ? compileProfile(p) : null;
+  }, [state.structuredView, state.activeProfileId, state.profiles]);
+  const view = useMemo(() => computeView(lines, compiled, activeProfile), [lines, compiled, activeProfile]);
 
   // ---------- helpers ----------
   const patchState = useCallback((fn: (s: AppState) => void) => {
