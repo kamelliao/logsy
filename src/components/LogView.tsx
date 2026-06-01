@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "
 import { ArrowDown, ArrowUp, Download, Filter, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { LogFile, ViewResult, CompiledFilter } from "../types";
+import type { LogFile, ViewResult, ViewRow, CompiledFilter, FieldDef } from "../types";
 import { escapeRegex, segments } from "../logic";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -58,6 +58,10 @@ interface LogViewProps {
   mapWidth: number;
   fontSize: number;
   showLineNumbers: boolean;
+  /** Render extracted fields as aligned columns (structured view). */
+  structured: boolean;
+  /** Ordered column defs the active parse profile can produce. */
+  columns: FieldDef[];
   style?: CSSProperties;
   onToggleViewMode: (m: "all" | "matches") => void;
   onToggleFind: () => void;
@@ -65,8 +69,11 @@ interface LogViewProps {
   onBuildFilter: (pattern: string) => void;
 }
 
+const NUMERIC_TYPE: Record<string, boolean> = { int: true, hex: true, float: true, time: true };
+const MSG_NAME_RE = /^(msg|message|text|line|body|rest)$/i;
+
 export function LogView({
-  file, view, viewMode, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, style,
+  file, view, viewMode, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, structured, columns, style,
   onCloseFind, onBuildFilter,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
@@ -95,6 +102,36 @@ export function LogView({
     return m;
   }, [visible]);
   const minW = (showLineNumbers ? 53 : 0) + 12 + Math.ceil(maxLen * charWidth(fontSize)) + 28;
+
+  // --- structured (columnar) view geometry ---
+  const cols = useMemo(
+    () => (structured && columns.length ? columns : null),
+    [structured, columns],
+  );
+  // The column rendered with full highlight/find treatment, and that flexes to fill.
+  const msgCol = useMemo(() => {
+    if (!cols) return null;
+    const named = cols.find((c) => MSG_NAME_RE.test(c.name));
+    return (named ?? cols[cols.length - 1]).name;
+  }, [cols]);
+  // Fixed pixel width per non-message column, sized to its widest value (capped).
+  const colWidths = useMemo(() => {
+    if (!cols) return [] as number[];
+    const cw = charWidth(fontSize);
+    const sample = visible.length > 2000 ? visible.slice(0, 2000) : visible;
+    return cols.map((c) => {
+      if (c.name === msgCol) return 0;
+      let max = c.name.length;
+      for (const r of sample) {
+        const len = r.fields?.[c.name]?.raw.length ?? 0;
+        if (len > max) max = len;
+      }
+      return Math.ceil((Math.min(max, 40) + 1) * cw) + 16;
+    });
+  }, [cols, visible, fontSize, msgCol]);
+  const headerH = cols ? rowH : 0;
+  const structMinW = (showLineNumbers ? 53 : 0) + colWidths.reduce((a, b) => a + b, 0) + 240;
+  const innerMinW = cols ? structMinW : minW;
 
   const rowVirtualizer = useVirtualizer({
     count: visible.length,
@@ -292,6 +329,28 @@ export function LogView({
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
 
+  // Row body: plain text, or aligned cells when a structured profile is active.
+  function renderRowBody(r: ViewRow, w: CompiledFilter | null, ri: number) {
+    if (!cols) {
+      return <span className="log-txt">{renderLine(r.text, w, findRe, currentKey, ri)}</span>;
+    }
+    if (!r.fields) {
+      // Line matched no pattern — show the raw text across the whole row.
+      return <span className="log-cell log-cell-unmatched" style={{ flex: "1 1 auto" }}>{renderLine(r.text, w, findRe, currentKey, ri)}</span>;
+    }
+    return cols.map((c, ci) => {
+      const isMsg = c.name === msgCol;
+      const fv = r.fields![c.name];
+      const cls = "log-cell" + (NUMERIC_TYPE[c.type] ? " num" : "") + (isMsg ? " msg" : "");
+      const cstyle: CSSProperties = isMsg ? { flex: "1 1 auto" } : { flex: `0 0 ${colWidths[ci]}px` };
+      return (
+        <span key={c.name} className={cls} style={cstyle}>
+          {isMsg ? renderLine(fv?.raw ?? "", w, findRe, currentKey, ri) : (fv?.raw ?? "")}
+        </span>
+      );
+    });
+  }
+
   return (
     <div className="logview" style={style}>
       {/* header */}
@@ -386,7 +445,21 @@ export function LogView({
             onMouseUp={handleMouseUp}
             style={{ overflowY: "auto", overflowX: "auto" }}
           >
-            <div className="log-inner" style={{ minWidth: minW, height: totalSize, position: "relative" }}>
+            <div className="log-inner" style={{ minWidth: innerMinW, height: headerH + totalSize, position: "relative" }}>
+              {cols && (
+                <div className="log-colhead" style={{ height: rowH }}>
+                  {showLineNumbers && <span className="log-gut colhead-gut" />}
+                  {cols.map((c, ci) => (
+                    <span
+                      key={c.name}
+                      className={"log-cell colhead-cell" + (NUMERIC_TYPE[c.type] ? " num" : "")}
+                      style={c.name === msgCol ? { flex: "1 1 auto" } : { flex: `0 0 ${colWidths[ci]}px` }}
+                    >
+                      {c.name}
+                    </span>
+                  ))}
+                </div>
+              )}
               {virtualItems.map((vItem) => {
                 const r = visible[vItem.index];
                 const w = r.winner;
@@ -397,21 +470,21 @@ export function LogView({
                   top: 0,
                   left: 0,
                   width: "100%",
-                  transform: `translateY(${vItem.start}px)`,
+                  transform: `translateY(${headerH + vItem.start}px)`,
                   height: rowH,
                   ...(w ? { background: w.f.bgColor, color: w.f.textColor, borderLeftColor: w.f.textColor } : {}),
                 };
                 return (
                   <div
                     key={r.n}
-                    className={"log-row" + (w ? " matched" : "") + (dim ? " dim" : "") + (sel ? " selected" : "")}
+                    className={"log-row" + (w ? " matched" : "") + (dim ? " dim" : "") + (sel ? " selected" : "") + (cols ? " structured" : "")}
                     style={rowStyle}
                     onMouseDown={(e) => handleRowMouseDown(e, vItem.index)}
                     onMouseEnter={() => handleRowMouseEnter(vItem.index)}
                     onClick={(e) => onRowClick(e, vItem.index, r.n)}
                   >
                     {showLineNumbers && <span className="log-gut">{r.n}</span>}
-                    <span className="log-txt">{renderLine(r.text, w, findRe, currentKey, vItem.index)}</span>
+                    {renderRowBody(r, w, vItem.index)}
                   </div>
                 );
               })}

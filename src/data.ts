@@ -1,4 +1,5 @@
-import type { AppState, Filter, PaletteEntry } from "./types";
+import type { AppState, Filter, LinePattern, ParseProfile, PaletteEntry } from "./types";
+import { deriveFields } from "./logic";
 
 export const PALETTE: PaletteEntry[] = [
   { name: "red",    text: "#b42318", bg: "#fce4e4" },
@@ -109,6 +110,14 @@ export function makeFilter(pattern: string, opts: Partial<Filter> = {}): Filter 
     bgColor: opts.bgColor ?? "#fff7c2",
     sectionId: opts.sectionId ?? null,
   };
+}
+
+export function makeLinePattern(regex = ""): LinePattern {
+  return { id: uid("pat"), regex, fields: deriveFields(regex), enabled: true };
+}
+
+export function makeProfile(name: string): ParseProfile {
+  return { id: uid("prof"), name, patterns: [makeLinePattern("")] };
 }
 
 /** A fresh, empty workspace. Files are added by the user loading logs from disk. */
