@@ -16,6 +16,7 @@ import {
 import { Input } from "./ui/input";
 import { Label } from "./ui/label";
 import { ColorCombobox } from "./ui/color-combobox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 function ToggleCard({ on, ex, glyph, name, desc, onClick }: {
   on: boolean; ex?: boolean; glyph: React.ReactNode;
@@ -188,13 +189,15 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
                 {fields.map((f) => (
                   <div key={f.name} className="ef-row">
                     <span className="ef-name">{f.name}</span>
-                    <select
-                      className="ef-type"
+                    <Select
                       value={f.type}
-                      onChange={(e) => setFieldTypes((m) => ({ ...m, [f.name]: e.target.value as FieldType }))}
+                      onValueChange={(v) => setFieldTypes((m) => ({ ...m, [f.name]: v as FieldType }))}
                     >
-                      {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                    </select>
+                      <SelectTrigger size="sm" className="w-[96px]"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {FIELD_TYPES.map((t) => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                   </div>
                 ))}
               </div>

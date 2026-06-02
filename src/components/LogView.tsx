@@ -316,7 +316,11 @@ export function LogView({
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
-      if ((e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C")) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
+        // Select every currently-visible line.
+        e.preventDefault();
+        setSelectedLines(new Set(visible.map((r) => r.n)));
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C")) {
         const s = window.getSelection();
         if (s && !s.isCollapsed) return;
         if (selectedLines.size) { e.preventDefault(); copySelectedLines(); }
