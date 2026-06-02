@@ -1021,6 +1021,28 @@ button { font-family: inherit; }
 .btn.danger-ghost { background: #fff; border: 1px solid var(--border-strong); color: var(--error); }
 .btn.danger-ghost:hover { background: #fdecec; border-color: #f3c6c2; }
 
+/* ---- parsed-fields editor (EditModal) ---- */
+.ef-list { display: flex; flex-direction: column; gap: 6px; }
+.ef-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 8px; border: 1px solid var(--border-strong); border-radius: 8px; background: #fff;
+}
+.ef-name { font-family: var(--mono-font); font-size: 13px; font-weight: 600; flex: 1 1 auto; }
+.ef-type {
+  font: inherit; font-size: 12.5px; color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: 7px; padding: 3px 6px; background: #fff;
+}
+
+/* ---- field chips on a filter row ---- */
+.fr-fields { display: flex; align-items: center; gap: 4px; margin-left: 8px; flex: 0 0 auto; }
+.fr-fchip {
+  font-family: var(--mono-font); font-size: 10.5px; line-height: 16px;
+  padding: 0 5px; border-radius: 5px; background: var(--accent-bg, #e7efff); color: var(--accent, #2c6ce6);
+  -webkit-user-select: none; user-select: none;
+}
+.fr-fchip.more { background: transparent; color: var(--text-3); padding: 0 2px; }
+.fr-fields.extract-only .fr-fchip { background: #eef0f2; color: var(--text-3); }
+
 /* settings popover reuse */
 .settings-pop { min-width: 240px; padding: 12px; }
 .settings-pop .sp-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px; font-size: 13px; }

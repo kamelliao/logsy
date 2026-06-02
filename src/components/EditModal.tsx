@@ -1,8 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Check, ChevronDown, EyeOff, Trash2, X } from "lucide-react";
-import type { Filter, FilterSection } from "../types";
-import { compile, countMatches } from "../logic";
+import type { Filter, FilterSection, FieldType } from "../types";
+import { compile, countMatches, deriveFields } from "../logic";
 import { PALETTE, TEXT_SWATCHES, BG_SWATCHES } from "../data";
+
+const FIELD_TYPES: FieldType[] = ["string", "int", "hex", "float", "time"];
 import { Button } from "./ui/button";
 import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import {
@@ -46,6 +48,11 @@ interface EditModalProps {
 
 export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onDelete }: EditModalProps) {
   const [draft, setDraft] = useState<Filter>({ ...filter });
+  // User-chosen types for named groups, keyed by group name (survives regex edits).
+  const [fieldTypes, setFieldTypes] = useState<Record<string, FieldType>>(
+    () => Object.fromEntries((filter.fields ?? []).map((f) => [f.name, f.type])),
+  );
+  const [extractOnly, setExtractOnly] = useState<boolean>(!!filter.extractOnly);
   const patternRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { patternRef.current?.focus(); patternRef.current?.select(); }, []);
@@ -68,9 +75,21 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
 
   const valid = compiled.ok && draft.pattern.trim().length > 0;
 
+  // Named groups in the (regex) pattern become structured fields; preserve any
+  // type the user already picked for a same-named group.
+  const fields = useMemo(() => {
+    if (!draft.regex) return [];
+    return deriveFields(draft.pattern).map((nf) => ({ name: nf.name, type: fieldTypes[nf.name] ?? nf.type }));
+  }, [draft.pattern, draft.regex, fieldTypes]);
+  const hasFields = fields.length > 0 && !draft.exclude;
+
   function save() {
     if (!valid) return;
-    onSave({ ...draft });
+    onSave({
+      ...draft,
+      fields: hasFields ? fields : undefined,
+      extractOnly: hasFields ? extractOnly : false,
+    });
   }
 
   const selectedPal = PALETTE.find(
@@ -158,8 +177,41 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
             </div>
           </div>
 
+          {/* parsed fields (named groups) */}
+          {draft.regex && !draft.exclude && fields.length > 0 && (
+            <div className="field">
+              <Label>
+                Parsed fields{" "}
+                <span style={{ color: "var(--text-3)", fontWeight: 400 }}>from named groups</span>
+              </Label>
+              <div className="ef-list">
+                {fields.map((f) => (
+                  <div key={f.name} className="ef-row">
+                    <span className="ef-name">{f.name}</span>
+                    <select
+                      className="ef-type"
+                      value={f.type}
+                      onChange={(e) => setFieldTypes((m) => ({ ...m, [f.name]: e.target.value as FieldType }))}
+                    >
+                      {FIELD_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 9 }}>
+                <ToggleCard
+                  on={extractOnly}
+                  glyph="{ }"
+                  name="Extract only"
+                  desc="Parse these fields but don't colour matching lines"
+                  onClick={() => setExtractOnly(!extractOnly)}
+                />
+              </div>
+            </div>
+          )}
+
           {/* colors */}
-          {!draft.exclude && (
+          {!draft.exclude && !extractOnly && (
             <div className="field">
               <Label>Color</Label>
               <div className="swatches">

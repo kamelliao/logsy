@@ -273,6 +273,16 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
           {f.description}
         </div>
 
+        {f.fields && f.fields.length > 0 && (
+          <div
+            className={"fr-fields" + (f.extractOnly ? " extract-only" : "")}
+            title={(f.extractOnly ? "Extract only (no colour) · parses: " : "Parses: ") + f.fields.map((x) => x.name).join(", ")}
+          >
+            {f.fields.slice(0, 4).map((x) => <span key={x.name} className="fr-fchip">{x.name}</span>)}
+            {f.fields.length > 4 && <span className="fr-fchip more">+{f.fields.length - 4}</span>}
+          </div>
+        )}
+
         {flags.length > 0 && (
           <div className="fr-flags">
             {flags.map((fl, i) => <span key={i} className="fr-flag" title={fl.title}>{fl.t}</span>)}
