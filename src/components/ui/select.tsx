@@ -41,7 +41,7 @@ function SelectTrigger({
 function SelectContent({ className, children, ...props }: SelectPrimitive.Popup.Props) {
   return (
     <SelectPrimitive.Portal>
-      <SelectPrimitive.Positioner sideOffset={4} className="z-50" alignItemWithTrigger={false}>
+      <SelectPrimitive.Positioner sideOffset={4} style={{ zIndex: 200 }} alignItemWithTrigger={false}>
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(

@@ -479,8 +479,6 @@ export function App() {
   const toggleCompareCollapsed = () => setState((s) => ({ ...s, compareCollapsed: !s.compareCollapsed }));
 
   const showCompare = compareRows.length > 0;
-  // Structure signature: panels remount when positions or compare-presence change.
-  const layoutKey = `${state.panelPos}|${state.comparePos}|${showCompare}`;
 
   // Default share (weight) for a panel that has no persisted size yet. Docks
   // open generously so they reveal a useful amount of content.
@@ -510,9 +508,26 @@ export function App() {
     return { ...s, panelSizes: { ...(s.panelSizes ?? {}), [groupKey]: bucket } };
   });
 
-  // Keep the panels' collapsed state in sync with persisted flags.
-  useEffect(() => { const p = fpRef.current; if (p) state.filterCollapsed ? p.collapse() : p.expand(); }, [state.filterCollapsed, layoutKey]);
-  useEffect(() => { const p = cmpRef.current; if (p && showCompare) state.compareCollapsed ? p.collapse() : p.expand(); }, [state.compareCollapsed, layoutKey, showCompare]);
+  // Drive collapse/expand by resizing the panel directly (the library's own
+  // collapse() records the pre-collapse size, which our maxSize pin corrupts).
+  // Resize only on the actual collapse↔expand transition; the panel's
+  // defaultSize handles fresh mounts. Expanded → a generous height.
+  const EXPAND_PCT = "40%";
+  const prevFp = useRef(state.filterCollapsed);
+  const prevCmp = useRef(state.compareCollapsed);
+  useEffect(() => {
+    const p = fpRef.current; if (!p) return;
+    if (state.filterCollapsed) p.resize("26px");
+    // Defer expand so the maxSize pin (26px → 100%) settles before resizing.
+    else if (prevFp.current) requestAnimationFrame(() => p.resize(EXPAND_PCT));
+    prevFp.current = state.filterCollapsed;
+  }, [state.filterCollapsed]);
+  useEffect(() => {
+    const p = cmpRef.current; if (!p) return;
+    if (state.compareCollapsed) p.resize("26px");
+    else if (prevCmp.current) requestAnimationFrame(() => p.resize(EXPAND_PCT));
+    prevCmp.current = state.compareCollapsed;
+  }, [state.compareCollapsed]);
 
   // ---------- layout ----------
   const setViewMode = (m: "all" | "matches") => setState((s) => ({ ...s, viewMode: m }));
@@ -697,13 +712,11 @@ export function App() {
             <Fragment key={p.id}>
               <ResizablePanel
                 id={p.id}
-                defaultSize={`${dl[p.id]}%`}
-                minSize={p.collapsible ? "8%" : "15%"}
-                // Pin a collapsed dock at the strip height so a sibling's
-                // collapse can't redistribute space back into it.
+                defaultSize={p.collapsed ? "26px" : `${dl[p.id]}%`}
+                // A collapsed dock is pinned to the strip height (min == max) so
+                // neither dragging nor a sibling's collapse can grow it back.
+                minSize={p.collapsed ? "26px" : (p.collapsible ? "8%" : "15%")}
                 maxSize={p.collapsed ? "26px" : "100%"}
-                collapsible={p.collapsible}
-                collapsedSize="26px"
                 panelRef={p.ref}
               >
                 {p.node}
