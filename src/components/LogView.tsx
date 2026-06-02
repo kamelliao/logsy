@@ -329,6 +329,21 @@ export function LogView({
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
 
+  // Selected lines that have parsed fields, for the comparison table.
+  const compareRows = useMemo(
+    () => visible.filter((r) => selectedLines.has(r.n) && r.fields),
+    [visible, selectedLines],
+  );
+  // Union of field names across the compared rows, in first-seen order.
+  const compareCols = useMemo(() => {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    for (const r of compareRows) {
+      for (const k of Object.keys(r.fields!)) if (!seen.has(k)) { seen.add(k); out.push(k); }
+    }
+    return out;
+  }, [compareRows]);
+
   return (
     <div className="logview" style={style}>
       {/* header */}
@@ -483,6 +498,47 @@ export function LogView({
               <canvas ref={mapCanvasRef} width={mapWidth} height={viewH} />
             </div>
           )}
+        </div>
+      )}
+
+      {/* field comparison table for multi-selected lines */}
+      {compareRows.length >= 2 && (
+        <div className="cmp-panel">
+          <div className="cmp-head">
+            <span className="cmp-title">Compare · {compareRows.length} lines</span>
+            <div className="lv-spacer" />
+            <Tooltip>
+              <TooltipTrigger render={<Button size="icon-sm" onClick={() => setSelectedLines(new Set())} />}>
+                <X size={15} />
+              </TooltipTrigger>
+              <TooltipContent>Clear selection</TooltipContent>
+            </Tooltip>
+          </div>
+          <div className="cmp-scroll scroll">
+            <table className="cmp-table">
+              <thead>
+                <tr>
+                  <th className="cmp-ln">line</th>
+                  {compareCols.map((c) => <th key={c}>{c}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {compareRows.map((r) => (
+                  <tr key={r.n}>
+                    <td className="cmp-ln">{r.n}</td>
+                    {compareCols.map((c) => {
+                      const fv = r.fields![c];
+                      return (
+                        <td key={c} className={fv && typeof fv.value === "number" ? "num" : ""}>
+                          {fv ? fv.raw : "—"}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
