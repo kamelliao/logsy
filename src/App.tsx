@@ -684,7 +684,7 @@ export function App() {
       );
     };
 
-    type PanelDesc = { id: string; node: ReactNode; collapsible?: boolean; ref?: React.RefObject<PanelImperativeHandle | null> };
+    type PanelDesc = { id: string; node: ReactNode; collapsible?: boolean; collapsed?: boolean; ref?: React.RefObject<PanelImperativeHandle | null> };
     const buildGroup = (orientation: "vertical" | "horizontal", gid: string, panels: PanelDesc[]): ReactNode => {
       const ids = panels.map((p) => p.id);
       // Remount the group when its panel set changes — the library can't have a
@@ -699,6 +699,9 @@ export function App() {
                 id={p.id}
                 defaultSize={`${dl[p.id]}%`}
                 minSize={p.collapsible ? "8%" : "15%"}
+                // Pin a collapsed dock at the strip height so a sibling's
+                // collapse can't redistribute space back into it.
+                maxSize={p.collapsed ? "26px" : "100%"}
                 collapsible={p.collapsible}
                 collapsedSize="26px"
                 panelRef={p.ref}
@@ -722,7 +725,10 @@ export function App() {
     const bottomDocks = side("bottom");
     const rightDocks = side("right");
     const dockPanel = (d: { id: string; ref: React.RefObject<PanelImperativeHandle | null> }): PanelDesc =>
-      ({ id: d.id, node: dockNode(d.id as "fp" | "cmp"), collapsible: true, ref: d.ref });
+      ({
+        id: d.id, node: dockNode(d.id as "fp" | "cmp"), collapsible: true, ref: d.ref,
+        collapsed: d.id === "fp" ? state.filterCollapsed : state.compareCollapsed,
+      });
 
     let center: ReactNode = logview;
     if (bottomDocks.length) {
