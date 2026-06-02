@@ -1,8 +1,8 @@
 import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "react";
-import { ArrowDown, ArrowUp, Download, Filter, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Download, Filter, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { LogFile, ViewResult, CompiledFilter } from "../types";
+import type { LogFile, ViewResult, CompiledFilter, FieldValue } from "../types";
 import { escapeRegex, segments } from "../logic";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -49,6 +49,23 @@ function renderLine(text: string, winner: CompiledFilter | null, findRe: RegExp 
   return text;
 }
 
+/** Compact 2-row table for one line's parsed fields: names on top, values below. */
+function FieldTable({ fields }: { fields: Record<string, FieldValue> }) {
+  const keys = Object.keys(fields);
+  return (
+    <table className="fp-table">
+      <tbody>
+        <tr className="fp-keys">{keys.map((k) => <td key={k}>{k}</td>)}</tr>
+        <tr className="fp-vals">
+          {keys.map((k) => (
+            <td key={k} className={typeof fields[k].value === "number" ? "num" : ""}>{fields[k].raw}</td>
+          ))}
+        </tr>
+      </tbody>
+    </table>
+  );
+}
+
 interface LogViewProps {
   file: LogFile;
   view: ViewResult;
@@ -78,6 +95,14 @@ export function LogView({
   const [selMenu, setSelMenu] = useState<{ x: number; y: number; text: string } | null>(null);
   const [selectedLines, setSelectedLines] = useState<Set<number>>(() => new Set());
   const [anchorRi, setAnchorRi] = useState<number | null>(null);
+  const [expandedLines, setExpandedLines] = useState<Set<number>>(() => new Set());
+
+  const toggleExpand = (n: number) =>
+    setExpandedLines((s) => {
+      const next = new Set(s);
+      next.has(n) ? next.delete(n) : next.add(n);
+      return next;
+    });
 
   const isDragSelectingRef = useRef(false);
   const dragStartRiRef = useRef<number | null>(null);
@@ -137,6 +162,7 @@ export function LogView({
     rowVirtualizer.scrollToIndex(0);
     setSelectedLines(new Set());
     setAnchorRi(null);
+    setExpandedLines(new Set());
   }, [file.id, viewMode]);
 
   useEffect(() => { setSelectedLines(new Set()); setAnchorRi(null); }, [view]);
@@ -185,6 +211,7 @@ export function LogView({
   function onRowClick(e: React.MouseEvent, ri: number, n: number) {
     const s = window.getSelection();
     if (s && !s.isCollapsed) return;
+    if (e.altKey) { toggleExpand(n); return; } // Alt+click toggles the field table
     if (e.shiftKey && anchorRi != null) {
       const a = Math.min(anchorRi, ri), b = Math.max(anchorRi, ri);
       const set = new Set(e.ctrlKey || e.metaKey ? selectedLines : []);
@@ -202,6 +229,7 @@ export function LogView({
   }
 
   function handleRowMouseDown(e: React.MouseEvent, ri: number) {
+    if (e.altKey) { e.preventDefault(); return; } // don't start a text selection on Alt+click
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault(); // prevent text selection during ctrl+drag
     dragStartRiRef.current = ri;
@@ -265,12 +293,21 @@ export function LogView({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA") return;
       if ((e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C")) {
         const s = window.getSelection();
         if (s && !s.isCollapsed) return;
         if (selectedLines.size) { e.preventDefault(); copySelectedLines(); }
       } else if (e.key === "Escape" && selectedLines.size) {
         setSelectedLines(new Set());
+      } else if ((e.key === "ArrowRight" || e.key === "Enter") && selectedLines.size === 1) {
+        // Expand the single selected line's parsed fields (if it has any).
+        const n = [...selectedLines][0];
+        if (visible.find((r) => r.n === n)?.fields) { e.preventDefault(); setExpandedLines((s) => new Set(s).add(n)); }
+      } else if (e.key === "ArrowLeft" && selectedLines.size === 1) {
+        const n = [...selectedLines][0];
+        setExpandedLines((s) => { const x = new Set(s); x.delete(n); return x; });
       }
     }
     window.addEventListener("keydown", onKey);
@@ -392,26 +429,45 @@ export function LogView({
                 const w = r.winner;
                 const dim = viewMode === "all" && view.hasHighlights && !w;
                 const sel = selectedLines.has(r.n);
+                const canExpand = !!r.fields;
+                const expanded = expandedLines.has(r.n);
                 const rowStyle: CSSProperties = {
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${vItem.start}px)`,
                   height: rowH,
                   ...(w ? { background: w.f.bgColor, color: w.f.textColor, borderLeftColor: w.f.textColor } : {}),
                 };
                 return (
                   <div
                     key={r.n}
-                    className={"log-row" + (w ? " matched" : "") + (dim ? " dim" : "") + (sel ? " selected" : "")}
-                    style={rowStyle}
-                    onMouseDown={(e) => handleRowMouseDown(e, vItem.index)}
-                    onMouseEnter={() => handleRowMouseEnter(vItem.index)}
-                    onClick={(e) => onRowClick(e, vItem.index, r.n)}
+                    data-index={vItem.index}
+                    ref={rowVirtualizer.measureElement}
+                    className="log-rowwrap"
+                    style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}
                   >
-                    {showLineNumbers && <span className="log-gut">{r.n}</span>}
-                    <span className="log-txt">{renderLine(r.text, w, findRe, currentKey, vItem.index)}</span>
+                    <div
+                      className={"log-row" + (w ? " matched" : "") + (dim ? " dim" : "") + (sel ? " selected" : "") + (canExpand ? " expandable" : "")}
+                      style={rowStyle}
+                      onMouseDown={(e) => handleRowMouseDown(e, vItem.index)}
+                      onMouseEnter={() => handleRowMouseEnter(vItem.index)}
+                      onClick={(e) => onRowClick(e, vItem.index, r.n)}
+                    >
+                      {canExpand && (
+                        <span
+                          className={"log-exp" + (expanded ? " on" : "")}
+                          title={expanded ? "Collapse fields (Alt+click)" : "Expand parsed fields (Alt+click)"}
+                          onMouseDown={(e) => e.stopPropagation()}
+                          onClick={(e) => { e.stopPropagation(); toggleExpand(r.n); }}
+                        >
+                          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                        </span>
+                      )}
+                      {showLineNumbers && <span className="log-gut">{r.n}</span>}
+                      <span className="log-txt">{renderLine(r.text, w, findRe, currentKey, vItem.index)}</span>
+                    </div>
+                    {expanded && r.fields && (
+                      <div className="log-fieldpanel">
+                        <FieldTable fields={r.fields} />
+                      </div>
+                    )}
                   </div>
                 );
               })}
