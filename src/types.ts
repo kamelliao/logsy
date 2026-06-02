@@ -10,6 +10,18 @@ export interface Filter {
   bgColor: string;
   /** Section this filter belongs to; null = ungrouped (renders above sections). */
   sectionId: string | null;
+  /**
+   * Structured fields this filter extracts, one per named capture group in its
+   * regex. Present only for regex filters whose pattern has `(?<name>…)` groups;
+   * a matching line then exposes these as parsed fields.
+   */
+  fields?: FieldDef[];
+  /**
+   * When true the filter only extracts fields and does not colour matching
+   * lines — needed for a catch-all structural filter that would otherwise paint
+   * the whole log.
+   */
+  extractOnly?: boolean;
 }
 
 export interface FilterSection {
@@ -58,12 +70,6 @@ export interface AppState {
   fontSize: number;
   /** Show the line-number gutter in the log view (and include numbers when copying). */
   showLineNumbers: boolean;
-  /** Reusable parse profiles (field-extraction rule sets), shared across files. */
-  profiles: ParseProfile[];
-  /** Which profile drives the structured view; null = none selected. */
-  activeProfileId: string | null;
-  /** Whether the log view renders extracted fields as columns. */
-  structuredView: boolean;
 }
 
 export interface PaletteEntry {
@@ -89,22 +95,6 @@ export interface FieldDef {
   type: FieldType;
 }
 
-/** One regex (with named groups) tried against a line to extract fields. */
-export interface LinePattern {
-  id: string;
-  /** Regex source with named groups, e.g. (?<ts>\d+\.\d+)\s+(?<lvl>[EWID]). */
-  regex: string;
-  fields: FieldDef[];
-  enabled: boolean;
-}
-
-/** An ordered set of line patterns; first one that matches a line wins. */
-export interface ParseProfile {
-  id: string;
-  name: string;
-  patterns: LinePattern[];
-}
-
 /** A single extracted field: the matched text plus its coerced value. */
 export interface FieldValue {
   raw: string;
@@ -112,27 +102,15 @@ export interface FieldValue {
   value: number | string;
 }
 
-export interface CompiledPattern {
-  p: LinePattern;
-  re: RegExp | null;
-  ok: boolean;
-  err?: string;
-}
-
-export interface CompiledProfile {
-  profile: ParseProfile;
-  patterns: CompiledPattern[];
-}
-
 export interface ViewRow {
   n: number;
   text: string;
   winner: CompiledFilter | null;
   excluded: boolean;
-  /** Fields extracted by the active parse profile; absent when no pattern matched. */
+  /** Fields extracted by the first matching structural filter; absent if none. */
   fields?: Record<string, FieldValue>;
-  /** Id of the LinePattern that matched this line, if any. */
-  patternId?: string;
+  /** Id of the filter that supplied this row's fields, if any. */
+  fieldsFromId?: string;
 }
 
 export interface ViewResult {

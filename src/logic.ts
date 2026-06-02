@@ -1,6 +1,6 @@
 import type {
   Filter, CompiledFilter, ViewResult, Segment,
-  FieldType, FieldDef, ParseProfile, FieldValue, CompiledPattern, CompiledProfile,
+  FieldType, FieldDef, FieldValue,
 } from "./types";
 
 export function escapeRegex(s: string): string {
@@ -66,20 +66,6 @@ function guessType(name: string): FieldType {
   return "string";
 }
 
-/** The ordered, de-duplicated set of fields a profile can produce (its columns). */
-export function profileColumns(profile: ParseProfile): FieldDef[] {
-  const out: FieldDef[] = [];
-  const seen = new Set<string>();
-  for (const p of profile.patterns) {
-    for (const f of p.fields) {
-      if (seen.has(f.name)) continue;
-      seen.add(f.name);
-      out.push(f);
-    }
-  }
-  return out;
-}
-
 /** List the named capture groups in a regex source, as default field defs. */
 export function deriveFields(regexSource: string): FieldDef[] {
   const fields: FieldDef[] = [];
@@ -122,52 +108,27 @@ export function coerceValue(raw: string, type: FieldType): number | string {
   return Number.isNaN(v) ? raw : v;
 }
 
-export function compileProfile(profile: ParseProfile): CompiledProfile {
-  const patterns = profile.patterns.map((p): CompiledPattern => {
-    // Disabled or blank patterns never match (a blank regex would match every line).
-    if (!p.enabled || !p.regex.trim()) return { p, re: null, ok: true };
-    try {
-      return { p, re: new RegExp(p.regex), ok: true };
-    } catch (e) {
-      return { p, re: null, ok: false, err: (e as Error).message };
-    }
-  });
-  return { profile, patterns };
-}
-
-export interface ParsedLine {
-  patternId: string;
-  fields: Record<string, FieldValue>;
-}
-
-
-/** Try each enabled pattern in order; the first match extracts this line's fields. */
-export function parseLine(line: string, cp: CompiledProfile): ParsedLine | null {
-  for (const c of cp.patterns) {
-    if (!c.re) continue;
-    c.re.lastIndex = 0;
-    const m = c.re.exec(line);
-    if (!m) continue;
-    const groups = m.groups ?? {};
-    const fields: Record<string, FieldValue> = {};
-    for (const def of c.p.fields) {
-      const raw = groups[def.name];
-      if (raw === undefined) continue;
-      fields[def.name] = { raw, value: coerceValue(raw, def.type) };
-    }
-    return { patternId: c.p.id, fields };
+/** Extract a compiled structural filter's named groups from a line, coerced by type. */
+function extractFields(re: RegExp, defs: FieldDef[], line: string): Record<string, FieldValue> {
+  re.lastIndex = 0;
+  const m = re.exec(line);
+  const groups = m?.groups ?? {};
+  const out: Record<string, FieldValue> = {};
+  for (const def of defs) {
+    const raw = groups[def.name];
+    if (raw === undefined) continue;
+    out[def.name] = { raw, value: coerceValue(raw, def.type) };
   }
-  return null;
+  return out;
 }
 
-export function computeView(
-  lines: string[],
-  compiled: CompiledFilter[],
-  profile?: CompiledProfile | null,
-): ViewResult {
+export function computeView(lines: string[], compiled: CompiledFilter[]): ViewResult {
   const active = compiled.filter((c) => c.f.enabled && !c.empty && c.ok && c.re);
   const excludes = active.filter((c) => c.f.exclude);
-  const highlights = active.filter((c) => !c.f.exclude);
+  // `extractOnly` filters parse but never colour a line, so they're not winners.
+  const highlights = active.filter((c) => !c.f.exclude && !c.f.extractOnly);
+  // Structural filters (regex with named groups) that supply parsed fields.
+  const fieldProviders = active.filter((c) => !c.f.exclude && c.f.fields && c.f.fields.length > 0);
 
   const counts: Record<string, number> = {};
   for (const c of compiled) {
@@ -183,12 +144,16 @@ export function computeView(
     for (const h of highlights) {
       if (testRe(h.re!, text)) { winner = h; break; }
     }
-    const parsed = profile ? parseLine(text, profile) : null;
-    return {
-      n: i + 1, text, winner, excluded,
-      fields: parsed?.fields,
-      patternId: parsed?.patternId,
-    };
+    // First structural filter (in order) that matches supplies this line's fields.
+    let fields: Record<string, FieldValue> | undefined;
+    let fieldsFromId: string | undefined;
+    for (const p of fieldProviders) {
+      if (!testRe(p.re!, text)) continue;
+      fields = extractFields(p.re!, p.f.fields!, text);
+      fieldsFromId = p.f.id;
+      break;
+    }
+    return { n: i + 1, text, winner, excluded, fields, fieldsFromId };
   });
 
   return {
