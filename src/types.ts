@@ -75,8 +75,12 @@ export interface AppState {
   /** Collapsed (rolled-up) state of the filter / comparison docks. */
   filterCollapsed: boolean;
   compareCollapsed: boolean;
-  /** Persisted size (percent) of each resizable panel, keyed by panel id. */
-  panelSizes: Record<string, number>;
+  /**
+   * Persisted panel sizes (percent), bucketed by group-structure key so that
+   * sizes from one dock arrangement never bleed into another. Outer key is the
+   * group signature, inner key is the panel id.
+   */
+  panelSizes: Record<string, Record<string, number>>;
 }
 
 export interface PaletteEntry {

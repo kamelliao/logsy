@@ -171,7 +171,11 @@ export function normalizeState(state: AppState): AppState {
   if (state.comparePos !== "bottom" && state.comparePos !== "right") state.comparePos = "right";
   if (state.filterCollapsed === undefined) state.filterCollapsed = false;
   if (state.compareCollapsed === undefined) state.compareCollapsed = false;
-  if (!state.panelSizes || typeof state.panelSizes !== "object") state.panelSizes = {};
+  // panelSizes is bucketed (group → id → percent); drop any old flat/invalid shape.
+  if (!state.panelSizes || typeof state.panelSizes !== "object" ||
+      Object.values(state.panelSizes).some((v) => typeof v !== "object" || v === null)) {
+    state.panelSizes = {};
+  }
   // Drop the short-lived app-level parse-profile fields; parsing now lives on
   // individual regex filters (Filter.fields / Filter.extractOnly).
   delete (state as Partial<Record<"profiles" | "activeProfileId" | "structuredView", unknown>>).profiles;

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef, Fragment, CSSProperties, ReactNode } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import { ChevronsDownUp, ChevronsUpDown, FolderOpen, Minus, PanelBottom, PanelRight, Square, Upload, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderOpen, Minus, PanelBottom, PanelRight, Square, Upload, X } from "lucide-react";
 import { tinykeys } from "tinykeys";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -482,25 +482,32 @@ export function App() {
   // Structure signature: panels remount when positions or compare-presence change.
   const layoutKey = `${state.panelPos}|${state.comparePos}|${showCompare}`;
 
-  // Build a group's initial layout from persisted sizes, normalised to 100%.
-  const layoutFor = (ids: string[]): Record<string, number> => {
-    const ps = state.panelSizes ?? {};
+  // Default share (weight) for a panel that has no persisted size yet. Docks
+  // open generously so they reveal a useful amount of content.
+  const DEFAULT_WEIGHT: Record<string, number> = { lv: 100, center: 100, fp: 82, cmp: 82 };
+  // Build a group's initial layout from its persisted-size bucket, normalised to 100%.
+  const layoutFor = (groupKey: string, ids: string[]): Record<string, number> => {
+    const bucket = state.panelSizes?.[groupKey] ?? {};
     const out: Record<string, number> = {};
     let known = 0; const unknown: string[] = [];
-    for (const id of ids) { const v = ps[id]; if (typeof v === "number") { out[id] = v; known += v; } else unknown.push(id); }
-    if (unknown.length) { const each = Math.max(10, 100 - known) / unknown.length; for (const id of unknown) out[id] = each; }
+    for (const id of ids) { const v = bucket[id]; if (typeof v === "number") { out[id] = v; known += v; } else unknown.push(id); }
+    if (unknown.length) {
+      const totalW = unknown.reduce((a, id) => a + (DEFAULT_WEIGHT[id] ?? 100), 0) || 1;
+      const rem = Math.max(unknown.length * 10, 100 - known);
+      for (const id of unknown) out[id] = rem * (DEFAULT_WEIGHT[id] ?? 100) / totalW;
+    }
     const sum = ids.reduce((a, id) => a + out[id], 0) || 1;
     for (const id of ids) out[id] = (out[id] / sum) * 100;
     return out;
   };
-  const onLayout = (layout: Record<string, number>) => setState((s) => {
-    const ps = { ...(s.panelSizes ?? {}) };
+  const onLayoutFor = (groupKey: string) => (layout: Record<string, number>) => setState((s) => {
+    const bucket = { ...(s.panelSizes?.[groupKey] ?? {}) };
     for (const [id, v] of Object.entries(layout)) {
       if (id === "fp" && s.filterCollapsed) continue;   // don't persist a collapsed size
       if (id === "cmp" && s.compareCollapsed) continue;
-      ps[id] = v;
+      bucket[id] = v;
     }
-    return { ...s, panelSizes: ps };
+    return { ...s, panelSizes: { ...(s.panelSizes ?? {}), [groupKey]: bucket } };
   });
 
   // Keep the panels' collapsed state in sync with persisted flags.
@@ -624,18 +631,21 @@ export function App() {
       const setPos = kind === "fp" ? setFilterPos : setComparePos;
       const toggle = kind === "fp" ? toggleFilterCollapsed : toggleCompareCollapsed;
       const title = kind === "fp" ? "Filters" : `Compare · ${compareRows.length}`;
+      // Chevron points the way the panel will fold (toward its docked edge).
+      const chevron = pos === "bottom"
+        ? (collapsed ? <ChevronUp size={15} /> : <ChevronDown size={15} />)
+        : (collapsed ? <ChevronLeft size={15} /> : <ChevronRight size={15} />);
       return (
         <div className={"dock dock-" + pos + (collapsed ? " collapsed" : "")}>
-          <div className="dock-head">
-            <button className="dock-btn" title={collapsed ? "Expand" : "Collapse"} onClick={toggle}>
-              {collapsed ? <ChevronsUpDown size={14} /> : <ChevronsDownUp size={14} />}
-            </button>
+          {/* whole header toggles collapse; the action buttons stop propagation */}
+          <div className="dock-head" onClick={toggle} title={collapsed ? "Expand" : "Collapse"}>
+            <span className="dock-chevron">{chevron}</span>
             <span className="dock-title">{title}</span>
             <div className="dock-spacer" />
             {kind === "cmp" && !collapsed && (
-              <button className="dock-btn" title="Clear comparison" onClick={clearCompare}><X size={14} /></button>
+              <button className="dock-btn" title="Clear comparison" onClick={(e) => { e.stopPropagation(); clearCompare(); }}><X size={14} /></button>
             )}
-            <button className="dock-btn" title={pos === "bottom" ? "Dock right" : "Dock bottom"} onClick={() => setPos(pos === "bottom" ? "right" : "bottom")}>
+            <button className="dock-btn" title={pos === "bottom" ? "Dock right" : "Dock bottom"} onClick={(e) => { e.stopPropagation(); setPos(pos === "bottom" ? "right" : "bottom"); }}>
               {pos === "bottom" ? <PanelRight size={14} /> : <PanelBottom size={14} />}
             </button>
           </div>
@@ -676,9 +686,13 @@ export function App() {
 
     type PanelDesc = { id: string; node: ReactNode; collapsible?: boolean; ref?: React.RefObject<PanelImperativeHandle | null> };
     const buildGroup = (orientation: "vertical" | "horizontal", gid: string, panels: PanelDesc[]): ReactNode => {
-      const dl = layoutFor(panels.map((p) => p.id));
+      const ids = panels.map((p) => p.id);
+      // Remount the group when its panel set changes — the library can't have a
+      // Panel inserted into / removed from a live group ("constraints not found").
+      const groupKey = gid + ":" + ids.join(",");
+      const dl = layoutFor(groupKey, ids);
       return (
-        <ResizablePanelGroup orientation={orientation} className="main" id={gid} defaultLayout={dl} onLayoutChanged={onLayout}>
+        <ResizablePanelGroup key={groupKey} orientation={orientation} className="main" id={groupKey} defaultLayout={dl} onLayoutChanged={onLayoutFor(groupKey)}>
           {panels.map((p, i) => (
             <Fragment key={p.id}>
               <ResizablePanel
@@ -686,7 +700,7 @@ export function App() {
                 defaultSize={`${dl[p.id]}%`}
                 minSize={p.collapsible ? "8%" : "15%"}
                 collapsible={p.collapsible}
-                collapsedSize="34px"
+                collapsedSize="26px"
                 panelRef={p.ref}
               >
                 {p.node}

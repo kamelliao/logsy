@@ -537,23 +537,21 @@ export function LogView({
 
       {/* logline right-click menu */}
       {rowMenu && (
-        <div className="sel-menu row-menu" style={{ left: rowMenu.x, top: rowMenu.y }}>
+        <div className="menu-pop row-menu" style={{ position: "fixed", left: rowMenu.x, top: rowMenu.y, zIndex: 60 }}>
           {compareLines.has(rowMenu.n) ? (
-            <button onClick={() => { onRemoveFromCompare(rowMenu.n); setRowMenu(null); }}>
-              <Columns3 size={13} /> Remove from compare
-            </button>
+            <div className="menu-item" onClick={() => { onRemoveFromCompare(rowMenu.n); setRowMenu(null); }}>
+              <span className="mi-ico"><Columns3 size={14} /></span> Remove from compare
+            </div>
           ) : !rowMenu.hasFields ? (
-            <button disabled title="This line has no parsed fields">
-              <Columns3 size={13} /> No parsed fields
-            </button>
+            <div className="menu-item disabled"><span className="mi-ico"><Columns3 size={14} /></span> No parsed fields</div>
           ) : selectedLines.has(rowMenu.n) && selectedLines.size > 1 ? (
-            <button onClick={() => { onAddToCompare([...selectedLines]); setRowMenu(null); }}>
-              <Columns3 size={13} /> Add {selectedLines.size} lines to compare
-            </button>
+            <div className="menu-item" onClick={() => { onAddToCompare([...selectedLines]); setRowMenu(null); }}>
+              <span className="mi-ico"><Columns3 size={14} /></span> Add {selectedLines.size} lines to compare
+            </div>
           ) : (
-            <button onClick={() => { onAddToCompare([rowMenu.n]); setRowMenu(null); }}>
-              <Columns3 size={13} /> Add to compare
-            </button>
+            <div className="menu-item" onClick={() => { onAddToCompare([rowMenu.n]); setRowMenu(null); }}>
+              <span className="mi-ico"><Columns3 size={14} /></span> Add to compare
+            </div>
           )}
         </div>
       )}
