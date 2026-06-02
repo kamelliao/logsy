@@ -70,6 +70,13 @@ export interface AppState {
   fontSize: number;
   /** Show the line-number gutter in the log view (and include numbers when copying). */
   showLineNumbers: boolean;
+  /** Where the comparison panel docks. */
+  comparePos: "bottom" | "right";
+  /** Collapsed (rolled-up) state of the filter / comparison docks. */
+  filterCollapsed: boolean;
+  compareCollapsed: boolean;
+  /** Persisted size (percent) of each resizable panel, keyed by panel id. */
+  panelSizes: Record<string, number>;
 }
 
 export interface PaletteEntry {

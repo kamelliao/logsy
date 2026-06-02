@@ -377,6 +377,9 @@ button { font-family: inherit; }
 }
 .log-row.expandable:hover .log-exp { opacity: 0.6; }
 .log-exp.on { opacity: 0.95; }
+/* Alt held: loglines that can expand invite a click. */
+.log-scroll.alt-mode .log-row.expandable { cursor: pointer; }
+.log-scroll.alt-mode .log-row.expandable .log-exp { opacity: 0.55; }
 .log-exp:hover { color: var(--text); }
 .log-fieldpanel {
   padding: 4px 12px 7px 65px;
@@ -409,16 +412,25 @@ button { font-family: inherit; }
 }
 .log-content-area .log-scroll { flex: 1 1 auto; min-width: 0; }
 
-/* ---- multi-line field comparison table ---- */
-.cmp-panel {
-  flex: 0 0 auto; max-height: 42%; display: flex; flex-direction: column;
-  border-top: 1px solid var(--border-strong); background: var(--panel-bg-2, #f6f7f9);
-}
-.cmp-head {
-  flex: 0 0 30px; display: flex; align-items: center; gap: 8px; padding: 0 8px 0 12px;
+/* ---- docks (filter + compare panels) ---- */
+.dock { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--app-bg); overflow: hidden; }
+.dock-head {
+  flex: 0 0 30px; display: flex; align-items: center; gap: 6px; padding: 0 6px 0 8px;
   font-size: 12px; font-weight: 600; color: var(--text-2);
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--border); background: var(--panel-bg-2, #f6f7f9);
 }
+.dock-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dock-spacer { flex: 1 1 auto; }
+.dock-btn {
+  flex: 0 0 auto; width: 24px; height: 24px; border-radius: 6px; border: none; background: none;
+  display: grid; place-items: center; color: var(--text-3); cursor: pointer;
+}
+.dock-btn:hover { background: var(--row-hover); color: var(--text); }
+.dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.dock-right.collapsed .dock-head { writing-mode: vertical-rl; height: 100%; flex: 1 1 auto; padding: 8px 0; gap: 8px; justify-content: flex-start; }
+
+/* ---- multi-line field comparison table ---- */
+.cmp-empty { padding: 12px 14px; font-size: 12px; color: var(--text-3); line-height: 1.5; }
 .cmp-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
 .cmp-table {
   border-collapse: collapse; font-family: var(--mono-font); font-size: 12px; white-space: pre;
@@ -435,6 +447,15 @@ button { font-family: inherit; }
   color: var(--text-3); font-variant-numeric: tabular-nums; text-align: right;
   background: rgba(0,0,0,0.02); position: sticky; left: 0;
 }
+.cmp-table .cmp-rm { padding: 0; width: 22px; text-align: center; }
+.cmp-table .cmp-rm button {
+  width: 18px; height: 18px; border: none; background: none; border-radius: 4px;
+  display: grid; place-items: center; color: var(--text-3); cursor: pointer;
+}
+.cmp-table .cmp-rm button:hover { background: #fdecec; color: var(--error); }
+/* lines currently in the comparison panel get a subtle marker */
+.log-row.incompare .log-gut { box-shadow: inset 2px 0 0 var(--accent, #2c6ce6); }
+.row-menu button[disabled] { opacity: 0.5; cursor: default; }
 
 .match-map {
   flex: 0 0 14px; width: 14px;
