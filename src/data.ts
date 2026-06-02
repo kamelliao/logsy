@@ -1,5 +1,4 @@
-import type { AppState, Filter, LinePattern, ParseProfile, PaletteEntry } from "./types";
-import { deriveFields } from "./logic";
+import type { AppState, Filter, PaletteEntry } from "./types";
 
 export const PALETTE: PaletteEntry[] = [
   { name: "red",    text: "#b42318", bg: "#fce4e4" },
@@ -109,15 +108,9 @@ export function makeFilter(pattern: string, opts: Partial<Filter> = {}): Filter 
     textColor: opts.textColor ?? "#1c1f23",
     bgColor: opts.bgColor ?? "#fff7c2",
     sectionId: opts.sectionId ?? null,
+    fields: opts.fields,
+    extractOnly: opts.extractOnly,
   };
-}
-
-export function makeLinePattern(regex = ""): LinePattern {
-  return { id: uid("pat"), regex, fields: deriveFields(regex), enabled: true };
-}
-
-export function makeProfile(name: string): ParseProfile {
-  return { id: uid("prof"), name, patterns: [makeLinePattern("")] };
 }
 
 /** A fresh, empty workspace. Files are added by the user loading logs from disk. */
@@ -133,9 +126,6 @@ export function initialState(): AppState {
     mapWidth: 14,
     fontSize: 12.5,
     showLineNumbers: true,
-    profiles: [],
-    activeProfileId: null,
-    structuredView: false,
   };
 }
 
@@ -174,12 +164,10 @@ export function normalizeState(state: AppState): AppState {
   if (!state.mapWidth) state.mapWidth = 14;
   if (!state.fontSize) state.fontSize = 12.5;
   if (state.showLineNumbers === undefined) state.showLineNumbers = true;
-  // Parse-profile fields (added after v6); backfill so older states load cleanly.
-  if (!Array.isArray(state.profiles)) state.profiles = [];
-  if (state.activeProfileId === undefined) state.activeProfileId = null;
-  if (state.activeProfileId && !state.profiles.find((p) => p.id === state.activeProfileId)) {
-    state.activeProfileId = null;
-  }
-  if (state.structuredView === undefined) state.structuredView = false;
+  // Drop the short-lived app-level parse-profile fields; parsing now lives on
+  // individual regex filters (Filter.fields / Filter.extractOnly).
+  delete (state as Partial<Record<"profiles" | "activeProfileId" | "structuredView", unknown>>).profiles;
+  delete (state as Partial<Record<"profiles" | "activeProfileId" | "structuredView", unknown>>).activeProfileId;
+  delete (state as Partial<Record<"profiles" | "activeProfileId" | "structuredView", unknown>>).structuredView;
   return state;
 }

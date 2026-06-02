@@ -1,28 +1,20 @@
 import { test, expect } from "bun:test";
-import {
-  deriveFields, coerceValue, compileProfile, parseLine, computeView, compileAll,
-} from "./logic";
-import type { LinePattern, ParseProfile, Filter } from "./types";
+import { deriveFields, coerceValue, compileAll, computeView } from "./logic";
+import type { Filter, FieldDef } from "./types";
 
-function pattern(id: string, regex: string, over: Partial<LinePattern> = {}): LinePattern {
-  return { id, regex, enabled: true, fields: deriveFields(regex), ...over };
-}
-function profile(...patterns: LinePattern[]): ParseProfile {
-  return { id: "prof", name: "p", patterns };
-}
 function filter(id: string, pattern: string, over: Partial<Filter> = {}): Filter {
   return {
     id, pattern, description: "", enabled: true, caseSensitive: false,
-    regex: false, exclude: false, textColor: "#000", bgColor: "#fff", sectionId: null,
+    regex: true, exclude: false, textColor: "#000", bgColor: "#fff", sectionId: null,
     ...over,
   };
 }
+const F = (...names: { name: string; type: FieldDef["type"] }[]) => names;
 
 // --- deriveFields -----------------------------------------------------------
 
 test("deriveFields lists named groups once and guesses time for ts/time names", () => {
-  const fields = deriveFields("(?<ts>\\d+)\\s+(?<lvl>\\w)\\s+(?<msg>.*)");
-  expect(fields).toEqual([
+  expect(deriveFields("(?<ts>\\d+)\\s+(?<lvl>\\w)\\s+(?<msg>.*)")).toEqual([
     { name: "ts", type: "time" },
     { name: "lvl", type: "string" },
     { name: "msg", type: "string" },
@@ -52,93 +44,65 @@ test("coerceValue parses clock-style and plain timestamps", () => {
   expect(coerceValue("00:00:01.500", "time")).toBe(1500);
   expect(coerceValue("01:02:03", "time")).toBe(3723000);
   expect(coerceValue("02:05", "time")).toBe(125000);
-  expect(coerceValue("12.5", "time")).toBe(12.5); // plain numeric, log-native unit
+  expect(coerceValue("12.5", "time")).toBe(12.5);
 });
 
-// --- compileProfile ---------------------------------------------------------
+// --- computeView field extraction from structural filters -------------------
 
-test("compileProfile reports invalid regex without throwing", () => {
-  const cp = compileProfile(profile(pattern("p1", "(unterminated")));
-  expect(cp.patterns[0].ok).toBe(false);
-  expect(cp.patterns[0].re).toBeNull();
-  expect(cp.patterns[0].err).toBeTruthy();
-});
+const structural = (id: string, pattern: string, over: Partial<Filter> = {}) =>
+  filter(id, pattern, { fields: deriveFields(pattern), ...over });
 
-test("compileProfile skips disabled patterns", () => {
-  const cp = compileProfile(profile(pattern("p1", "(?<a>x)", { enabled: false })));
-  expect(cp.patterns[0].re).toBeNull();
-  expect(cp.patterns[0].ok).toBe(true);
-});
-
-// --- parseLine --------------------------------------------------------------
-
-test("parseLine extracts and coerces fields by their defined types", () => {
-  const cp = compileProfile(profile(
-    pattern("p1", "(?<ts>\\d+\\.\\d+)\\s+(?<lvl>[EWID])\\s+(?<msg>.*)", {
-      fields: [
-        { name: "ts", type: "float" },
-        { name: "lvl", type: "string" },
-        { name: "msg", type: "string" },
-      ],
-    }),
-  ));
-  const r = parseLine("12.340218 E timeout addr=0x50", cp);
-  expect(r?.patternId).toBe("p1");
-  expect(r?.fields.ts).toEqual({ raw: "12.340218", value: 12.340218 });
-  expect(r?.fields.lvl).toEqual({ raw: "E", value: "E" });
-  expect(r?.fields.msg).toEqual({ raw: "timeout addr=0x50", value: "timeout addr=0x50" });
-});
-
-test("parseLine is first-match-wins across ordered patterns", () => {
-  const cp = compileProfile(profile(
-    pattern("specific", "^ERR (?<code>\\d+)", { fields: [{ name: "code", type: "int" }] }),
-    pattern("generic", "(?<msg>.*)"),
-  ));
-  expect(parseLine("ERR 7 boom", cp)?.patternId).toBe("specific");
-  expect(parseLine("just a line", cp)?.patternId).toBe("generic");
-});
-
-test("parseLine returns null when nothing matches", () => {
-  const cp = compileProfile(profile(pattern("p1", "^ONLY THIS$")));
-  expect(parseLine("something else", cp)).toBeNull();
-});
-
-test("parseLine omits a field whose optional group did not participate", () => {
-  const cp = compileProfile(profile(
-    pattern("p1", "(?<a>x)(?<b>y)?", {
-      fields: [{ name: "a", type: "string" }, { name: "b", type: "string" }],
-    }),
-  ));
-  const r = parseLine("x", cp);
-  expect(r?.fields.a).toEqual({ raw: "x", value: "x" });
-  expect("b" in (r?.fields ?? {})).toBe(false);
-});
-
-// --- computeView integration -----------------------------------------------
-
-test("computeView attaches fields/patternId only when a profile is passed", () => {
+test("a regex filter with named groups extracts coerced fields on matching lines", () => {
   const lines = ["12.0 E boom", "plain line"];
-  const compiled = compileAll([filter("f1", "boom")]);
-  const cp = compileProfile(profile(
-    pattern("p1", "(?<ts>\\d+\\.\\d+)\\s+(?<lvl>[EWID])\\s+(?<msg>.*)", {
-      fields: [
-        { name: "ts", type: "float" },
-        { name: "lvl", type: "string" },
-        { name: "msg", type: "string" },
-      ],
+  const view = computeView(lines, compileAll([
+    structural("p1", "(?<ts>\\d+\\.\\d+)\\s+(?<lvl>[EWID])\\s+(?<msg>.*)", {
+      fields: F({ name: "ts", type: "float" }, { name: "lvl", type: "string" }, { name: "msg", type: "string" }),
     }),
-  ));
+  ]));
+  expect(view.rows[0].fields?.ts).toEqual({ raw: "12.0", value: 12 });
+  expect(view.rows[0].fields?.lvl.value).toBe("E");
+  expect(view.rows[0].fieldsFromId).toBe("p1");
+  expect(view.rows[1].fields).toBeUndefined();
+  expect(view.rows[1].fieldsFromId).toBeUndefined();
+});
 
-  const withProfile = computeView(lines, compiled, cp);
-  expect(withProfile.rows[0].fields?.lvl.value).toBe("E");
-  expect(withProfile.rows[0].patternId).toBe("p1");
-  // unmatched line: no fields
-  expect(withProfile.rows[1].fields).toBeUndefined();
-  expect(withProfile.rows[1].patternId).toBeUndefined();
-  // filter matching is unaffected by parsing
-  expect(withProfile.rows[0].winner?.f.id).toBe("f1");
+test("a plain (non-named-group) filter highlights but extracts nothing", () => {
+  const view = computeView(["error here"], compileAll([filter("h", "error")]));
+  expect(view.rows[0].winner?.f.id).toBe("h");
+  expect(view.rows[0].fields).toBeUndefined();
+});
 
-  const withoutProfile = computeView(lines, compiled);
-  expect(withoutProfile.rows[0].fields).toBeUndefined();
-  expect(withoutProfile.rows[0].winner?.f.id).toBe("f1");
+test("field extraction is first-structural-filter-wins, independent of the colour winner", () => {
+  const lines = ["12.0 E i2c boom"];
+  const view = computeView(lines, compileAll([
+    filter("color", "boom", { regex: false }), // colour winner, no fields
+    structural("specific", "^(?<ts>\\d+\\.\\d+)\\s+(?<lvl>E)\\s+(?<tag>\\w+)", {
+      fields: F({ name: "ts", type: "float" }, { name: "lvl", type: "string" }, { name: "tag", type: "string" }),
+    }),
+    structural("generic", "(?<all>.*)", { fields: F({ name: "all", type: "string" }) }),
+  ]));
+  expect(view.rows[0].winner?.f.id).toBe("color");      // highlight from the plain filter
+  expect(view.rows[0].fieldsFromId).toBe("specific");   // fields from the first structural match
+  expect(view.rows[0].fields?.tag.value).toBe("i2c");
+});
+
+test("an extractOnly filter supplies fields but never becomes the colour winner", () => {
+  const view = computeView(["12.0 E boom"], compileAll([
+    structural("catchall", "(?<ts>\\d+\\.\\d+)\\s+(?<lvl>[EWID])\\s+(?<msg>.*)", {
+      extractOnly: true,
+      fields: F({ name: "ts", type: "float" }, { name: "lvl", type: "string" }, { name: "msg", type: "string" }),
+    }),
+  ]));
+  expect(view.rows[0].winner).toBeNull();          // not coloured
+  expect(view.hasHighlights).toBe(false);
+  expect(view.rows[0].fields?.lvl.value).toBe("E"); // but still parsed
+  expect(view.rows[0].fieldsFromId).toBe("catchall");
+});
+
+test("excluded lines are removed and never used as field providers", () => {
+  const view = computeView(["drop 12.0 E boom"], compileAll([
+    filter("x", "drop", { regex: false, exclude: true }),
+    structural("p", "(?<ts>\\d+\\.\\d+)", { fields: F({ name: "ts", type: "float" }) }),
+  ]));
+  expect(view.rows[0].excluded).toBe(true);
 });

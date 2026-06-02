@@ -5,9 +5,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { save, open, confirm } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { AppState, LogFile, FilterGroup, FilterSection, Filter, ParseProfile } from "./types";
+import type { AppState, LogFile, FilterGroup, FilterSection, Filter } from "./types";
 import {
-  uid, makeFilter, makeProfile, initialState, normalizeState, PALETTE,
+  uid, makeFilter, initialState, normalizeState, PALETTE,
 } from "./data";
 
 const FILE_DIALOG_FILTERS = [{ name: "Logsy filters", extensions: ["json"] }];
@@ -45,12 +45,11 @@ function buildGroupFromImport(
   }
   return null;
 }
-import { compileAll, compileProfile, computeView, profileColumns } from "./logic";
+import { compileAll, computeView } from "./logic";
 import { Sidebar } from "./components/Sidebar";
 import { LogView } from "./components/LogView";
 import { FilterPanel } from "./components/FilterPanel";
 import { EditModal } from "./components/EditModal";
-import { ProfileModal } from "./components/ProfileModal";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -89,7 +88,6 @@ function baseName(p: string): string {
 export function App() {
   const [state, setState] = useState<AppState>(loadState);
   const [editing, setEditing] = useState<{ isNew: boolean; filter: Filter } | null>(null);
-  const [profileModalOpen, setProfileModalOpen] = useState(false);
   const [findOpen, setFindOpen] = useState(false);
   const [openMenu, setOpenMenu] = useState<{ name: string; x: number; y: number } | null>(null);
   // Bumped whenever a file's lines land in `linesStore`, to re-derive `lines`.
@@ -108,21 +106,7 @@ export function App() {
     [file?.id, linesVersion]
   );
   const compiled = useMemo(() => compileAll(group?.filters ?? []), [group?.filters]);
-  // Compile the active parse profile only while the structured view is on, so
-  // plain viewing pays no parsing cost.
-  const activeProfileRaw = useMemo(
-    () => state.profiles.find((p) => p.id === state.activeProfileId) ?? null,
-    [state.profiles, state.activeProfileId],
-  );
-  const activeProfile = useMemo(() => {
-    if (!state.structuredView || !activeProfileRaw) return null;
-    return compileProfile(activeProfileRaw);
-  }, [state.structuredView, activeProfileRaw]);
-  const columns = useMemo(
-    () => (activeProfileRaw ? profileColumns(activeProfileRaw) : []),
-    [activeProfileRaw],
-  );
-  const view = useMemo(() => computeView(lines, compiled, activeProfile), [lines, compiled, activeProfile]);
+  const view = useMemo(() => computeView(lines, compiled), [lines, compiled]);
 
   // ---------- helpers ----------
   const patchState = useCallback((fn: (s: AppState) => void) => {
@@ -470,23 +454,6 @@ export function App() {
     else if (action === "import") void importFilters();
   };
 
-  // ---------- parse profiles ----------
-  const addProfile = () => {
-    const p = makeProfile(`Profile ${state.profiles.length + 1}`);
-    setState((s) => ({ ...s, profiles: [...s.profiles, p], activeProfileId: p.id, structuredView: true }));
-    setProfileModalOpen(true);
-  };
-  const updateProfile = (p: ParseProfile) =>
-    setState((s) => ({ ...s, profiles: s.profiles.map((x) => (x.id === p.id ? p : x)) }));
-  const deleteActiveProfile = () =>
-    setState((s) => {
-      const profiles = s.profiles.filter((p) => p.id !== s.activeProfileId);
-      return { ...s, profiles, activeProfileId: profiles[0]?.id ?? null };
-    });
-  const setActiveProfile = (id: string) => setState((s) => ({ ...s, activeProfileId: id }));
-  const toggleStructured = () => setState((s) => ({ ...s, structuredView: !s.structuredView }));
-  const openProfileModal = () => { if (state.activeProfileId) setProfileModalOpen(true); };
-
   // ---------- layout ----------
   const setViewMode = (m: "all" | "matches") => setState((s) => ({ ...s, viewMode: m }));
   const toggleSidebar = () => setState((s) => ({ ...s, sidebarCollapsed: !s.sidebarCollapsed }));
@@ -571,20 +538,6 @@ export function App() {
       { label: "Zoom Out", key: "Ctrl −", action: zoomOut },
       { label: `Reset Zoom  (${fontSize}px)`, key: "Ctrl 0", action: zoomReset },
     ],
-    Parse: [
-      { label: (state.structuredView ? "✓  " : "      ") + "Structured View", action: toggleStructured },
-      { sep: true },
-      { label: "New Profile…", action: addProfile },
-      { label: "Edit Active Profile…", action: openProfileModal },
-      { label: "Delete Active Profile", action: deleteActiveProfile },
-      { sep: true },
-      ...(state.profiles.length
-        ? state.profiles.map((p) => ({
-            label: (p.id === state.activeProfileId ? "●  " : "      ") + p.name,
-            action: () => setActiveProfile(p.id),
-          }))
-        : [{ label: "No profiles yet — New Profile…", action: addProfile }]),
-    ],
     Help: [
       { label: "Find in View", key: "Ctrl F", action: () => setFindOpen(true) },
       { sep: true },
@@ -602,7 +555,7 @@ export function App() {
             logsy
           </div>
           <div className="menubar">
-            {(["File", "Edit", "View", "Parse", "Help"] as const).map((m) => (
+            {(["File", "Edit", "View", "Help"] as const).map((m) => (
               <div
                 key={m}
                 className={"menu" + (openMenu?.name === m ? " active" : "")}
@@ -668,8 +621,6 @@ export function App() {
                   mapWidth={state.mapWidth ?? 14}
                   fontSize={fontSize}
                   showLineNumbers={showLineNumbers}
-                  structured={state.structuredView && !!activeProfileRaw}
-                  columns={columns}
                 />
               </ResizablePanel>
               <ResizableHandle withHandle />
@@ -724,16 +675,6 @@ export function App() {
             onSave={saveFilter}
             onClose={() => setEditing(null)}
             onDelete={() => deleteFilter(editing.filter.id)}
-          />
-        )}
-
-        {/* parse profile editor */}
-        {profileModalOpen && activeProfileRaw && (
-          <ProfileModal
-            profile={activeProfileRaw}
-            sampleLines={lines}
-            onSave={(p) => { updateProfile(p); setProfileModalOpen(false); }}
-            onClose={() => setProfileModalOpen(false)}
           />
         )}
 
