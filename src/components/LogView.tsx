@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Download, Filter, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Columns3, Download, Filter, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { LogFile, ViewResult, CompiledFilter, FieldValue } from "../types";
@@ -75,16 +75,19 @@ interface LogViewProps {
   mapWidth: number;
   fontSize: number;
   showLineNumbers: boolean;
+  compareLines: Set<number>;
   style?: CSSProperties;
   onToggleViewMode: (m: "all" | "matches") => void;
   onToggleFind: () => void;
   onCloseFind: () => void;
   onBuildFilter: (pattern: string) => void;
+  onAddToCompare: (ns: number[]) => void;
+  onRemoveFromCompare: (n: number) => void;
 }
 
 export function LogView({
-  file, view, viewMode, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, style,
-  onCloseFind, onBuildFilter,
+  file, view, viewMode, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, compareLines, style,
+  onCloseFind, onBuildFilter, onAddToCompare, onRemoveFromCompare,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -93,9 +96,12 @@ export function LogView({
   const [query, setQuery] = useState("");
   const [current, setCurrent] = useState(0);
   const [selMenu, setSelMenu] = useState<{ x: number; y: number; text: string } | null>(null);
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; n: number; hasFields: boolean } | null>(null);
   const [selectedLines, setSelectedLines] = useState<Set<number>>(() => new Set());
   const [anchorRi, setAnchorRi] = useState<number | null>(null);
   const [expandedLines, setExpandedLines] = useState<Set<number>>(() => new Set());
+
+  const [altDown, setAltDown] = useState(false);
 
   const toggleExpand = (n: number) =>
     setExpandedLines((s) => {
@@ -103,6 +109,21 @@ export function LogView({
       next.has(n) ? next.delete(n) : next.add(n);
       return next;
     });
+
+  // Track Alt so loglines can show a pointer cursor (and reveal the chevron) on hover.
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => { if (e.key === "Alt") setAltDown(true); };
+    const up = (e: KeyboardEvent) => { if (e.key === "Alt") setAltDown(false); };
+    const blur = () => setAltDown(false);
+    window.addEventListener("keydown", down);
+    window.addEventListener("keyup", up);
+    window.addEventListener("blur", blur);
+    return () => {
+      window.removeEventListener("keydown", down);
+      window.removeEventListener("keyup", up);
+      window.removeEventListener("blur", blur);
+    };
+  }, []);
 
   const isDragSelectingRef = useRef(false);
   const dragStartRiRef = useRef<number | null>(null);
@@ -329,20 +350,23 @@ export function LogView({
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
 
-  // Selected lines that have parsed fields, for the comparison table.
-  const compareRows = useMemo(
-    () => visible.filter((r) => selectedLines.has(r.n) && r.fields),
-    [visible, selectedLines],
-  );
-  // Union of field names across the compared rows, in first-seen order.
-  const compareCols = useMemo(() => {
-    const out: string[] = [];
-    const seen = new Set<string>();
-    for (const r of compareRows) {
-      for (const k of Object.keys(r.fields!)) if (!seen.has(k)) { seen.add(k); out.push(k); }
+  function onRowContextMenu(e: React.MouseEvent, n: number, hasFields: boolean) {
+    e.preventDefault();
+    setSelMenu(null);
+    setRowMenu({ x: e.clientX, y: e.clientY, n, hasFields });
+  }
+
+  useEffect(() => {
+    if (!rowMenu) return;
+    function h(e: MouseEvent) {
+      const menu = document.querySelector(".row-menu");
+      if (menu && !menu.contains(e.target as Node)) setRowMenu(null);
     }
-    return out;
-  }, [compareRows]);
+    function esc(e: KeyboardEvent) { if (e.key === "Escape") setRowMenu(null); }
+    document.addEventListener("mousedown", h);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", h); document.removeEventListener("keydown", esc); };
+  }, [rowMenu]);
 
   return (
     <div className="logview" style={style}>
@@ -432,7 +456,7 @@ export function LogView({
       ) : (
         <div className="log-content-area">
           <div
-            className={"log-scroll scroll" + (showLineNumbers ? "" : " no-gutter")}
+            className={"log-scroll scroll" + (showLineNumbers ? "" : " no-gutter") + (altDown ? " alt-mode" : "")}
             ref={scrollRef}
             onMouseDown={() => setSelMenu(null)}
             onMouseUp={handleMouseUp}
@@ -459,11 +483,12 @@ export function LogView({
                     style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}
                   >
                     <div
-                      className={"log-row" + (w ? " matched" : "") + (dim ? " dim" : "") + (sel ? " selected" : "") + (canExpand ? " expandable" : "")}
+                      className={"log-row" + (w ? " matched" : "") + (dim ? " dim" : "") + (sel ? " selected" : "") + (canExpand ? " expandable" : "") + (compareLines.has(r.n) ? " incompare" : "")}
                       style={rowStyle}
                       onMouseDown={(e) => handleRowMouseDown(e, vItem.index)}
                       onMouseEnter={() => handleRowMouseEnter(vItem.index)}
                       onClick={(e) => onRowClick(e, vItem.index, r.n)}
+                      onContextMenu={(e) => onRowContextMenu(e, r.n, canExpand)}
                     >
                       {canExpand && (
                         <span
@@ -501,53 +526,35 @@ export function LogView({
         </div>
       )}
 
-      {/* field comparison table for multi-selected lines */}
-      {compareRows.length >= 2 && (
-        <div className="cmp-panel">
-          <div className="cmp-head">
-            <span className="cmp-title">Compare · {compareRows.length} lines</span>
-            <div className="lv-spacer" />
-            <Tooltip>
-              <TooltipTrigger render={<Button size="icon-sm" onClick={() => setSelectedLines(new Set())} />}>
-                <X size={15} />
-              </TooltipTrigger>
-              <TooltipContent>Clear selection</TooltipContent>
-            </Tooltip>
-          </div>
-          <div className="cmp-scroll scroll">
-            <table className="cmp-table">
-              <thead>
-                <tr>
-                  <th className="cmp-ln">line</th>
-                  {compareCols.map((c) => <th key={c}>{c}</th>)}
-                </tr>
-              </thead>
-              <tbody>
-                {compareRows.map((r) => (
-                  <tr key={r.n}>
-                    <td className="cmp-ln">{r.n}</td>
-                    {compareCols.map((c) => {
-                      const fv = r.fields![c];
-                      return (
-                        <td key={c} className={fv && typeof fv.value === "number" ? "num" : ""}>
-                          {fv ? fv.raw : "—"}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
       {/* selection popup */}
       {selMenu && (
         <div className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
           <button onClick={() => { onBuildFilter(selMenu.text); setSelMenu(null); }} title="Add the selected text as a new filter">
             <Filter size={13} /> Add filter…
           </button>
+        </div>
+      )}
+
+      {/* logline right-click menu */}
+      {rowMenu && (
+        <div className="sel-menu row-menu" style={{ left: rowMenu.x, top: rowMenu.y }}>
+          {compareLines.has(rowMenu.n) ? (
+            <button onClick={() => { onRemoveFromCompare(rowMenu.n); setRowMenu(null); }}>
+              <Columns3 size={13} /> Remove from compare
+            </button>
+          ) : !rowMenu.hasFields ? (
+            <button disabled title="This line has no parsed fields">
+              <Columns3 size={13} /> No parsed fields
+            </button>
+          ) : selectedLines.has(rowMenu.n) && selectedLines.size > 1 ? (
+            <button onClick={() => { onAddToCompare([...selectedLines]); setRowMenu(null); }}>
+              <Columns3 size={13} /> Add {selectedLines.size} lines to compare
+            </button>
+          ) : (
+            <button onClick={() => { onAddToCompare([rowMenu.n]); setRowMenu(null); }}>
+              <Columns3 size={13} /> Add to compare
+            </button>
+          )}
         </div>
       )}
     </div>

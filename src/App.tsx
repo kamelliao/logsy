@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect, useCallback, useRef, CSSProperties } from "react";
-import { FolderOpen, Minus, Square, Upload, X } from "lucide-react";
+import { useState, useMemo, useEffect, useCallback, useRef, Fragment, CSSProperties, ReactNode } from "react";
+import type { PanelImperativeHandle } from "react-resizable-panels";
+import { ChevronsDownUp, ChevronsUpDown, FolderOpen, Minus, PanelBottom, PanelRight, Square, Upload, X } from "lucide-react";
 import { tinykeys } from "tinykeys";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -50,6 +51,7 @@ import { Sidebar } from "./components/Sidebar";
 import { LogView } from "./components/LogView";
 import { FilterPanel } from "./components/FilterPanel";
 import { EditModal } from "./components/EditModal";
+import { CompareTable } from "./components/CompareTable";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -89,6 +91,10 @@ export function App() {
   const [state, setState] = useState<AppState>(loadState);
   const [editing, setEditing] = useState<{ isNew: boolean; filter: Filter } | null>(null);
   const [findOpen, setFindOpen] = useState(false);
+  // Lines explicitly added to the comparison panel (kept separate from selection).
+  const [compareLines, setCompareLines] = useState<Set<number>>(() => new Set());
+  const fpRef = useRef<PanelImperativeHandle | null>(null);
+  const cmpRef = useRef<PanelImperativeHandle | null>(null);
   const [openMenu, setOpenMenu] = useState<{ name: string; x: number; y: number } | null>(null);
   // Bumped whenever a file's lines land in `linesStore`, to re-derive `lines`.
   const [linesVersion, setLinesVersion] = useState(0);
@@ -107,6 +113,11 @@ export function App() {
   );
   const compiled = useMemo(() => compileAll(group?.filters ?? []), [group?.filters]);
   const view = useMemo(() => computeView(lines, compiled), [lines, compiled]);
+  // Rows shown in the comparison panel: explicitly-added, still-visible, parsed lines.
+  const compareRows = useMemo(
+    () => view.rows.filter((r) => !r.excluded && compareLines.has(r.n) && r.fields),
+    [view, compareLines],
+  );
 
   // ---------- helpers ----------
   const patchState = useCallback((fn: (s: AppState) => void) => {
@@ -454,6 +465,48 @@ export function App() {
     else if (action === "import") void importFilters();
   };
 
+  // ---------- compare panel ----------
+  const addToCompare = (ns: number[]) => setCompareLines((s) => { const x = new Set(s); ns.forEach((n) => x.add(n)); return x; });
+  const removeFromCompare = (n: number) => setCompareLines((s) => { const x = new Set(s); x.delete(n); return x; });
+  const clearCompare = () => setCompareLines(new Set());
+  // Drop comparison lines when switching files (line numbers are file-specific).
+  useEffect(() => { setCompareLines(new Set()); }, [state.activeFileId]);
+
+  // ---------- dock layout ----------
+  const setComparePos = (pos: "bottom" | "right") => setState((s) => ({ ...s, comparePos: pos }));
+  const setFilterPos = (pos: "bottom" | "right") => setState((s) => ({ ...s, panelPos: pos }));
+  const toggleFilterCollapsed = () => setState((s) => ({ ...s, filterCollapsed: !s.filterCollapsed }));
+  const toggleCompareCollapsed = () => setState((s) => ({ ...s, compareCollapsed: !s.compareCollapsed }));
+
+  const showCompare = compareRows.length > 0;
+  // Structure signature: panels remount when positions or compare-presence change.
+  const layoutKey = `${state.panelPos}|${state.comparePos}|${showCompare}`;
+
+  // Build a group's initial layout from persisted sizes, normalised to 100%.
+  const layoutFor = (ids: string[]): Record<string, number> => {
+    const ps = state.panelSizes ?? {};
+    const out: Record<string, number> = {};
+    let known = 0; const unknown: string[] = [];
+    for (const id of ids) { const v = ps[id]; if (typeof v === "number") { out[id] = v; known += v; } else unknown.push(id); }
+    if (unknown.length) { const each = Math.max(10, 100 - known) / unknown.length; for (const id of unknown) out[id] = each; }
+    const sum = ids.reduce((a, id) => a + out[id], 0) || 1;
+    for (const id of ids) out[id] = (out[id] / sum) * 100;
+    return out;
+  };
+  const onLayout = (layout: Record<string, number>) => setState((s) => {
+    const ps = { ...(s.panelSizes ?? {}) };
+    for (const [id, v] of Object.entries(layout)) {
+      if (id === "fp" && s.filterCollapsed) continue;   // don't persist a collapsed size
+      if (id === "cmp" && s.compareCollapsed) continue;
+      ps[id] = v;
+    }
+    return { ...s, panelSizes: ps };
+  });
+
+  // Keep the panels' collapsed state in sync with persisted flags.
+  useEffect(() => { const p = fpRef.current; if (p) state.filterCollapsed ? p.collapse() : p.expand(); }, [state.filterCollapsed, layoutKey]);
+  useEffect(() => { const p = cmpRef.current; if (p && showCompare) state.compareCollapsed ? p.collapse() : p.expand(); }, [state.compareCollapsed, layoutKey, showCompare]);
+
   // ---------- layout ----------
   const setViewMode = (m: "all" | "matches") => setState((s) => ({ ...s, viewMode: m }));
   const toggleSidebar = () => setState((s) => ({ ...s, sidebarCollapsed: !s.sidebarCollapsed }));
@@ -481,9 +534,6 @@ export function App() {
   const showLineNumbers = state.showLineNumbers ?? true;
   const rowH = Math.round(fontSize * 1.5);
   const filterRowH = Math.round(fontSize * 1.58);
-
-  const vertical = (state.panelPos ?? "bottom") === "right";
-  const splitRatio = state.splitRatio ?? 0.75;
 
   // ---------- keyboard shortcuts ----------
   useEffect(() => {
@@ -545,6 +595,134 @@ export function App() {
     ],
   };
 
+  // Build the resizable workspace: log view + filter/compare docks. Docks dock
+  // bottom or right; on the same side compare sits before (above/left-of) filter.
+  function renderWorkspace(): ReactNode {
+    const logview = (
+      <LogView
+        file={file!}
+        view={view}
+        viewMode={state.viewMode}
+        onToggleViewMode={setViewMode}
+        onToggleFind={() => setFindOpen((v) => !v)}
+        findOpen={findOpen}
+        onCloseFind={() => setFindOpen(false)}
+        onBuildFilter={openFilterFromPattern}
+        mapColorMode={state.mapColorMode ?? "bg"}
+        mapWidth={state.mapWidth ?? 14}
+        fontSize={fontSize}
+        showLineNumbers={showLineNumbers}
+        compareLines={compareLines}
+        onAddToCompare={addToCompare}
+        onRemoveFromCompare={removeFromCompare}
+      />
+    );
+
+    const dockNode = (kind: "fp" | "cmp"): ReactNode => {
+      const collapsed = kind === "fp" ? state.filterCollapsed : state.compareCollapsed;
+      const pos = kind === "fp" ? state.panelPos : state.comparePos;
+      const setPos = kind === "fp" ? setFilterPos : setComparePos;
+      const toggle = kind === "fp" ? toggleFilterCollapsed : toggleCompareCollapsed;
+      const title = kind === "fp" ? "Filters" : `Compare · ${compareRows.length}`;
+      return (
+        <div className={"dock dock-" + pos + (collapsed ? " collapsed" : "")}>
+          <div className="dock-head">
+            <button className="dock-btn" title={collapsed ? "Expand" : "Collapse"} onClick={toggle}>
+              {collapsed ? <ChevronsUpDown size={14} /> : <ChevronsDownUp size={14} />}
+            </button>
+            <span className="dock-title">{title}</span>
+            <div className="dock-spacer" />
+            {kind === "cmp" && !collapsed && (
+              <button className="dock-btn" title="Clear comparison" onClick={clearCompare}><X size={14} /></button>
+            )}
+            <button className="dock-btn" title={pos === "bottom" ? "Dock right" : "Dock bottom"} onClick={() => setPos(pos === "bottom" ? "right" : "bottom")}>
+              {pos === "bottom" ? <PanelRight size={14} /> : <PanelBottom size={14} />}
+            </button>
+          </div>
+          {!collapsed && (
+            <div className="dock-body">
+              {kind === "fp" ? (
+                <FilterPanel
+                  file={file!}
+                  group={group!}
+                  counts={view.counts}
+                  onSwitchGroup={switchGroup}
+                  onAddGroup={addGroup}
+                  onRenameGroup={renameGroup}
+                  onDeleteGroup={deleteGroup}
+                  onReorderGroup={reorderGroups}
+                  onAddSection={addSection}
+                  onRenameSection={renameSection}
+                  onToggleSection={toggleSection}
+                  onDeleteSection={deleteSection}
+                  onReorderTop={reorderTop}
+                  onSetSectionEnabled={setSectionEnabled}
+                  onUpdateFilter={updateFilter}
+                  onAddFilter={openNewFilter}
+                  onDeleteFilter={deleteFilter}
+                  onDuplicateFilter={duplicateFilter}
+                  onEditFilter={openEditFilter}
+                  onMoveFilter={moveFilter}
+                  onBulk={bulk}
+                />
+              ) : (
+                <CompareTable rows={compareRows} onRemove={removeFromCompare} />
+              )}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    type PanelDesc = { id: string; node: ReactNode; collapsible?: boolean; ref?: React.RefObject<PanelImperativeHandle | null> };
+    const buildGroup = (orientation: "vertical" | "horizontal", gid: string, panels: PanelDesc[]): ReactNode => {
+      const dl = layoutFor(panels.map((p) => p.id));
+      return (
+        <ResizablePanelGroup orientation={orientation} className="main" id={gid} defaultLayout={dl} onLayoutChanged={onLayout}>
+          {panels.map((p, i) => (
+            <Fragment key={p.id}>
+              <ResizablePanel
+                id={p.id}
+                defaultSize={`${dl[p.id]}%`}
+                minSize={p.collapsible ? "8%" : "15%"}
+                collapsible={p.collapsible}
+                collapsedSize="34px"
+                panelRef={p.ref}
+              >
+                {p.node}
+              </ResizablePanel>
+              {i < panels.length - 1 && <ResizableHandle withHandle />}
+            </Fragment>
+          ))}
+        </ResizablePanelGroup>
+      );
+    };
+
+    const docks = [
+      { id: "fp", pos: state.panelPos, ref: fpRef },
+      ...(showCompare ? [{ id: "cmp", pos: state.comparePos, ref: cmpRef }] : []),
+    ];
+    // Order each side so compare comes before filter (above when bottom, left when right).
+    const side = (s: "bottom" | "right") =>
+      docks.filter((d) => d.pos === s).sort((a, b) => (a.id === "cmp" ? -1 : 1) - (b.id === "cmp" ? -1 : 1));
+    const bottomDocks = side("bottom");
+    const rightDocks = side("right");
+    const dockPanel = (d: { id: string; ref: React.RefObject<PanelImperativeHandle | null> }): PanelDesc =>
+      ({ id: d.id, node: dockNode(d.id as "fp" | "cmp"), collapsible: true, ref: d.ref });
+
+    let center: ReactNode = logview;
+    if (bottomDocks.length) {
+      center = buildGroup("vertical", "grp-v", [{ id: "lv", node: logview }, ...bottomDocks.map(dockPanel)]);
+    }
+    if (rightDocks.length) {
+      return buildGroup("horizontal", "grp-h", [
+        { id: bottomDocks.length ? "center" : "lv", node: center },
+        ...rightDocks.map(dockPanel),
+      ]);
+    }
+    return center;
+  }
+
   return (
     <TooltipProvider delay={600}>
       <div className="app" style={{ "--log-font-size": `${fontSize}px`, "--log-row-h": `${rowH}px`, "--filter-row-h": `${filterRowH}px` } as CSSProperties}>
@@ -597,59 +775,7 @@ export function App() {
             onResetWorkspace={() => { localStorage.removeItem(STATE_KEY); location.reload(); }}
           />
           {file && group ? (
-            <ResizablePanelGroup
-              orientation={vertical ? "horizontal" : "vertical"}
-              className="main"
-              id="logsy-main"
-              defaultLayout={{ "lv": splitRatio * 100, "fp": (1 - splitRatio) * 100 }}
-              onLayoutChanged={(layout) => {
-                const r = (layout["lv"] ?? 50) / 100;
-                setState((s) => ({ ...s, splitRatio: Math.max(0.18, Math.min(0.82, r)) }));
-              }}
-            >
-              <ResizablePanel id="lv" defaultSize={`${splitRatio * 100}%`} minSize="15%">
-                <LogView
-                  file={file}
-                  view={view}
-                  viewMode={state.viewMode}
-                  onToggleViewMode={setViewMode}
-                  onToggleFind={() => setFindOpen((v) => !v)}
-                  findOpen={findOpen}
-                  onCloseFind={() => setFindOpen(false)}
-                  onBuildFilter={openFilterFromPattern}
-                  mapColorMode={state.mapColorMode ?? "bg"}
-                  mapWidth={state.mapWidth ?? 14}
-                  fontSize={fontSize}
-                  showLineNumbers={showLineNumbers}
-                />
-              </ResizablePanel>
-              <ResizableHandle withHandle />
-              <ResizablePanel id="fp" defaultSize={`${(1 - splitRatio) * 100}%`} minSize="15%">
-                <FilterPanel
-                  file={file}
-                  group={group}
-                  counts={view.counts}
-                  onSwitchGroup={switchGroup}
-                  onAddGroup={addGroup}
-                  onRenameGroup={renameGroup}
-                  onDeleteGroup={deleteGroup}
-                  onReorderGroup={reorderGroups}
-                  onAddSection={addSection}
-                  onRenameSection={renameSection}
-                  onToggleSection={toggleSection}
-                  onDeleteSection={deleteSection}
-                  onReorderTop={reorderTop}
-                  onSetSectionEnabled={setSectionEnabled}
-                  onUpdateFilter={updateFilter}
-                  onAddFilter={openNewFilter}
-                  onDeleteFilter={deleteFilter}
-                  onDuplicateFilter={duplicateFilter}
-                  onEditFilter={openEditFilter}
-                  onMoveFilter={moveFilter}
-                  onBulk={bulk}
-                />
-              </ResizablePanel>
-            </ResizablePanelGroup>
+            renderWorkspace()
           ) : (
             <div className="empty-workspace">
               <div className="ew-card">

@@ -126,6 +126,10 @@ export function initialState(): AppState {
     mapWidth: 14,
     fontSize: 12.5,
     showLineNumbers: true,
+    comparePos: "right",
+    filterCollapsed: false,
+    compareCollapsed: false,
+    panelSizes: {},
   };
 }
 
@@ -164,6 +168,10 @@ export function normalizeState(state: AppState): AppState {
   if (!state.mapWidth) state.mapWidth = 14;
   if (!state.fontSize) state.fontSize = 12.5;
   if (state.showLineNumbers === undefined) state.showLineNumbers = true;
+  if (state.comparePos !== "bottom" && state.comparePos !== "right") state.comparePos = "right";
+  if (state.filterCollapsed === undefined) state.filterCollapsed = false;
+  if (state.compareCollapsed === undefined) state.compareCollapsed = false;
+  if (!state.panelSizes || typeof state.panelSizes !== "object") state.panelSizes = {};
   // Drop the short-lived app-level parse-profile fields; parsing now lives on
   // individual regex filters (Filter.fields / Filter.extractOnly).
   delete (state as Partial<Record<"profiles" | "activeProfileId" | "structuredView", unknown>>).profiles;
