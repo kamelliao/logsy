@@ -691,7 +691,14 @@ export function App() {
                   onBulk={bulk}
                 />
               ) : (
-                <CompareTable rows={compareRows} onRemove={removeFromCompare} />
+                <CompareTable
+                  rows={compareRows}
+                  onRemove={removeFromCompare}
+                  labelFor={(id) => {
+                    const f = group!.filters.find((x) => x.id === id);
+                    return (f?.description?.trim() || f?.pattern) ?? "fields";
+                  }}
+                />
               )}
             </div>
           )}

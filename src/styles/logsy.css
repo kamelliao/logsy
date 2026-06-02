@@ -438,34 +438,30 @@ button { font-family: inherit; }
    let this fixed popup stretch to the panel width) */
 .row-menu { width: max-content; max-width: 340px; }
 
-/* ---- multi-line field comparison table (Notion-ish: rows, not a grid) ---- */
+/* ---- multi-line field comparison: one shadcn table per matching pattern ---- */
 .cmp-empty { padding: 16px 16px; font-size: 12.5px; color: var(--text-3); line-height: 1.55; }
 .cmp-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
-.cmp-table { width: max-content; min-width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.cmp-table thead th {
-  position: sticky; top: 0; z-index: 1; background: var(--app-bg);
-  font-family: var(--ui-font); font-size: 10px; font-weight: 600;
-  text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-3);
-  text-align: left; padding: 8px 14px; border-bottom: 1px solid var(--border-strong);
-  white-space: nowrap;
+.cmp-group { padding-bottom: 8px; }
+.cmp-group-head {
+  font-family: var(--ui-font); font-size: 11px; font-weight: 600; color: var(--text-3);
+  padding: 9px 12px 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.cmp-table td {
-  padding: 7px 14px; border-bottom: 1px solid var(--border);
-  font-family: var(--mono-font); color: var(--text); white-space: pre; vertical-align: top;
-}
-.cmp-table tbody tr:hover td { background: var(--row-hover); }
-.cmp-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
-.cmp-table .cmp-ln {
-  color: var(--text-3); font-variant-numeric: tabular-nums; text-align: right;
+/* compare text matches the log line's font + size */
+.cmp-shadcn { width: max-content; min-width: 100%; font-family: var(--mono-font); font-size: var(--log-font-size, 12.5px); }
+.cmp-shadcn th, .cmp-shadcn td { white-space: pre; }
+.cmp-shadcn thead th { color: var(--text-3); font-family: var(--mono-font); }
+.cmp-shadcn .cmp-ln {
+  color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums;
   -webkit-user-select: none; user-select: none;
 }
-.cmp-table th.cmp-rm, .cmp-table .cmp-rm { width: 28px; padding: 0; text-align: center; }
-.cmp-table .cmp-rm button {
-  opacity: 0; width: 19px; height: 19px; border: none; background: none; border-radius: 5px;
+.cmp-shadcn .num { text-align: right; font-variant-numeric: tabular-nums; }
+.cmp-shadcn th.cmp-rm, .cmp-shadcn td.cmp-rm { width: 26px; padding-left: 6px; padding-right: 0; text-align: center; }
+.cmp-shadcn .cmp-rm button {
+  opacity: 0; width: 18px; height: 18px; border: none; background: none; border-radius: 4px;
   display: grid; place-items: center; color: var(--text-3); cursor: pointer; transition: opacity 0.1s;
 }
-.cmp-table tbody tr:hover .cmp-rm button { opacity: 1; }
-.cmp-table .cmp-rm button:hover { background: #fdecec; color: var(--error); }
+.cmp-shadcn tr:hover .cmp-rm button { opacity: 1; }
+.cmp-shadcn .cmp-rm button:hover { background: #fdecec; color: var(--error); }
 /* lines currently in the comparison panel get a subtle marker */
 .log-row.incompare .log-gut { box-shadow: inset 2px 0 0 var(--accent, #2c6ce6); }
 
