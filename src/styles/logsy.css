@@ -967,6 +967,7 @@ button { font-family: inherit; }
   position: fixed; top: 50%; left: 50%; z-index: 101;
 }
 .modal {
+  position: relative;
   width: 540px; max-width: calc(100vw - 40px);
   max-height: calc(100vh - 72px);
   display: flex; flex-direction: column;
@@ -1109,6 +1110,21 @@ button { font-family: inherit; }
   background: var(--panel-bg-2);
 }
 .modal-foot .spacer { flex: 1 1 auto; }
+
+/* confirm-on-discard overlay inside the edit modal */
+.modal-confirm {
+  position: absolute; inset: 0; z-index: 5;
+  display: grid; place-items: center;
+  background: rgba(20, 22, 26, 0.32); border-radius: 14px;
+}
+.mc-box {
+  width: 320px; max-width: calc(100% - 32px);
+  background: #fff; border-radius: 12px; box-shadow: var(--shadow-modal);
+  padding: 18px 18px 14px;
+}
+.mc-title { font-size: 14.5px; font-weight: 600; color: var(--text); }
+.mc-msg { font-size: 12.5px; color: var(--text-3); margin-top: 5px; }
+.mc-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 .btn.danger-ghost { background: #fff; border: 1px solid var(--border-strong); color: var(--error); }
 .btn.danger-ghost:hover { background: #fdecec; border-color: #f3c6c2; }
 

@@ -6,7 +6,7 @@ import { PALETTE, TEXT_SWATCHES, BG_SWATCHES } from "../data";
 
 const FIELD_TYPES: FieldType[] = ["string", "int", "hex", "float", "time"];
 import { Button } from "./ui/button";
-import { Dialog, DialogClose, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -93,18 +93,32 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
     });
   }
 
+  // Has anything actually changed from the filter we opened?
+  const dirty = useMemo(() => {
+    const current = JSON.stringify({ ...draft, fields: hasFields ? fields : undefined, extractOnly: hasFields ? extractOnly : false });
+    const original = JSON.stringify({ ...filter, fields: filter.fields, extractOnly: filter.extractOnly ?? false });
+    return current !== original;
+  }, [draft, fields, extractOnly, hasFields, filter]);
+
+  const [confirmingClose, setConfirmingClose] = useState(false);
+  // Closing with unsaved edits asks for confirmation first.
+  function requestClose() {
+    if (dirty) setConfirmingClose(true);
+    else onClose();
+  }
+
   const selectedPal = PALETTE.find(
     (p) => p.text.toLowerCase() === draft.textColor.toLowerCase() && p.bg.toLowerCase() === draft.bgColor.toLowerCase()
   );
 
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+    <Dialog open onOpenChange={(o) => { if (!o) requestClose(); }}>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{isNew ? "New filter" : "Edit filter"}</DialogTitle>
-          <DialogClose render={<Button size="icon" className="mh-x" />}>
+          <Button size="icon" className="mh-x" onClick={requestClose}>
             <X size={18} />
-          </DialogClose>
+          </Button>
         </DialogHeader>
 
         <div className="modal-body">
@@ -263,7 +277,7 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
             </Button>
           )}
           <div className="spacer" />
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button variant="ghost" onClick={requestClose}>Cancel</Button>
           <Button
             disabled={!valid}
             style={valid ? undefined : { opacity: 0.5, cursor: "not-allowed" }}
@@ -272,6 +286,19 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
             {isNew ? "Add filter" : "Save"}
           </Button>
         </DialogFooter>
+
+        {confirmingClose && (
+          <div className="modal-confirm">
+            <div className="mc-box">
+              <div className="mc-title">Discard changes?</div>
+              <div className="mc-msg">This filter has unsaved edits.</div>
+              <div className="mc-actions">
+                <Button variant="ghost" onClick={() => setConfirmingClose(false)}>Keep editing</Button>
+                <Button variant="destructive" onClick={onClose}>Discard</Button>
+              </div>
+            </div>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );
