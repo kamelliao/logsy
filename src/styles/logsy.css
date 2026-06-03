@@ -356,8 +356,9 @@ button { font-family: inherit; }
   width: 2px; background: var(--accent); z-index: 2;
 }
 .log-gut {
-  flex: 0 0 53px; width: 53px;
-  text-align: right; padding-right: 12px;
+  flex: 0 0 var(--log-gut-w, 53px); width: var(--log-gut-w, 53px);
+  /* 18px left reserves the expand-chevron lane (see gutterW in LogView) */
+  text-align: right; padding-left: 18px; padding-right: 12px;
   color: #b3b8be; -webkit-user-select: none; user-select: none;
   font-variant-numeric: tabular-nums;
   /* opaque so a matched/selected row's color never tints the line-number column */
@@ -382,12 +383,14 @@ button { font-family: inherit; }
 .log-scroll.alt-mode .log-row.expandable .log-exp { opacity: 0.55; }
 .log-exp:hover { color: var(--text); }
 .log-fieldpanel {
-  padding: 4px 12px 7px 65px;
+  padding: 4px 12px 7px calc(var(--log-gut-w, 53px) + 12px);
   background: var(--panel-bg-2, #f6f7f9);
   border-bottom: 1px solid var(--border);
   overflow-x: auto; white-space: nowrap;
 }
-.log-scroll.no-gutter .log-fieldpanel { padding-left: 14px; }
+/* no gutter: still reserve the chevron lane in front of the text */
+.log-scroll.no-gutter .log-txt { padding-left: 20px; }
+.log-scroll.no-gutter .log-fieldpanel { padding-left: 20px; }
 .fp-table { border-collapse: collapse; font-family: var(--mono-font); font-size: 12px; }
 .fp-table td { border: 1px solid var(--border); padding: 2px 8px; white-space: pre; }
 .fp-keys td {
@@ -439,26 +442,79 @@ button { font-family: inherit; }
 .row-menu { width: max-content; max-width: 340px; }
 
 /* ---- multi-line field comparison: one shadcn table per matching pattern ---- */
-.cmp-empty { padding: 16px 16px; font-size: 12.5px; color: var(--text-3); line-height: 1.55; }
-.cmp-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; }
-.cmp-group { padding-bottom: 8px; }
-.cmp-group-head {
-  font-family: var(--ui-font); font-size: 11px; font-weight: 600; color: var(--text-3);
-  padding: 9px 12px 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.cmp-empty {
+  margin: 14px; padding: 18px 16px; font-size: 12.5px; color: var(--text-3); line-height: 1.6;
+  text-align: center; background: var(--panel-bg-2);
+  border: 1px dashed var(--border-strong); border-radius: 10px;
+}
+.cmp-empty b { color: var(--text-2); font-weight: 600; }
+.cmp-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 11px 12px 14px; scrollbar-gutter: stable; }
+
+.cmp-group { margin-bottom: 16px; }
+.cmp-group:last-child { margin-bottom: 2px; }
+.cmp-group-head { display: flex; align-items: center; gap: 7px; padding: 0 2px 7px; }
+.cmp-dot {
+  flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
+}
+.cmp-group-label {
+  min-width: 0; font-family: var(--ui-font); font-size: 12px; font-weight: 600; color: var(--text-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.cmp-group-count {
+  flex: 0 0 auto; font-size: 10.5px; font-weight: 600; color: var(--text-3);
+  background: var(--panel-bg-2); border: 1px solid var(--border); border-radius: 9px;
+  padding: 0 7px; line-height: 16px; font-variant-numeric: tabular-nums;
+}
+.cmp-group-spacer { flex: 1 1 auto; }
+.cmp-export {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
+  height: 24px; padding: 0 9px; border-radius: 6px;
+  border: 1px solid var(--border-strong); background: #fff; color: var(--text-2);
+  font-family: var(--ui-font); font-size: 11.5px; font-weight: 600; cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
+}
+.cmp-export:hover { background: var(--row-hover); border-color: #c2c7cd; color: var(--text); }
+.cmp-export:active { transform: translateY(0.5px); }
+.cmp-export svg { color: var(--text-3); }
+.cmp-export:hover svg { color: var(--text-2); }
+
+/* table wrapped in a rounded card */
+.cmp-card {
+  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
+  background: #fff; box-shadow: 0 1px 2px rgba(20,22,26,0.04);
 }
 /* compare text matches the log line's font + size */
-.cmp-shadcn { width: max-content; min-width: 100%; font-family: var(--mono-font); font-size: var(--log-font-size, 12.5px); }
-.cmp-shadcn th, .cmp-shadcn td { white-space: pre; }
-.cmp-shadcn thead th { color: var(--text-3); font-family: var(--mono-font); }
+.cmp-shadcn {
+  width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0;
+  font-family: var(--mono-font); font-size: var(--log-font-size, 12.5px);
+}
+.cmp-shadcn tr { border: none; }
+.cmp-shadcn th, .cmp-shadcn td {
+  white-space: pre; height: var(--log-row-h, 21px); padding: 0 13px; border: none;
+}
+.cmp-shadcn thead th {
+  color: var(--text-3); font-family: var(--ui-font); font-size: 10.5px; font-weight: 600;
+  letter-spacing: 0.04em; text-transform: uppercase;
+  background: var(--panel-bg-2); border-bottom: 1px solid var(--border);
+}
+.cmp-shadcn tbody td { color: var(--text); border-bottom: 1px solid var(--border); }
+.cmp-shadcn tbody tr:last-child td { border-bottom: none; }
+.cmp-shadcn tbody tr:nth-child(even) { background: rgba(20,22,26,0.018); }
+.cmp-shadcn tbody tr:hover { background: var(--accent-bg); }
 .cmp-shadcn .cmp-ln {
-  color: var(--text-3); text-align: right; font-variant-numeric: tabular-nums;
+  color: var(--text-3); text-align: left; font-variant-numeric: tabular-nums;
   -webkit-user-select: none; user-select: none;
 }
-.cmp-shadcn .num { text-align: right; font-variant-numeric: tabular-nums; }
-.cmp-shadcn th.cmp-rm, .cmp-shadcn td.cmp-rm { width: 26px; padding-left: 6px; padding-right: 0; text-align: center; }
+.cmp-shadcn .num { text-align: left; font-variant-numeric: tabular-nums; }
+/* greedy trailing column: absorbs leftover width so data columns size to their
+   content (no big gaps / right-drift from min-width:100% stretching) */
+.cmp-shadcn .cmp-pad { width: 100%; padding: 0; }
+.cmp-shadcn th.cmp-rm, .cmp-shadcn td.cmp-rm { width: 30px; padding-left: 8px; padding-right: 0; text-align: center; }
 .cmp-shadcn .cmp-rm button {
-  opacity: 0; width: 18px; height: 18px; border: none; background: none; border-radius: 4px;
-  display: grid; place-items: center; color: var(--text-3); cursor: pointer; transition: opacity 0.1s;
+  opacity: 0; width: 19px; height: 19px; border: none; background: none; border-radius: 5px;
+  display: grid; place-items: center; color: var(--text-3); cursor: pointer;
+  transition: opacity 0.1s, background 0.12s, color 0.12s;
 }
 .cmp-shadcn tr:hover .cmp-rm button { opacity: 1; }
 .cmp-shadcn .cmp-rm button:hover { background: #fdecec; color: var(--error); }
@@ -646,9 +702,11 @@ button { font-family: inherit; }
 .gtab.gdrop-after::after { right: -1px; }
 
 /* ---- filter toolbar ---- */
+/* right padding (22px) = filter-list pad (6) + reserved scrollbar gutter (12) +
+   filter-row pad (4), so the toolbar "⋮" lines up with each row's "⋮" below */
 .filter-toolbar {
   display: flex; align-items: center; gap: 6px;
-  padding: 5px 8px; flex: 0 0 auto;
+  padding: 5px 22px 5px 8px; flex: 0 0 auto;
   container-type: inline-size;
 }
 
@@ -673,7 +731,8 @@ button { font-family: inherit; }
 /* ---- filter list ---- */
 /* scrollbar-gutter keeps a stable reserved track so rows don't shift when the
    vertical scrollbar appears/disappears */
-.filter-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 6px 8px; scrollbar-gutter: stable; }
+/* left pad 8px aligns each filter row's edge with the search box above it */
+.filter-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 6px 8px 8px; scrollbar-gutter: stable; }
 .filter-row {
   display: flex; align-items: center; gap: 5px;
   height: var(--filter-row-h, 22px); padding: 0 4px 0 1px; margin: 1px 0;
@@ -1010,6 +1069,47 @@ button { font-family: inherit; }
 }
 .pattern-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 .pattern-input.invalid { border-color: var(--error); box-shadow: 0 0 0 3px rgba(180,35,24,0.12); }
+
+/* ---- regex syntax-highlight input (Monokai) ----
+   A coloured overlay sits behind a real <input> whose own text is transparent;
+   both layers share identical box metrics so the glyphs line up exactly. In
+   regex mode the field becomes a dark "code" surface so the Monokai palette
+   reads comfortably and with high contrast. */
+.regex-input {
+  position: relative; width: 100%; height: 42px;
+  border: 1px solid #3a3a32; border-radius: 9px;
+  background: #272822; overflow: hidden;
+}
+.regex-input:focus-within { border-color: #6a6a5c; box-shadow: 0 0 0 3px rgba(102,217,239,0.20); }
+.regex-input.invalid,
+.regex-input.invalid:focus-within { border-color: var(--error); box-shadow: 0 0 0 3px rgba(180,35,24,0.28); }
+.regex-hl, .regex-input-el {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  margin: 0; padding: 0 12px; border: none;
+  font-family: var(--mono-font); font-size: 14px; line-height: 40px;
+  white-space: pre; overflow: hidden;
+}
+.regex-hl { pointer-events: none; color: #f8f8f2; }
+.regex-input-el {
+  background: transparent; outline: none;
+  color: transparent; -webkit-text-fill-color: transparent; caret-color: #f8f8f2;
+}
+.regex-input-el::placeholder { color: #75715e; -webkit-text-fill-color: #75715e; }
+
+/* capture groups get a faint tint that delimits them; nesting deepens it */
+.rx-groupwrap.cap { background: rgba(255,255,255,0.06); border-radius: 3px; }
+
+/* token palette (Monokai) */
+.rx-literal   { color: #f8f8f2; }
+.rx-escape    { color: #ae81ff; }                   /* \d \w \s — purple */
+.rx-class     { color: #e6db74; }                   /* [ … ]    — yellow */
+.rx-group     { color: #66d9ef; }                   /* ( )      — cyan */
+.rx-groupname { color: #a6e22e; font-weight: 700; } /* named field — green */
+.rx-anchor    { color: #f92672; }                   /* ^ $      — pink */
+.rx-quant     { color: #fd971f; }                   /* * + ? {} — orange */
+.rx-alt       { color: #f92672; }                   /* |        — pink */
+.rx-meta      { color: #66d9ef; }                   /* .        — cyan */
+
 .regex-err { color: var(--error); font-size: 11.5px; margin-top: 6px; }
 .match-preview { color: var(--text-3); font-size: 11.5px; margin-top: 7px; font-variant-numeric: tabular-nums; }
 .match-preview b { color: var(--text-2); }
@@ -1137,14 +1237,7 @@ button { font-family: inherit; }
 }
 
 /* ---- field chips on a filter row ---- */
-.fr-fields { display: flex; align-items: center; gap: 4px; margin-left: 8px; flex: 0 0 auto; }
-.fr-fchip {
-  font-family: var(--mono-font); font-size: 10.5px; line-height: 16px;
-  padding: 0 5px; border-radius: 5px; background: var(--accent-bg, #e7efff); color: var(--accent, #2c6ce6);
-  -webkit-user-select: none; user-select: none;
-}
-.fr-fchip.more { background: transparent; color: var(--text-3); padding: 0 2px; }
-.fr-fields.extract-only .fr-fchip { background: #eef0f2; color: var(--text-3); }
+.fr-flag.more { background: transparent; color: var(--text-3); padding: 0 2px; }
 
 /* settings popover reuse */
 .settings-pop { min-width: 240px; padding: 12px; }
