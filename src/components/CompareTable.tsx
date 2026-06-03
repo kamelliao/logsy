@@ -1,7 +1,9 @@
 import { useMemo } from "react";
 import { Download, X } from "lucide-react";
 import type { ViewRow } from "../types";
+import { Button } from "./ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "./ui/table";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 interface CompareTableProps {
   rows: ViewRow[];
@@ -80,7 +82,14 @@ export function CompareTable({ rows, onRemove, labelFor, colorFor, onExport }: C
                   {grpRows.map((r) => (
                     <TableRow key={r.n}>
                       <TableCell className="cmp-rm">
-                        <button title="Remove from compare" onClick={() => onRemove(r.n)}><X size={12} /></button>
+                        <Tooltip>
+                          <TooltipTrigger render={
+                            <Button variant="ghost" size="icon-xs" aria-label="Remove from compare" onClick={() => onRemove(r.n)} />
+                          }>
+                            <X />
+                          </TooltipTrigger>
+                          <TooltipContent side="top">Remove from compare</TooltipContent>
+                        </Tooltip>
                       </TableCell>
                       <TableCell className="cmp-ln">{r.n}</TableCell>
                       {cols.map((c) => {
