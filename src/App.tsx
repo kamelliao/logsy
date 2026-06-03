@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef, Fragment, CSSProperties, ReactNode } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderOpen, Minus, PanelBottom, PanelRight, Square, Upload, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderOpen, Minus, PanelBottom, PanelBottomClose, PanelRight, PanelRightOpen, Square, Upload, X } from "lucide-react";
 import { tinykeys } from "tinykeys";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -466,7 +466,13 @@ export function App() {
   };
 
   // ---------- compare panel ----------
-  const addToCompare = (ns: number[]) => setCompareLines((s) => { const x = new Set(s); ns.forEach((n) => x.add(n)); return x; });
+  const addToCompare = (ns: number[]) => {
+    setCompareLines((s) => { const x = new Set(s); ns.forEach((n) => x.add(n)); return x; });
+    // Surface the comparison: focus its tab, or expand it if it's popped out.
+    setState((s) => s.comparePopped
+      ? { ...s, compareCollapsed: false }
+      : { ...s, activePanelTab: "compare", filterCollapsed: false });
+  };
   const removeFromCompare = (n: number) => setCompareLines((s) => { const x = new Set(s); x.delete(n); return x; });
   const clearCompare = () => setCompareLines(new Set());
   // Drop comparison lines when switching files (line numbers are file-specific).
@@ -498,12 +504,28 @@ export function App() {
   }, [compareRows]);
 
   // ---------- dock layout ----------
-  const setComparePos = (pos: "bottom" | "right") => setState((s) => ({ ...s, comparePos: pos }));
   const setFilterPos = (pos: "bottom" | "right") => setState((s) => ({ ...s, panelPos: pos }));
   const toggleFilterCollapsed = () => setState((s) => ({ ...s, filterCollapsed: !s.filterCollapsed }));
   const toggleCompareCollapsed = () => setState((s) => ({ ...s, compareCollapsed: !s.compareCollapsed }));
+  // Select a tab in the main panel (always expands it if it was collapsed).
+  const selectPanelTab = (tab: "filters" | "compare") =>
+    setState((s) => ({ ...s, activePanelTab: tab, filterCollapsed: false }));
+  // Pop Compare out to its own dock (so it can sit beside Filters); Filters takes
+  // over the main tab area.
+  const popCompareOut = () => setState((s) => ({
+    ...s, comparePopped: true, compareCollapsed: false,
+    activePanelTab: s.activePanelTab === "compare" ? "filters" : s.activePanelTab,
+  }));
+  // Merge Compare back into the main panel as a tab, and focus it.
+  const dockCompareBack = () => setState((s) => ({
+    ...s, comparePopped: false, activePanelTab: "compare", filterCollapsed: false,
+  }));
 
   const showCompare = compareRows.length > 0;
+  // Compare is a tab in the main panel only when it has rows and isn't popped out.
+  const compareTabAvailable = showCompare && !state.comparePopped;
+  const activePanelTab: "filters" | "compare" =
+    state.activePanelTab === "compare" && compareTabAvailable ? "compare" : "filters";
 
   // Default share (weight) for a panel that has no persisted size yet. Docks
   // open generously so they reveal a useful amount of content.
@@ -537,21 +559,25 @@ export function App() {
   // collapse() records the pre-collapse size, which our maxSize pin corrupts).
   // Resize only on the actual collapse↔expand transition; the panel's
   // defaultSize handles fresh mounts. Expanded → a generous height.
+  // Collapsed strip heights: the main panel keeps its tab bar visible (taller);
+  // the popped compare dock rolls down to a thin header.
+  const MAIN_COLLAPSED = "34px";
+  const CMP_COLLAPSED = "26px";
   // Compare opens larger than the filter dock — its tables benefit from the room.
-  const EXPAND_FP = "40%";
+  const EXPAND_FP = "42%";
   const EXPAND_CMP = "55%";
   const prevFp = useRef(state.filterCollapsed);
   const prevCmp = useRef(state.compareCollapsed);
   useEffect(() => {
     const p = fpRef.current; if (!p) return;
-    if (state.filterCollapsed) p.resize("26px");
-    // Defer expand so the maxSize pin (26px → 100%) settles before resizing.
+    if (state.filterCollapsed) p.resize(MAIN_COLLAPSED);
+    // Defer expand so the maxSize pin (strip → 100%) settles before resizing.
     else if (prevFp.current) requestAnimationFrame(() => p.resize(EXPAND_FP));
     prevFp.current = state.filterCollapsed;
   }, [state.filterCollapsed]);
   useEffect(() => {
     const p = cmpRef.current; if (!p) return;
-    if (state.compareCollapsed) p.resize("26px");
+    if (state.compareCollapsed) p.resize(CMP_COLLAPSED);
     else if (prevCmp.current) requestAnimationFrame(() => p.resize(EXPAND_CMP));
     prevCmp.current = state.compareCollapsed;
   }, [state.compareCollapsed]);
@@ -667,75 +693,127 @@ export function App() {
       />
     );
 
-    const dockNode = (kind: "fp" | "cmp"): ReactNode => {
-      const collapsed = kind === "fp" ? state.filterCollapsed : state.compareCollapsed;
-      const pos = kind === "fp" ? state.panelPos : state.comparePos;
-      const setPos = kind === "fp" ? setFilterPos : setComparePos;
-      const toggle = kind === "fp" ? toggleFilterCollapsed : toggleCompareCollapsed;
-      const title = kind === "fp" ? "Filters" : `Compare · ${compareRows.length}`;
-      // Chevron points the way the panel will fold (toward its docked edge).
-      const chevron = pos === "bottom"
+    const filterBody = (
+      <FilterPanel
+        file={file!}
+        group={group!}
+        counts={view.counts}
+        onSwitchGroup={switchGroup}
+        onAddGroup={addGroup}
+        onRenameGroup={renameGroup}
+        onDeleteGroup={deleteGroup}
+        onReorderGroup={reorderGroups}
+        onAddSection={addSection}
+        onRenameSection={renameSection}
+        onToggleSection={toggleSection}
+        onDeleteSection={deleteSection}
+        onReorderTop={reorderTop}
+        onSetSectionEnabled={setSectionEnabled}
+        onUpdateFilter={updateFilter}
+        onAddFilter={openNewFilter}
+        onDeleteFilter={deleteFilter}
+        onDuplicateFilter={duplicateFilter}
+        onEditFilter={openEditFilter}
+        onMoveFilter={moveFilter}
+        onBulk={bulk}
+      />
+    );
+    const compareBody = (
+      <CompareTable
+        rows={compareRows}
+        onRemove={removeFromCompare}
+        onExport={exportGroupCsv}
+        labelFor={(id) => {
+          const f = group!.filters.find((x) => x.id === id);
+          return (f?.description?.trim() || f?.pattern) ?? "Fields";
+        }}
+        colorFor={(id) => group!.filters.find((x) => x.id === id)?.textColor ?? "#c2c7cd"}
+      />
+    );
+
+    const foldChevron = (pos: "bottom" | "right", collapsed: boolean) =>
+      pos === "bottom"
         ? (collapsed ? <ChevronUp size={15} /> : <ChevronDown size={15} />)
         : (collapsed ? <ChevronLeft size={15} /> : <ChevronRight size={15} />);
-      return (
-        <div className={"dock dock-" + pos + (collapsed ? " collapsed" : "")}>
-          {/* whole header toggles collapse; the action buttons stop propagation */}
-          <div className="dock-head" onClick={toggle} title={collapsed ? "Expand" : "Collapse"}>
-            <span className="dock-chevron">{chevron}</span>
-            <span className="dock-title">{title}</span>
-            <div className="dock-spacer" />
-            {kind === "cmp" && !collapsed && (
-              <button className="dock-btn" title="Clear comparison" onClick={(e) => { e.stopPropagation(); clearCompare(); }}><X size={14} /></button>
-            )}
-            <button className="dock-btn" title={pos === "bottom" ? "Dock right" : "Dock bottom"} onClick={(e) => { e.stopPropagation(); setPos(pos === "bottom" ? "right" : "bottom"); }}>
-              {pos === "bottom" ? <PanelRight size={14} /> : <PanelBottom size={14} />}
-            </button>
+
+    // The main panel: a tab bar switching between Filters and (when present and
+    // not popped out) Compare. Collapses to its tab strip.
+    const mainDockNode = (): ReactNode => {
+      const collapsed = state.filterCollapsed;
+      const pos = state.panelPos;
+      const chevron = foldChevron(pos, collapsed);
+
+      // Right-docked + collapsed: a thin vertical strip labelled with the active tab.
+      if (collapsed && pos === "right") {
+        return (
+          <div className="dock dock-right collapsed panel-dock">
+            <div className="dock-head" onClick={toggleFilterCollapsed} title="Expand">
+              <span className="dock-chevron">{chevron}</span>
+              <span className="dock-title">{activePanelTab === "compare" ? `Compare · ${compareRows.length}` : "Filters"}</span>
+            </div>
           </div>
-          {!collapsed && (
-            <div className="dock-body">
-              {kind === "fp" ? (
-                <FilterPanel
-                  file={file!}
-                  group={group!}
-                  counts={view.counts}
-                  onSwitchGroup={switchGroup}
-                  onAddGroup={addGroup}
-                  onRenameGroup={renameGroup}
-                  onDeleteGroup={deleteGroup}
-                  onReorderGroup={reorderGroups}
-                  onAddSection={addSection}
-                  onRenameSection={renameSection}
-                  onToggleSection={toggleSection}
-                  onDeleteSection={deleteSection}
-                  onReorderTop={reorderTop}
-                  onSetSectionEnabled={setSectionEnabled}
-                  onUpdateFilter={updateFilter}
-                  onAddFilter={openNewFilter}
-                  onDeleteFilter={deleteFilter}
-                  onDuplicateFilter={duplicateFilter}
-                  onEditFilter={openEditFilter}
-                  onMoveFilter={moveFilter}
-                  onBulk={bulk}
-                />
-              ) : (
-                <CompareTable
-                  rows={compareRows}
-                  onRemove={removeFromCompare}
-                  onExport={exportGroupCsv}
-                  labelFor={(id) => {
-                    const f = group!.filters.find((x) => x.id === id);
-                    return (f?.description?.trim() || f?.pattern) ?? "Fields";
-                  }}
-                  colorFor={(id) => group!.filters.find((x) => x.id === id)?.textColor ?? "#c2c7cd"}
-                />
+        );
+      }
+
+      return (
+        <div className={"dock dock-" + pos + (collapsed ? " collapsed" : "") + " panel-dock"}>
+          <div className="dock-head tabbed">
+            <div className="panel-tabs">
+              <button className={"ptab" + (activePanelTab === "filters" ? " active" : "")} onClick={() => selectPanelTab("filters")}>
+                Filters
+              </button>
+              {compareTabAvailable && (
+                <button className={"ptab" + (activePanelTab === "compare" ? " active" : "")} onClick={() => selectPanelTab("compare")}>
+                  Compare<span className="ptab-badge">{compareRows.length}</span>
+                </button>
               )}
             </div>
+            <div className="dock-spacer" />
+            {activePanelTab === "compare" && (
+              <>
+                <button className="dock-btn" title="Clear comparison" onClick={clearCompare}><X size={14} /></button>
+                <button className="dock-btn" title="Pop out beside Filters" onClick={popCompareOut}><PanelRightOpen size={14} /></button>
+              </>
+            )}
+            <button className="dock-btn" title={pos === "bottom" ? "Dock right" : "Dock bottom"} onClick={() => setFilterPos(pos === "bottom" ? "right" : "bottom")}>
+              {pos === "bottom" ? <PanelRight size={14} /> : <PanelBottom size={14} />}
+            </button>
+            <button className="dock-btn" title={collapsed ? "Expand" : "Collapse"} onClick={toggleFilterCollapsed}>{chevron}</button>
+          </div>
+          {!collapsed && (
+            <div className="dock-body">{activePanelTab === "filters" ? filterBody : compareBody}</div>
           )}
         </div>
       );
     };
 
-    type PanelDesc = { id: string; node: ReactNode; collapsible?: boolean; collapsed?: boolean; ref?: React.RefObject<PanelImperativeHandle | null> };
+    // The popped-out Compare dock (its own resizable pane beside the main panel).
+    // Popped Compare always docks on the side opposite the main panel, so the
+    // two never sit on the same edge.
+    const comparePoppedPos: "bottom" | "right" = state.panelPos === "bottom" ? "right" : "bottom";
+    const compareDockNode = (): ReactNode => {
+      const collapsed = state.compareCollapsed;
+      const pos = comparePoppedPos;
+      const chevron = foldChevron(pos, collapsed);
+      return (
+        <div className={"dock dock-" + pos + (collapsed ? " collapsed" : "")}>
+          <div className="dock-head" onClick={toggleCompareCollapsed} title={collapsed ? "Expand" : "Collapse"}>
+            <span className="dock-chevron">{chevron}</span>
+            <span className="dock-title">{`Compare · ${compareRows.length}`}</span>
+            <div className="dock-spacer" />
+            {!collapsed && (
+              <>
+                <button className="dock-btn" title="Clear comparison" onClick={(e) => { e.stopPropagation(); clearCompare(); }}><X size={14} /></button>
+                <button className="dock-btn" title="Dock back into panel" onClick={(e) => { e.stopPropagation(); dockCompareBack(); }}><PanelBottomClose size={14} /></button>
+              </>
+            )}
+          </div>
+          {!collapsed && <div className="dock-body">{compareBody}</div>}
+        </div>
+      );
+    };
+
+    type PanelDesc = { id: string; node: ReactNode; collapsible?: boolean; collapsed?: boolean; collapsedSize?: string; ref?: React.RefObject<PanelImperativeHandle | null> };
     const buildGroup = (orientation: "vertical" | "horizontal", gid: string, panels: PanelDesc[]): ReactNode => {
       const ids = panels.map((p) => p.id);
       // Remount the group when its panel set changes — the library can't have a
@@ -744,39 +822,43 @@ export function App() {
       const dl = layoutFor(groupKey, ids);
       return (
         <ResizablePanelGroup key={groupKey} orientation={orientation} className="main" id={groupKey} defaultLayout={dl} onLayoutChanged={onLayoutFor(groupKey)}>
-          {panels.map((p, i) => (
-            <Fragment key={p.id}>
-              <ResizablePanel
-                id={p.id}
-                defaultSize={p.collapsed ? "26px" : `${dl[p.id]}%`}
-                // A collapsed dock is pinned to the strip height (min == max) so
-                // neither dragging nor a sibling's collapse can grow it back.
-                minSize={p.collapsed ? "26px" : (p.collapsible ? "8%" : "15%")}
-                maxSize={p.collapsed ? "26px" : "100%"}
-                panelRef={p.ref}
-              >
-                {p.node}
-              </ResizablePanel>
-              {i < panels.length - 1 && <ResizableHandle withHandle />}
-            </Fragment>
-          ))}
+          {panels.map((p, i) => {
+            const cs = p.collapsedSize ?? "26px";
+            return (
+              <Fragment key={p.id}>
+                <ResizablePanel
+                  id={p.id}
+                  defaultSize={p.collapsed ? cs : `${dl[p.id]}%`}
+                  // A collapsed dock is pinned to the strip height (min == max) so
+                  // neither dragging nor a sibling's collapse can grow it back.
+                  minSize={p.collapsed ? cs : (p.collapsible ? "8%" : "15%")}
+                  maxSize={p.collapsed ? cs : "100%"}
+                  panelRef={p.ref}
+                >
+                  {p.node}
+                </ResizablePanel>
+                {i < panels.length - 1 && <ResizableHandle withHandle />}
+              </Fragment>
+            );
+          })}
         </ResizablePanelGroup>
       );
     };
 
+    // The main panel is always present; Compare gets its own dock only when popped.
     const docks = [
       { id: "fp", pos: state.panelPos, ref: fpRef },
-      ...(showCompare ? [{ id: "cmp", pos: state.comparePos, ref: cmpRef }] : []),
+      ...(showCompare && state.comparePopped ? [{ id: "cmp", pos: comparePoppedPos, ref: cmpRef }] : []),
     ];
-    // Order each side so compare comes before filter (above when bottom, left when right).
-    const side = (s: "bottom" | "right") =>
-      docks.filter((d) => d.pos === s).sort((a, b) => (a.id === "cmp" ? -1 : 1) - (b.id === "cmp" ? -1 : 1));
+    // Keep array order (main panel before the popped compare dock).
+    const side = (s: "bottom" | "right") => docks.filter((d) => d.pos === s);
     const bottomDocks = side("bottom");
     const rightDocks = side("right");
     const dockPanel = (d: { id: string; ref: React.RefObject<PanelImperativeHandle | null> }): PanelDesc =>
       ({
-        id: d.id, node: dockNode(d.id as "fp" | "cmp"), collapsible: true, ref: d.ref,
+        id: d.id, node: d.id === "fp" ? mainDockNode() : compareDockNode(), collapsible: true, ref: d.ref,
         collapsed: d.id === "fp" ? state.filterCollapsed : state.compareCollapsed,
+        collapsedSize: d.id === "fp" ? MAIN_COLLAPSED : CMP_COLLAPSED,
       });
 
     let center: ReactNode = logview;

@@ -191,8 +191,10 @@ button { font-family: inherit; }
   height: 44px;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
-  padding: 0 10px;
+  justify-content: flex-start;
+  /* left pad puts the toggle's icon on the same 24px column as the file /
+     settings icons below (so the whole left rail of icons lines up) */
+  padding: 0 8px;
 }
 .icon-btn {
   width: 30px; height: 30px;
@@ -280,6 +282,9 @@ button { font-family: inherit; }
 .sidebar.collapsed .file-item,
 .sidebar.collapsed .new-tab,
 .sidebar.collapsed .settings-row { justify-content: center; }
+/* no scrollbar in the narrow collapsed rail (still scrolls via wheel) */
+.sidebar.collapsed .file-list { scrollbar-width: none; }
+.sidebar.collapsed .file-list::-webkit-scrollbar { display: none; }
 
 /* ============================================================
    Main area (logview | divider | filter panel)
@@ -435,6 +440,32 @@ button { font-family: inherit; }
 .dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .dock-right.collapsed .dock-head { writing-mode: vertical-rl; height: 100%; flex: 1 1 auto; padding: 7px 0; gap: 8px; justify-content: flex-start; }
 
+/* ---- main panel: VSCode-style tab bar (Filters / Compare) ---- */
+.dock-head.tabbed {
+  flex: 0 0 34px; gap: 4px; padding: 0 6px; cursor: default;
+  background: var(--panel-bg-2, #f6f7f8);
+  border-bottom: none;   /* VSCode style: only the active tab is underlined */
+}
+.dock-head.tabbed:hover { background: var(--panel-bg-2, #f6f7f8); }
+.panel-tabs { display: flex; align-items: stretch; gap: 2px; height: 100%; min-width: 0; }
+/* VSCode-style underline tabs */
+.ptab {
+  display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 11px;
+  border: none; background: none; border-radius: 0;
+  font-family: var(--ui-font); font-size: 12px; font-weight: 600; color: var(--text-3);
+  cursor: pointer; white-space: nowrap;
+  box-shadow: inset 0 -2px 0 transparent;   /* underline track */
+  transition: color 0.12s, box-shadow 0.12s;
+}
+.ptab:hover { color: var(--text-2); }
+/* underline colour matches the filter-set tab's active underline (var(--text)) */
+.ptab.active { color: var(--text); box-shadow: inset 0 -2px 0 var(--text); }
+.ptab-badge {
+  font-size: 10px; font-weight: 700; line-height: 15px; min-width: 15px; padding: 0 5px;
+  border-radius: 8px; background: var(--accent-bg-strong, rgba(44,108,230,0.16)); color: #2c6ce6;
+  text-align: center; font-variant-numeric: tabular-nums;
+}
+
 .menu-item.disabled { opacity: 0.5; cursor: default; }
 .menu-item.disabled:hover { background: none; }
 /* sit at the cursor and size to content (a transformed ancestor can otherwise
@@ -517,7 +548,7 @@ button { font-family: inherit; }
   transition: opacity 0.1s, background 0.12s, color 0.12s;
 }
 .cmp-shadcn tr:hover .cmp-rm button { opacity: 1; }
-.cmp-shadcn .cmp-rm button:hover { background: #fdecec; color: var(--error); }
+/* .cmp-shadcn .cmp-rm button:hover { background: #fdecec; color: var(--error); } */
 /* lines currently in the comparison panel get a subtle marker */
 .log-row.incompare .log-gut { box-shadow: inset 2px 0 0 var(--accent, #2c6ce6); }
 
@@ -1070,45 +1101,50 @@ button { font-family: inherit; }
 .pattern-input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 .pattern-input.invalid { border-color: var(--error); box-shadow: 0 0 0 3px rgba(180,35,24,0.12); }
 
-/* ---- regex syntax-highlight input (Monokai) ----
+/* ---- regex syntax-highlight input (Atom One Light) ----
    A coloured overlay sits behind a real <input> whose own text is transparent;
-   both layers share identical box metrics so the glyphs line up exactly. In
-   regex mode the field becomes a dark "code" surface so the Monokai palette
-   reads comfortably and with high contrast. */
+   both layers share identical box metrics so the glyphs line up exactly. Light
+   "code" surface with the Atom One Light palette. */
 .regex-input {
   position: relative; width: 100%; height: 42px;
-  border: 1px solid #3a3a32; border-radius: 9px;
-  background: #272822; overflow: hidden;
+  border: 1px solid var(--border-strong); border-radius: 9px;
+  background: #fff; overflow: hidden;
 }
-.regex-input:focus-within { border-color: #6a6a5c; box-shadow: 0 0 0 3px rgba(102,217,239,0.20); }
+.regex-input:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-bg); }
 .regex-input.invalid,
-.regex-input.invalid:focus-within { border-color: var(--error); box-shadow: 0 0 0 3px rgba(180,35,24,0.28); }
+.regex-input.invalid:focus-within { border-color: var(--error); box-shadow: 0 0 0 3px rgba(180,35,24,0.12); }
 .regex-hl, .regex-input-el {
   position: absolute; inset: 0; width: 100%; height: 100%;
   margin: 0; padding: 0 12px; border: none;
   font-family: var(--mono-font); font-size: 14px; line-height: 40px;
   white-space: pre; overflow: hidden;
 }
-.regex-hl { pointer-events: none; color: #f8f8f2; }
+.regex-hl { pointer-events: none; color: #383a42; }
 .regex-input-el {
   background: transparent; outline: none;
-  color: transparent; -webkit-text-fill-color: transparent; caret-color: #f8f8f2;
+  color: transparent; -webkit-text-fill-color: transparent; caret-color: #383a42;
 }
-.regex-input-el::placeholder { color: #75715e; -webkit-text-fill-color: #75715e; }
+.regex-input-el::placeholder { color: var(--text-3); -webkit-text-fill-color: var(--text-3); }
 
-/* capture groups get a faint tint that delimits them; nesting deepens it */
-.rx-groupwrap.cap { background: rgba(255,255,255,0.06); border-radius: 3px; }
+/* capture groups get a faint tint that delimits them; nesting deepens it.
+   Both `(` and `)` of a group are `.rx-group` (same colour) — the tint only
+   adds a background, never changes the glyph colour. */
+.rx-groupwrap.cap { 
+  background: rgba(56,58,66,0.07);
+  border-radius: 1px;
+  box-shadow: 0 0 0 1px rgba(56,58,66,0.08);
+}
 
-/* token palette (Monokai) */
-.rx-literal   { color: #f8f8f2; }
-.rx-escape    { color: #ae81ff; }                   /* \d \w \s — purple */
-.rx-class     { color: #e6db74; }                   /* [ … ]    — yellow */
-.rx-group     { color: #66d9ef; }                   /* ( )      — cyan */
-.rx-groupname { color: #a6e22e; font-weight: 700; } /* named field — green */
-.rx-anchor    { color: #f92672; }                   /* ^ $      — pink */
-.rx-quant     { color: #fd971f; }                   /* * + ? {} — orange */
-.rx-alt       { color: #f92672; }                   /* |        — pink */
-.rx-meta      { color: #66d9ef; }                   /* .        — cyan */
+/* token palette (Atom One Light) */
+.rx-literal   { color: #383a42; }                   /* default text — grey */
+.rx-escape    { color: #e45649; }                   /* \d \w \s — cyan */
+.rx-class     { color: #c18401 ; }                   /* [ … ]    — green */
+.rx-group     { color: #0184bc; }                   /* ( )      — purple */
+.rx-groupname { color: #50a14f; font-weight: 700; } /* named field — gold */
+.rx-anchor    { color: #e45649; }                   /* ^ $      — red */
+.rx-quant     { color: #e45649; }                   /* * + ? {} — orange */
+.rx-alt       { color: #4078f2; }                   /* |        — blue */
+.rx-meta      { color: #e45649; }                   /* .        — cyan */
 
 .regex-err { color: var(--error); font-size: 11.5px; margin-top: 6px; }
 .match-preview { color: var(--text-3); font-size: 11.5px; margin-top: 7px; font-variant-numeric: tabular-nums; }

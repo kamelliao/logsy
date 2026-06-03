@@ -109,6 +109,8 @@ export function initialState(): AppState {
     comparePos: "right",
     filterCollapsed: false,
     compareCollapsed: false,
+    activePanelTab: "filters",
+    comparePopped: false,
     panelSizes: {},
   };
 }
@@ -151,6 +153,8 @@ export function normalizeState(state: AppState): AppState {
   if (state.comparePos !== "bottom" && state.comparePos !== "right") state.comparePos = "right";
   if (state.filterCollapsed === undefined) state.filterCollapsed = false;
   if (state.compareCollapsed === undefined) state.compareCollapsed = false;
+  if (state.activePanelTab !== "filters" && state.activePanelTab !== "compare") state.activePanelTab = "filters";
+  if (typeof state.comparePopped !== "boolean") state.comparePopped = false;
   // panelSizes is bucketed (group → id → percent); drop any old flat/invalid shape.
   if (!state.panelSizes || typeof state.panelSizes !== "object" ||
       Object.values(state.panelSizes).some((v) => typeof v !== "object" || v === null)) {

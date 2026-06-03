@@ -70,11 +70,16 @@ export interface AppState {
   fontSize: number;
   /** Show the line-number gutter in the log view (and include numbers when copying). */
   showLineNumbers: boolean;
-  /** Where the comparison panel docks. */
+  /** Where the comparison panel docks *when popped out* of the tabbed panel. */
   comparePos: "bottom" | "right";
-  /** Collapsed (rolled-up) state of the filter / comparison docks. */
+  /** Collapsed (rolled-up) state of the main tabbed panel / popped compare dock. */
   filterCollapsed: boolean;
   compareCollapsed: boolean;
+  /** Active tab in the main panel (Filters or Compare share one tabbed dock). */
+  activePanelTab: "filters" | "compare";
+  /** When true, Compare is shown as its own dock (so it can sit beside Filters)
+   *  instead of as a tab in the main panel. */
+  comparePopped: boolean;
   /**
    * Persisted panel sizes (percent), bucketed by group-structure key so that
    * sizes from one dock arrangement never bleed into another. Outer key is the
