@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
+import { RegexInput } from "./RegexInput";
 import { Label } from "./ui/label";
 import { ColorCombobox } from "./ui/color-combobox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
@@ -116,7 +117,7 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{isNew ? "New filter" : "Edit filter"}</DialogTitle>
-          <Button size="icon" className="mh-x" onClick={requestClose}>
+          <Button variant="ghost" size="icon" className="mh-x" onClick={requestClose}>
             <X size={18} />
           </Button>
         </DialogHeader>
@@ -125,13 +126,23 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
           {/* pattern */}
           <div className="field">
             <Label>{draft.regex ? "Pattern (regular expression)" : "Pattern (plain text)"}</Label>
-            <Input
-              ref={patternRef}
-              className={!compiled.ok ? "invalid" : ""}
-              value={draft.pattern}
-              placeholder={draft.regex ? "e.g.  ERROR|WARN|fail" : "e.g.  wifi"}
-              onChange={(e) => set({ pattern: e.target.value })}
-            />
+            {draft.regex ? (
+              <RegexInput
+                ref={patternRef}
+                invalid={!compiled.ok}
+                value={draft.pattern}
+                placeholder="e.g.  ERROR|WARN|fail"
+                onChange={(v) => set({ pattern: v })}
+              />
+            ) : (
+              <Input
+                ref={patternRef}
+                className={!compiled.ok ? "invalid" : ""}
+                value={draft.pattern}
+                placeholder="e.g.  wifi"
+                onChange={(e) => set({ pattern: e.target.value })}
+              />
+            )}
             {!compiled.ok ? (
               <div className="regex-err">Invalid regex: {compiled.err}</div>
             ) : (

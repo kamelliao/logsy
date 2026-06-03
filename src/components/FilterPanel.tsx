@@ -91,11 +91,14 @@ function SectionMenuItems({ onRename, onAddFilter, onSetEnabled, onDelete }: {
   );
 }
 
-function PanelMenuItems({ onAddSection, onBulk }: {
-  onAddSection: () => void; onBulk: (action: string) => void;
+function PanelMenuItems({ onAddFilter, onAddSection, onBulk }: {
+  onAddFilter: () => void; onAddSection: () => void; onBulk: (action: string) => void;
 }) {
   return (
     <>
+      <DropdownMenuItem onClick={onAddFilter}>
+        <span className="mi-ico"><Plus size={15} /></span>Add filter
+      </DropdownMenuItem>
       <DropdownMenuItem onClick={onAddSection}>
         <span className="mi-ico"><FolderPlus size={15} /></span>New group
       </DropdownMenuItem>
@@ -275,11 +278,11 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
 
         {f.fields && f.fields.length > 0 && (
           <div
-            className={"fr-fields" + (f.extractOnly ? " extract-only" : "")}
-            title={(f.extractOnly ? "Extract only (no colour) · parses: " : "Parses: ") + f.fields.map((x) => x.name).join(", ")}
+            className="fr-flags"
+            title={"Parses: " + f.fields.map((x) => x.name).join(", ")}
           >
-            {f.fields.slice(0, 4).map((x) => <span key={x.name} className="fr-fchip">{x.name}</span>)}
-            {f.fields.length > 4 && <span className="fr-fchip more">+{f.fields.length - 4}</span>}
+            {f.fields.slice(0, 4).map((x) => <span key={x.name} className="fr-flag">{x.name}</span>)}
+            {f.fields.length > 4 && <span className="fr-flag more">+{f.fields.length - 4}</span>}
           </div>
         )}
 
@@ -478,8 +481,8 @@ function TopDropZone({ children }: { children: ReactNode }) {
 
 // ---- panel-level right-click zone (wraps the scrollable filter list) ----
 
-function PanelListZone({ onAddSection, onBulk, children }: {
-  onAddSection: () => void; onBulk: (action: string) => void; children: ReactNode;
+function PanelListZone({ onAddFilter, onAddSection, onBulk, children }: {
+  onAddFilter: () => void; onAddSection: () => void; onBulk: (action: string) => void; children: ReactNode;
 }) {
   return (
     <ContextMenu>
@@ -487,7 +490,7 @@ function PanelListZone({ onAddSection, onBulk, children }: {
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <PanelMenuItems onAddSection={onAddSection} onBulk={onBulk} />
+        <PanelMenuItems onAddFilter={onAddFilter} onAddSection={onAddSection} onBulk={onBulk} />
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -719,14 +722,14 @@ export function FilterPanel({
             <MoreHorizontal />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="end">
-            <PanelMenuItems onAddSection={onAddSection} onBulk={onBulk} />
+            <PanelMenuItems onAddFilter={() => onAddFilter()} onAddSection={onAddSection} onBulk={onBulk} />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
       {/* filter list */}
       {filters.length === 0 ? (
-        <PanelListZone onAddSection={onAddSection} onBulk={onBulk}>
+        <PanelListZone onAddFilter={() => onAddFilter()} onAddSection={onAddSection} onBulk={onBulk}>
           <div className="filter-empty">
             <FilterIcon size={26} style={{ color: "var(--text-3)" }} />
             <div className="fe-title">No filters yet</div>
@@ -735,7 +738,7 @@ export function FilterPanel({
         </PanelListZone>
       ) : searching ? (
         <DndContext sensors={sensors} collisionDetection={closestCenter}>
-          <PanelListZone onAddSection={onAddSection} onBulk={onBulk}>
+          <PanelListZone onAddFilter={() => onAddFilter()} onAddSection={onAddSection} onBulk={onBulk}>
             {filtered.length === 0 ? (
               <div className="filter-empty">
                 <FilterIcon size={26} style={{ color: "var(--text-3)" }} />
@@ -751,7 +754,7 @@ export function FilterPanel({
         </DndContext>
       ) : (
         <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragEnd={handleDragEnd}>
-          <PanelListZone onAddSection={onAddSection} onBulk={onBulk}>
+          <PanelListZone onAddFilter={() => onAddFilter()} onAddSection={onAddSection} onBulk={onBulk}>
             <TopDropZone>
               <SortableContext items={topIds} strategy={verticalListSortingStrategy}>
                 {topItems.map((it) =>

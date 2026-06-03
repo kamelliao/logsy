@@ -472,6 +472,31 @@ export function App() {
   // Drop comparison lines when switching files (line numbers are file-specific).
   useEffect(() => { setCompareLines(new Set()); }, [state.activeFileId]);
 
+  // Build CSV text for a single pattern-group's rows.
+  const buildCsv = (rows: typeof compareRows) => {
+    const esc = (s: string) => /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    const cols: string[] = []; const seen = new Set<string>();
+    for (const r of rows) for (const k of Object.keys(r.fields ?? {})) if (!seen.has(k)) { seen.add(k); cols.push(k); }
+    const parts: string[] = [["line", ...cols].map(esc).join(",")];
+    for (const r of rows) parts.push([String(r.n), ...cols.map((c) => r.fields?.[c]?.raw ?? "")].map(esc).join(","));
+    return parts.join("\n") + "\n";
+  };
+
+  // Export one compared pattern's table as CSV via a native save dialog.
+  const exportGroupCsv = useCallback(async (id: string | undefined, label: string) => {
+    const rows = compareRows.filter((r) => (r.fieldsFromId ?? "") === (id ?? ""));
+    if (!rows.length) return;
+    const base = (label || "compare").trim().replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, "_").slice(0, 60) || "compare";
+    const path = await save({ defaultPath: base + ".csv", filters: [{ name: "CSV", extensions: ["csv"] }] });
+    if (typeof path !== "string") return;
+    try {
+      await invoke("write_text_file", { path, contents: buildCsv(rows) });
+      toast.success("CSV saved");
+    } catch (e) {
+      toast.error("Could not save CSV: " + String(e));
+    }
+  }, [compareRows]);
+
   // ---------- dock layout ----------
   const setComparePos = (pos: "bottom" | "right") => setState((s) => ({ ...s, comparePos: pos }));
   const setFilterPos = (pos: "bottom" | "right") => setState((s) => ({ ...s, panelPos: pos }));
@@ -482,7 +507,7 @@ export function App() {
 
   // Default share (weight) for a panel that has no persisted size yet. Docks
   // open generously so they reveal a useful amount of content.
-  const DEFAULT_WEIGHT: Record<string, number> = { lv: 100, center: 100, fp: 82, cmp: 82 };
+  const DEFAULT_WEIGHT: Record<string, number> = { lv: 100, center: 100, fp: 82, cmp: 120 };
   // Build a group's initial layout from its persisted-size bucket, normalised to 100%.
   const layoutFor = (groupKey: string, ids: string[]): Record<string, number> => {
     const bucket = state.panelSizes?.[groupKey] ?? {};
@@ -512,20 +537,22 @@ export function App() {
   // collapse() records the pre-collapse size, which our maxSize pin corrupts).
   // Resize only on the actual collapse↔expand transition; the panel's
   // defaultSize handles fresh mounts. Expanded → a generous height.
-  const EXPAND_PCT = "40%";
+  // Compare opens larger than the filter dock — its tables benefit from the room.
+  const EXPAND_FP = "40%";
+  const EXPAND_CMP = "55%";
   const prevFp = useRef(state.filterCollapsed);
   const prevCmp = useRef(state.compareCollapsed);
   useEffect(() => {
     const p = fpRef.current; if (!p) return;
     if (state.filterCollapsed) p.resize("26px");
     // Defer expand so the maxSize pin (26px → 100%) settles before resizing.
-    else if (prevFp.current) requestAnimationFrame(() => p.resize(EXPAND_PCT));
+    else if (prevFp.current) requestAnimationFrame(() => p.resize(EXPAND_FP));
     prevFp.current = state.filterCollapsed;
   }, [state.filterCollapsed]);
   useEffect(() => {
     const p = cmpRef.current; if (!p) return;
     if (state.compareCollapsed) p.resize("26px");
-    else if (prevCmp.current) requestAnimationFrame(() => p.resize(EXPAND_PCT));
+    else if (prevCmp.current) requestAnimationFrame(() => p.resize(EXPAND_CMP));
     prevCmp.current = state.compareCollapsed;
   }, [state.compareCollapsed]);
 
@@ -694,10 +721,12 @@ export function App() {
                 <CompareTable
                   rows={compareRows}
                   onRemove={removeFromCompare}
+                  onExport={exportGroupCsv}
                   labelFor={(id) => {
                     const f = group!.filters.find((x) => x.id === id);
-                    return (f?.description?.trim() || f?.pattern) ?? "fields";
+                    return (f?.description?.trim() || f?.pattern) ?? "Fields";
                   }}
+                  colorFor={(id) => group!.filters.find((x) => x.id === id)?.textColor ?? "#c2c7cd"}
                 />
               )}
             </div>

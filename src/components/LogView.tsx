@@ -140,7 +140,15 @@ export function LogView({
     for (const r of visible) if (r.text.length > m) m = r.text.length;
     return m;
   }, [visible]);
-  const minW = (showLineNumbers ? 53 : 0) + 12 + Math.ceil(maxLen * charWidth(fontSize)) + 28;
+  // Size the line-number gutter to the file's largest line number (≥4 digits),
+  // so big files aren't clipped to the old fixed 5-digit column. The left
+  // padding (18px, matching .log-gut) reserves a lane for the expand chevron so
+  // the digits never sit underneath it.
+  const gutterW = useMemo(() => {
+    const digits = Math.max(4, String(Math.max(1, file.lineCount || 0)).length);
+    return Math.ceil(digits * charWidth(fontSize)) + 18 + 12; // chevron lane + right padding
+  }, [file.lineCount, fontSize]);
+  const minW = (showLineNumbers ? gutterW : 0) + 12 + Math.ceil(maxLen * charWidth(fontSize)) + 28;
 
   const rowVirtualizer = useVirtualizer({
     count: visible.length,
@@ -354,9 +362,12 @@ export function LogView({
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
 
-  function onRowContextMenu(e: React.MouseEvent, n: number, hasFields: boolean) {
+  function onRowContextMenu(e: React.MouseEvent, ri: number, n: number, hasFields: boolean) {
     e.preventDefault();
     setSelMenu(null);
+    // Right-clicking highlights the row — unless it's already part of a
+    // multi-selection, which we keep (so "Add N lines to compare" still works).
+    if (!selectedLines.has(n)) { setSelectedLines(new Set([n])); setAnchorRi(ri); }
     setRowMenu({ x: e.clientX, y: e.clientY, n, hasFields });
   }
 
@@ -373,7 +384,7 @@ export function LogView({
   }, [rowMenu]);
 
   return (
-    <div className="logview" style={style}>
+    <div className="logview" style={{ ...style, "--log-gut-w": `${gutterW}px` } as CSSProperties}>
       {/* header */}
       <div className="logview-bar">
         <div className="lv-title">
@@ -429,20 +440,20 @@ export function LogView({
           <div className="find-divider" />
           <div className="find-nav">
             <Tooltip>
-              <TooltipTrigger render={<Button size="icon-sm" onClick={() => nav(-1)} />}>
+              <TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={() => nav(-1)} />}>
                 <ArrowUp size={15} />
               </TooltipTrigger>
               <TooltipContent>Previous (Shift+Enter)</TooltipContent>
             </Tooltip>
             <Tooltip>
-              <TooltipTrigger render={<Button size="icon-sm" onClick={() => nav(1)} />}>
+              <TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={() => nav(1)} />}>
                 <ArrowDown size={15} />
               </TooltipTrigger>
               <TooltipContent>Next (Enter)</TooltipContent>
             </Tooltip>
           </div>
           <Tooltip>
-            <TooltipTrigger render={<Button size="icon-sm" onClick={onCloseFind} />}>
+            <TooltipTrigger render={<Button variant="ghost" size="icon-sm" onClick={onCloseFind} />}>
               <X size={15} />
             </TooltipTrigger>
             <TooltipContent>Close (Esc)</TooltipContent>
@@ -492,7 +503,7 @@ export function LogView({
                       onMouseDown={(e) => handleRowMouseDown(e, vItem.index)}
                       onMouseEnter={() => handleRowMouseEnter(vItem.index)}
                       onClick={(e) => onRowClick(e, vItem.index, r.n)}
-                      onContextMenu={(e) => onRowContextMenu(e, r.n, canExpand)}
+                      onContextMenu={(e) => onRowContextMenu(e, vItem.index, r.n, canExpand)}
                     >
                       {canExpand && (
                         <span
