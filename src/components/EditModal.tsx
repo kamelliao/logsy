@@ -1,10 +1,24 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { Check, ChevronDown, EyeOff, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, EyeOff, Pipette, Trash2, X } from "lucide-react";
 import type { Filter, FilterSection, FieldType } from "../types";
 import { compile, countMatches, deriveFields } from "../logic";
 import { PALETTE, TEXT_SWATCHES, BG_SWATCHES } from "../data";
 
 const FIELD_TYPES: FieldType[] = ["string", "int", "hex", "float", "time"];
+
+// Light default applied to the text color when a dark background is chosen and
+// the current text would be illegible against it.
+const LIGHT_TEXT = "#e6edf3";
+const HEX6 = /^#[0-9a-fA-F]{6}$/;
+
+/** Relative luminance (0 dark … 1 light) of a #rrggbb color; 1 for non-hex. */
+function luminance(hex: string): number {
+  if (!HEX6.test(hex)) return 1;
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
 import {
@@ -57,6 +71,28 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
   const [extractOnly, setExtractOnly] = useState<boolean>(!!filter.extractOnly);
   const patternRef = useRef<HTMLInputElement>(null);
 
+  // Width resize via the left/right edge handles. The modal is centre-anchored,
+  // so width changes by 2×dx to keep the dragged edge under the cursor.
+  const [width, setWidth] = useState<number | null>(null);
+  const resizeRef = useRef<{ startX: number; startW: number; side: "left" | "right" } | null>(null);
+  const onResizeDown = (side: "left" | "right") => (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault(); e.stopPropagation();
+    const modal = e.currentTarget.parentElement as HTMLElement;
+    resizeRef.current = { startX: e.clientX, startW: width ?? modal.getBoundingClientRect().width, side };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onResizeMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    const r = resizeRef.current; if (!r) return;
+    const dx = e.clientX - r.startX;
+    const raw = r.side === "right" ? r.startW + dx * 2 : r.startW - dx * 2;
+    setWidth(Math.max(440, Math.min(window.innerWidth - 40, raw)));
+  };
+  const onResizeUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!resizeRef.current) return;
+    resizeRef.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  };
+
   useEffect(() => { patternRef.current?.focus(); patternRef.current?.select(); }, []);
 
   useEffect(() => {
@@ -68,6 +104,15 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
   });
 
   const set = (patch: Partial<Filter>) => setDraft((d) => ({ ...d, ...patch }));
+
+  // Choose a background; when switching to a dark one, lighten dark text so the
+  // line stays legible. Leaves an already-light text color untouched.
+  const pickBg = (color: string) =>
+    setDraft((d) =>
+      luminance(color) < 0.4 && luminance(d.textColor) < 0.4
+        ? { ...d, bgColor: color, textColor: LIGHT_TEXT }
+        : { ...d, bgColor: color }
+    );
 
   const compiled = useMemo(() => compile(draft), [draft.pattern, draft.regex, draft.caseSensitive]);
   const matchCount = useMemo(
@@ -114,7 +159,9 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) requestClose(); }}>
-      <DialogContent>
+      <DialogContent style={width != null ? { width } : undefined}>
+        <div className="modal-resize-handle left" onPointerDown={onResizeDown("left")} onPointerMove={onResizeMove} onPointerUp={onResizeUp} />
+        <div className="modal-resize-handle right" onPointerDown={onResizeDown("right")} onPointerMove={onResizeMove} onPointerUp={onResizeUp} />
         <DialogHeader>
           <DialogTitle>{isNew ? "New filter" : "Edit filter"}</DialogTitle>
           <Button variant="ghost" size="icon" className="mh-x" onClick={requestClose}>
@@ -265,6 +312,15 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
                   placeholder="Search text color…"
                   onChange={(color) => set({ textColor: color })}
                 />
+                <label className="swatch swatch-custom" title="Custom text color…">
+                  <span className="sw-fill" style={{ background: draft.textColor }} />
+                  <Pipette size={13} className="sw-pip" />
+                  <input
+                    type="color"
+                    value={HEX6.test(draft.textColor) ? draft.textColor : "#000000"}
+                    onChange={(e) => set({ textColor: e.target.value })}
+                  />
+                </label>
               </div>
 
               <div className="color-palette">
@@ -274,8 +330,17 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
                   options={BG_SWATCHES}
                   kind="bg"
                   placeholder="Search background color…"
-                  onChange={(color) => set({ bgColor: color })}
+                  onChange={(color) => pickBg(color)}
                 />
+                <label className="swatch swatch-custom" title="Custom background color…">
+                  <span className="sw-fill" style={{ background: draft.bgColor }} />
+                  <Pipette size={13} className="sw-pip" />
+                  <input
+                    type="color"
+                    value={HEX6.test(draft.bgColor) ? draft.bgColor : "#000000"}
+                    onChange={(e) => pickBg(e.target.value)}
+                  />
+                </label>
               </div>
             </div>
           )}

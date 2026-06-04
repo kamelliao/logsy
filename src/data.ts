@@ -49,8 +49,9 @@ export const TEXT_SWATCHES: ColorOption[] = [
 // Distinct pastel tints — one per hue, at a slightly stronger level than before
 // so adjacent choices read as genuinely different behind the log text.
 export const BG_SWATCHES: ColorOption[] = [
-  { name: "highlight", color: "#fff7c2" },
   { name: "white",     color: "#ffffff" },
+  { name: "black",     color: "#141414" },
+  { name: "highlight", color: "#fff7c2" },
   { name: "red",       color: "#fecaca" },
   { name: "orange",    color: "#fed7aa" },
   { name: "amber",     color: "#fde68a" },
@@ -69,6 +70,18 @@ export const BG_SWATCHES: ColorOption[] = [
   { name: "pink",      color: "#fbcfe8" },
   { name: "rose",      color: "#fecdd3" },
   { name: "slate",     color: "#e2e8f0" },
+  // Saturated / vivid backgrounds — stronger than the pastels above for filters
+  // that need to stand out. Picking a dark one auto-lightens dark text.
+  { name: "red bold",     color: "#f87171" },
+  { name: "orange bold",  color: "#fb923c" },
+  { name: "yellow bold",  color: "#facc15" },
+  { name: "lime bold",    color: "#a3e635" },
+  { name: "sky bold",     color: "#38bdf8" },
+  { name: "blue bold",    color: "#60a5fa" },
+  { name: "indigo bold",  color: "#818cf8" },
+  { name: "fuchsia bold", color: "#e879f9" },
+  { name: "pink bold",    color: "#f472b6" },
+  { name: "rose bold",    color: "#fb7185" },
 ];
 
 let _uid = 1;
@@ -98,7 +111,9 @@ export function initialState(): AppState {
   return {
     files: [],
     activeFileId: null,
-    sidebarCollapsed: false,
+    recentFiles: [],
+    recentFilterFiles: [],
+    sidebarCollapsed: true,
     splitRatio: 0.5,
     panelPos: "bottom",
     viewMode: "all",
@@ -146,6 +161,8 @@ export function normalizeState(state: AppState): AppState {
   if (!state.activeFileId || !state.files.find((f) => f.id === state.activeFileId)) {
     state.activeFileId = state.files[0]?.id ?? null;
   }
+  if (!Array.isArray(state.recentFiles)) state.recentFiles = [];
+  if (!Array.isArray(state.recentFilterFiles)) state.recentFilterFiles = [];
   if (!state.mapColorMode) state.mapColorMode = "bg";
   if (!state.mapWidth) state.mapWidth = 14;
   if (!state.fontSize) state.fontSize = 12.5;

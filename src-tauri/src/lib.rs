@@ -12,7 +12,7 @@ pub fn run() {
       }
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![window_controls, read_text_file, write_text_file])
+    .invoke_handler(tauri::generate_handler![window_controls, read_text_file, write_text_file, open_url])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
@@ -25,6 +25,22 @@ fn read_text_file(path: String) -> Result<String, String> {
 #[tauri::command]
 fn write_text_file(path: String, contents: String) -> Result<(), String> {
   std::fs::write(&path, contents).map_err(|e| e.to_string())
+}
+
+/// Open a URL in the user's default browser. Cross-platform via the OS launcher,
+/// so no extra crate is needed. Only http(s) URLs are accepted.
+#[tauri::command]
+fn open_url(url: String) -> Result<(), String> {
+  if !(url.starts_with("http://") || url.starts_with("https://")) {
+    return Err("Only http(s) URLs are allowed".into());
+  }
+  #[cfg(target_os = "windows")]
+  let r = std::process::Command::new("cmd").args(["/C", "start", "", url.as_str()]).spawn();
+  #[cfg(target_os = "macos")]
+  let r = std::process::Command::new("open").arg(&url).spawn();
+  #[cfg(all(unix, not(target_os = "macos")))]
+  let r = std::process::Command::new("xdg-open").arg(&url).spawn();
+  r.map(|_| ()).map_err(|e| e.to_string())
 }
 
 #[tauri::command]

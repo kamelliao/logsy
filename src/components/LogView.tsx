@@ -77,6 +77,12 @@ interface LogViewProps {
   showLineNumbers: boolean;
   compareLines: Set<number>;
   style?: CSSProperties;
+  /** Bumped by the Edit ▸ Select All menu to select every visible line. */
+  selectAllNonce?: number;
+  /** Set by Edit ▸ Go to… to scroll/select a line number (nonce re-triggers). */
+  gotoSignal?: { n: number; nonce: number } | null;
+  /** Save the filtered view text via a native dialog (provided by App). */
+  onExportView?: (defaultName: string, text: string) => void;
   onToggleViewMode: (m: "all" | "matches") => void;
   onToggleFind: () => void;
   onCloseFind: () => void;
@@ -87,6 +93,7 @@ interface LogViewProps {
 
 export function LogView({
   file, view, viewMode, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, compareLines, style,
+  selectAllNonce, gotoSignal, onExportView,
   onCloseFind, onBuildFilter, onAddToCompare, onRemoveFromCompare,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
@@ -195,6 +202,28 @@ export function LogView({
   }, [file.id, viewMode]);
 
   useEffect(() => { setSelectedLines(new Set()); setAnchorRi(null); }, [view]);
+
+  // Edit ▸ Select All — select every currently-visible line.
+  useEffect(() => {
+    if (!selectAllNonce) return;
+    setSelectedLines(new Set(visible.map((r) => r.n)));
+    setAnchorRi(visible.length ? visible.length - 1 : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectAllNonce]);
+
+  // Edit ▸ Go to… — scroll to (and select) the requested line number, or the
+  // nearest visible line at/after it.
+  useEffect(() => {
+    if (!gotoSignal || !visible.length) return;
+    const { n } = gotoSignal;
+    let idx = visible.findIndex((r) => r.n === n);
+    if (idx < 0) idx = visible.findIndex((r) => r.n >= n);
+    if (idx < 0) idx = visible.length - 1;
+    rowVirtualizer.scrollToIndex(idx, { align: "center" });
+    setSelectedLines(new Set([visible[idx].n]));
+    setAnchorRi(idx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gotoSignal?.nonce]);
 
   const scrollTop = rowVirtualizer.scrollOffset ?? 0;
   const viewH = scrollRef.current?.clientHeight ?? 600;
@@ -350,10 +379,7 @@ export function LogView({
   function exportView() {
     const text = visible.map((r) => String(r.n).padStart(8) + "  " + r.text).join("\n");
     const base = file.name.replace(/\.log$/i, "");
-    const blob = new Blob([text], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = base + ".filtered.log"; a.click();
-    URL.revokeObjectURL(url);
+    onExportView?.(base + ".filtered.log", text);
   }
 
   const matchedCount = view.hasHighlights ? view.rows.filter((r) => !r.excluded && r.winner).length : 0;

@@ -46,6 +46,12 @@ export interface FilterGroup {
   order: string[];
   /** Last path this group's filters were saved to (for "Save filters"). */
   filePath?: string;
+  /**
+   * Serialized payload (exportPayload) at the moment the group was last saved or
+   * loaded. "Save Filter" is disabled while the current payload still equals this
+   * — i.e. nothing has changed since the last save.
+   */
+  savedSnapshot?: string;
 }
 
 export interface LogFile {
@@ -61,6 +67,10 @@ export interface LogFile {
 export interface AppState {
   files: LogFile[];
   activeFileId: string | null;
+  /** Most-recently-opened log file paths (newest first), for File ▸ Recent Files. */
+  recentFiles: string[];
+  /** Most-recently-used filter file paths (newest first), for Recent Filter Files. */
+  recentFilterFiles: string[];
   sidebarCollapsed: boolean;
   splitRatio: number;
   panelPos: "bottom" | "right";
