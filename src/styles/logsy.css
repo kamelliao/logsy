@@ -215,7 +215,7 @@ button { font-family: inherit; }
   color: var(--text-3);
   padding: 6px 16px;
 }
-.file-list { padding: 2px 8px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.file-list { padding: 2px 8px; overflow-y: auto; overflow-x: hidden; flex: 1 1 auto; min-height: 0; }
 .file-item {
   display: flex;
   align-items: center;
@@ -1039,6 +1039,15 @@ button { font-family: inherit; }
 .menu-item.danger .mi-ico { color: var(--error); }
 .menu-sep { height: 1px; background: var(--border); margin: 3px 4px; }
 .menu-item .mi-key { margin-left: auto; font-size: 11px; color: var(--text-3); }
+/* left check column for toggle items (View ▸ Show …). A lit (checked) toggle
+   shows a brand-blue check; --accent here is a near-white surface token, so the
+   color is set explicitly. */
+.menu-item .mi-check { width: 15px; flex: 0 0 auto; display: grid; place-items: center; color: #2c6ce6; }
+.menu-item.checked { color: #1c1f23; }
+.menu-item .mi-label { flex: 1 1 auto; }
+/* submenu rows (File ▸ Recent …) */
+.menu-item.has-sub .mi-sub { margin-left: auto; color: var(--text-3); }
+.menu-item.sub-open { background: var(--row-hover); }
 
 /* ============================================================
    Modal
@@ -1054,13 +1063,21 @@ button { font-family: inherit; }
 }
 .modal {
   position: relative;
-  width: 540px; max-width: calc(100vw - 40px);
+  width: 540px; min-width: 440px; max-width: calc(100vw - 40px);
   max-height: calc(100vh - 72px);
   display: flex; flex-direction: column;
   background: #fff; border-radius: 14px;
   box-shadow: var(--shadow-modal);
   overflow: hidden; animation: pop 0.13s ease;
 }
+/* drag either side edge to resize the editor width (min-width pins the floor).
+   The handles are invisible — only the ew-resize cursor hints at them. */
+.modal-resize-handle {
+  position: absolute; top: 0; bottom: 0; width: 8px; z-index: 6;
+  cursor: ew-resize; touch-action: none;
+}
+.modal-resize-handle.left { left: 0; }
+.modal-resize-handle.right { right: 0; }
 @keyframes pop { from { translate: 0 8px; scale: 0.99; opacity: 0; } to { translate: 0 0; scale: 1; opacity: 1; } }
 .modal-head {
   flex: 0 0 auto;
@@ -1384,3 +1401,78 @@ button { font-family: inherit; }
     @apply font-sans;
   }
 }
+
+/* ============================================================
+   Custom background color picker (inline, beside the Background dropdown)
+   ============================================================ */
+.swatch.swatch-custom {
+  position: relative; overflow: hidden; flex: 0 0 auto;
+  border: 2px dashed var(--border-strong);
+}
+.swatch.swatch-custom .sw-fill { position: absolute; inset: 0; border-radius: 5px; }
+.swatch.swatch-custom .sw-pip {
+  position: relative; z-index: 1; color: #fff;
+  filter: drop-shadow(0 0 1px rgba(0,0,0,0.6));
+}
+.swatch.swatch-custom input[type="color"] {
+  position: absolute; inset: 0; opacity: 0; cursor: pointer; border: 0; padding: 0;
+}
+
+/* ============================================================
+   Go-to-line dialog
+   ============================================================ */
+.goto-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: grid; place-items: start center; padding-top: 18vh;
+  background: rgba(20, 22, 26, 0.34); animation: fade 0.12s ease;
+}
+.goto-box {
+  width: 300px; max-width: calc(100vw - 40px);
+  background: #fff; border-radius: 12px; box-shadow: var(--shadow-modal);
+  padding: 16px; animation: pop 0.13s ease;
+}
+.goto-title { font-size: 13.5px; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.goto-input {
+  width: 100%; box-sizing: border-box;
+  font: inherit; font-size: 14px; color: var(--text);
+  border: 1px solid var(--border-strong); border-radius: 8px; padding: 7px 10px;
+  background: #fff;
+}
+.goto-input:focus { outline: 2px solid var(--accent, #2563eb); outline-offset: -1px; }
+.goto-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+/* ============================================================
+   About dialog
+   ============================================================ */
+.about-overlay {
+  position: fixed; inset: 0; z-index: 200;
+  display: grid; place-items: center;
+  background: rgba(20, 22, 26, 0.40); animation: fade 0.12s ease;
+}
+.about-box {
+  position: relative;
+  width: 380px; max-width: calc(100vw - 40px);
+  background: #fff; border-radius: 14px; box-shadow: var(--shadow-modal);
+  padding: 22px; animation: pop 0.13s ease;
+}
+.about-x { position: absolute; top: 10px; right: 10px; }
+.about-head { display: flex; align-items: center; gap: 14px; }
+.about-logo {
+  width: 44px; height: 44px; border-radius: 11px; flex: 0 0 auto;
+  background: linear-gradient(135deg, #4f8cff, #7c3aed);
+  box-shadow: 0 2px 8px rgba(79,140,255,0.4);
+}
+.about-name { font-size: 20px; font-weight: 700; color: var(--text); letter-spacing: -0.01em; }
+.about-ver { font-size: 12.5px; color: var(--text-3); margin-top: 1px; }
+.about-tagline { font-size: 12.5px; color: var(--text-2); margin: 14px 0 12px; line-height: 1.5; }
+.about-meta {
+  display: flex; flex-direction: column; gap: 7px;
+  border-top: 1px solid var(--border); padding-top: 12px;
+}
+.about-row { display: flex; gap: 10px; font-size: 12.5px; }
+.about-key { width: 64px; flex: 0 0 auto; color: var(--text-3); }
+.about-val { color: var(--text); }
+.about-link { color: var(--accent, #2563eb); text-decoration: none; }
+.about-link:hover { text-decoration: underline; }
+.about-copy-container { padding-top: 10px; }
+.about-copy { font-size: 11.5px; color: var(--text-3); }
