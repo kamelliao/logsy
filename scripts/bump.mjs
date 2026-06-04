@@ -77,7 +77,7 @@ replaceOnce(pkgPath, /("version"\s*:\s*)"[^"]*"/, `$1"${version}"`, "package.jso
 replaceOnce(confPath, /("version"\s*:\s*)"[^"]*"/, `$1"${version}"`, "tauri.conf.json");
 replaceOnce(cargoPath, /^version\s*=\s*"[^"]*"/m, `version = "${version}"`, "Cargo.toml");
 
-console.log(`✓ ${current} → ${version} (package.json, tauri.conf.json, Cargo.toml)`);
+console.log(`✓ ${current} → ${version} (package.json, tauri.conf.json, Cargo.toml, Cargo.lock)`);
 
 // --- commit + tag ---
 if (noCommit) {
@@ -85,7 +85,7 @@ if (noCommit) {
   process.exit(0);
 }
 
-gitIO("add", "package.json", "src-tauri/tauri.conf.json", "src-tauri/Cargo.toml");
+gitIO("add", "package.json", "src-tauri/tauri.conf.json", "src-tauri/Cargo.toml", "src-tauri/Cargo.lock");
 gitIO("commit", "-m", `chore: release ${tag}`);
 console.log(`✓ committed "chore: release ${tag}"`);
 
