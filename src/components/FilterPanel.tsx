@@ -1,4 +1,4 @@
-import { useState, CSSProperties, ReactNode } from "react";
+import { useState, useRef, useEffect, useCallback, CSSProperties, ReactNode } from "react";
 import {
   ChevronDown, ChevronRight, Copy, EyeOff,
   Filter as FilterIcon, FileDown, FolderPlus, GripVertical,
@@ -7,23 +7,31 @@ import {
 } from "lucide-react";
 import {
   DndContext,
+  DragOverlay,
   closestCenter,
   pointerWithin,
+  rectIntersection,
+  getFirstCollision,
   PointerSensor,
   useSensor,
   useSensors,
   useDroppable,
+  MeasuringStrategy,
+  DragStartEvent,
+  DragOverEvent,
   DragEndEvent,
   CollisionDetection,
+  UniqueIdentifier,
 } from "@dnd-kit/core";
 import {
   SortableContext,
   useSortable,
+  arrayMove,
   verticalListSortingStrategy,
   horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { LogFile, FilterGroup, FilterSection, Filter } from "../types";
+import type { LogFile, FilterGroup, FilterSection, Filter, FilterLayout } from "../types";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
@@ -236,7 +244,7 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
           <div
             ref={setNodeRef}
             style={style}
-            className={"filter-row" + (f.enabled ? "" : " disabled")}
+            className={"filter-row" + (f.enabled ? "" : " disabled") + (isDragging ? " dragging" : "")}
             title="Click to edit · right-click for menu · drag to reorder"
             onClick={onEdit}
             {...attributes}
@@ -346,13 +354,13 @@ function SectionBlock({
     id: `body:${section.id}`,
     data: { type: "body", sectionId: section.id },
   });
-  // The header is the *only* "move into this section" target.
+  // A filter can be dropped anywhere on the section (header or body) to move in.
   const { setNodeRef: setHeadRef, isOver: headOver, active: dragActive } = useDroppable({
     id: `head:${section.id}`,
     data: { type: "header", sectionId: section.id },
   });
-  // Light up the whole section only while a filter row is being dragged onto the header.
-  const nestTarget = headOver && dragActive?.data.current?.type === "filter";
+  // Light up the whole section while a filter row is dragged over its header or body.
+  const nestTarget = (headOver || isOver) && dragActive?.data.current?.type === "filter";
 
   function commit() {
     const v = val.trim();
@@ -367,7 +375,7 @@ function SectionBlock({
   };
 
   return (
-    <div ref={setNodeRef} style={style} className={"fsection" + (nestTarget ? " nest-target" : "")}>
+    <div ref={setNodeRef} style={style} className={"fsection" + (nestTarget ? " nest-target" : "") + (isDragging ? " dragging" : "")}>
       <ContextMenu>
         <ContextMenuTrigger
           render={
@@ -479,6 +487,14 @@ function TopDropZone({ children }: { children: ReactNode }) {
   );
 }
 
+// A loose drop target below every top-level item — so a filter can be dropped
+// past the last section to become the bottom-most free filter (the section body
+// itself always nests). Collapses to nothing unless a filter drag is active.
+function BottomSlot({ active }: { active: boolean }) {
+  const { setNodeRef, isOver } = useDroppable({ id: "bottomslot", data: { type: "bottomslot" } });
+  return <div ref={setNodeRef} className={"fp-bottomslot" + (active ? " on" : "") + (isOver ? " drop-over" : "")} />;
+}
+
 // ---- panel-level right-click zone (wraps the scrollable filter list) ----
 
 function PanelListZone({ onAddFilter, onAddSection, onBulk, children }: {
@@ -493,6 +509,39 @@ function PanelListZone({ onAddFilter, onAddSection, onBulk, children }: {
         <PanelMenuItems onAddFilter={onAddFilter} onAddSection={onAddSection} onBulk={onBulk} />
       </ContextMenuContent>
     </ContextMenu>
+  );
+}
+
+// ---- drag overlays (the floating clone shown while dragging) ----
+
+function FilterRowOverlay({ f, count }: { f: Filter; count: number }) {
+  const flags: string[] = [];
+  if (f.caseSensitive) flags.push("Aa");
+  if (f.regex) flags.push(".*");
+  return (
+    <div className={"filter-row drag-overlay" + (f.enabled ? "" : " disabled")} style={{ alignItems: "center" }}>
+      <span className="fr-handle"><GripVertical size={12} /></span>
+      <span className="fr-check-wrap"><Checkbox checked={f.enabled} onCheckedChange={() => {}} /></span>
+      <button className="fr-color" style={{ background: f.bgColor, borderColor: f.textColor }} />
+      <div className="fr-pattern">{f.pattern || <span className="placeholder">untitled filter</span>}</div>
+      <div className="fr-desc">{f.description}</div>
+      {flags.length > 0 && <div className="fr-flags">{flags.map((t, i) => <span key={i} className="fr-flag">{t}</span>)}</div>}
+      {f.exclude && <span className="fr-flag ex"><EyeOff size={12} /></span>}
+      <div className={"fr-count" + (f.exclude ? " ex" : "")}><b>{count.toLocaleString()}</b>{" hits"}</div>
+    </div>
+  );
+}
+
+function SectionOverlay({ section, count }: { section: FilterSection; count: number }) {
+  return (
+    <div className="fsection drag-overlay">
+      <div className="fsection-head">
+        <span className="fs-grip"><GripVertical size={12} /></span>
+        <span className="fs-chevron">{section.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</span>
+        <span className="fs-name">{section.name}</span>
+        <span className="fs-count">{count}</span>
+      </div>
+    </div>
   );
 }
 
@@ -512,23 +561,23 @@ interface FilterPanelProps {
   onRenameSection: (id: string, name: string) => void;
   onToggleSection: (id: string) => void;
   onDeleteSection: (id: string) => void;
-  onReorderTop: (fromId: string, toId: string | null) => void;
   onSetSectionEnabled: (id: string, enabled: boolean) => void;
   onUpdateFilter: (id: string, patch: Partial<Filter>) => void;
   onAddFilter: (sectionId?: string | null) => void;
   onDeleteFilter: (id: string) => void;
   onDuplicateFilter: (id: string) => void;
   onEditFilter: (id: string) => void;
-  onMoveFilter: (activeId: string, overId: string | null, targetSectionId: string | null) => void;
+  /** Commit a whole-group drag arrangement in one undoable step. */
+  onApplyLayout: (model: FilterLayout) => void;
   onBulk: (action: string) => void;
 }
 
 export function FilterPanel({
   file, group, counts, style,
   onSwitchGroup, onAddGroup, onRenameGroup, onDeleteGroup, onReorderGroup,
-  onAddSection, onRenameSection, onToggleSection, onDeleteSection, onReorderTop, onSetSectionEnabled,
+  onAddSection, onRenameSection, onToggleSection, onDeleteSection, onSetSectionEnabled,
   onUpdateFilter, onAddFilter, onDeleteFilter, onDuplicateFilter, onEditFilter,
-  onMoveFilter, onBulk,
+  onApplyLayout, onBulk,
 }: FilterPanelProps) {
   const [search, setSearch] = useState("");
 
@@ -540,25 +589,43 @@ export function FilterPanel({
   const searching = !!q;
   const filtered = q ? filters.filter((f) => f.pattern.toLowerCase().includes(q)) : filters;
 
-  const bySection = (sid: string) => filters.filter((f) => f.sectionId === sid);
-
-  // Build the interleaved top-level layout from `group.order`: each entry is
-  // either a section or a loose (ungrouped) filter row, in free order. We fall
-  // back to appending anything `order` is missing so a row never disappears.
+  // Section / filter metadata lookups (stable across a drag — only order moves).
   const sectionById = new Map(sections.map((s) => [s.id, s] as const));
   const filterById = new Map(filters.map((f) => [f.id, f] as const));
-  const topItems: ({ kind: "section"; section: FilterSection } | { kind: "filter"; filter: Filter })[] = [];
-  const seen = new Set<string>();
-  for (const id of group.order) {
-    if (seen.has(id)) continue;
-    const sec = sectionById.get(id);
-    if (sec) { topItems.push({ kind: "section", section: sec }); seen.add(id); continue; }
-    const f = filterById.get(id);
-    if (f && f.sectionId === null) { topItems.push({ kind: "filter", filter: f }); seen.add(id); }
-  }
-  for (const f of filters) if (f.sectionId === null && !seen.has(f.id)) { topItems.push({ kind: "filter", filter: f }); seen.add(f.id); }
-  for (const s of sections) if (!seen.has(s.id)) { topItems.push({ kind: "section", section: s }); seen.add(s.id); }
-  const topIds = topItems.map((it) => (it.kind === "section" ? it.section.id : it.filter.id));
+
+  // Snapshot the committed arrangement as a FilterLayout: the interleaved
+  // top-level order plus each section's ordered members. Appends anything
+  // `order` is missing so a row never disappears.
+  const buildLayout = (): FilterLayout => {
+    const top: FilterLayout["top"] = [];
+    const seen = new Set<string>();
+    for (const id of group.order) {
+      if (seen.has(id)) continue;
+      if (sectionById.has(id)) { top.push({ kind: "section", id }); seen.add(id); continue; }
+      const f = filterById.get(id);
+      if (f && f.sectionId === null) { top.push({ kind: "filter", id }); seen.add(id); }
+    }
+    for (const f of filters) if (f.sectionId === null && !seen.has(f.id)) { top.push({ kind: "filter", id: f.id }); seen.add(f.id); }
+    for (const s of sections) if (!seen.has(s.id)) { top.push({ kind: "section", id: s.id }); seen.add(s.id); }
+    const inSection: Record<string, string[]> = {};
+    for (const s of sections) inSection[s.id] = filters.filter((f) => f.sectionId === s.id).map((f) => f.id);
+    return { top, inSection };
+  };
+
+  // While a drag is in flight we render from this local model and commit once
+  // (one undoable step) on drop; otherwise we render straight from props.
+  const [drag, setDrag] = useState<{ activeId: string; type: "filter" | "section"; model: FilterLayout } | null>(null);
+  const layout = drag ? drag.model : buildLayout();
+
+  const bySection = (sid: string) =>
+    (layout.inSection[sid] ?? []).map((id) => filterById.get(id)).filter(Boolean) as Filter[];
+  const topItems = layout.top
+    .map((e) => e.kind === "section"
+      ? { kind: "section" as const, section: sectionById.get(e.id) }
+      : { kind: "filter" as const, filter: filterById.get(e.id) })
+    .filter((it) => (it.kind === "section" ? it.section : it.filter)) as
+      ({ kind: "section"; section: FilterSection } | { kind: "filter"; filter: Filter })[];
+  const topIds = layout.top.map((e) => e.id);
 
   function renderRow(f: Filter) {
     return (
@@ -575,80 +642,167 @@ export function FilterPanel({
     );
   }
 
-  // Custom collision so that "move into a section" is *only* possible by dropping
-  // on its header. Everything else resolves to a reorder:
-  //   1. If the pointer is inside a section header → that header wins (nest).
-  //   2. Otherwise fall back to closestCenter, but exclude the interior rows and
-  //      body of sections the dragged row doesn't belong to — so a loose row can
-  //      slide *between* sections (landing next to the whole section block)
-  //      instead of being swallowed by one.
-  const collisionDetection: CollisionDetection = (args) => {
-    const activeSection = (args.active.data.current?.sectionId ?? null) as string | null;
-    const headers = args.droppableContainers.filter((c) => c.data.current?.type === "header");
-    const headerHit = pointerWithin({ ...args, droppableContainers: headers });
-    if (headerHit.length) return headerHit;
+  // ---- drag-and-drop (dnd-kit "multiple lists") ----
+  // Refs the recipe uses to keep collision stable when an item jumps containers.
+  const lastOverId = useRef<UniqueIdentifier | null>(null);
+  const recentlyMovedToNewContainer = useRef(false);
+  useEffect(() => {
+    requestAnimationFrame(() => { recentlyMovedToNewContainer.current = false; });
+  }, [drag?.model]);
 
-    const rest = args.droppableContainers.filter((c) => {
-      const d = c.data.current;
-      if (d?.type === "header") return false;
-      if (d?.type === "filter" || d?.type === "body") {
-        const sid = (d.sectionId ?? null) as string | null;
-        return sid === null || sid === activeSection;
-      }
-      return true; // section blocks + top-level zone
-    });
-    return closestCenter({ ...args, droppableContainers: rest });
+  // Locate an id in a model: which container ("__top__" or a section id) + index.
+  const locate = (id: string, m: FilterLayout): { container: string; index: number } | null => {
+    const ti = m.top.findIndex((e) => e.id === id);
+    if (ti >= 0) return { container: "__top__", index: ti };
+    for (const sid of Object.keys(m.inSection)) {
+      const i = m.inSection[sid].indexOf(id);
+      if (i >= 0) return { container: sid, index: i };
+    }
+    return null;
   };
 
-  // The top-level slot (section id or loose-filter id) a drag is hovering over.
-  // null = drop at the end of the top level.
-  function topLevelIdFromOver(over: DragEndEvent["over"]): string | null {
-    const t = over?.data.current?.type;
-    if (t === "section") return String(over!.id);
-    if (t === "header") return (over!.data.current?.sectionId ?? null) as string | null;
-    if (t === "filter") {
-      const sid = (over!.data.current?.sectionId ?? null) as string | null;
-      return sid === null ? String(over!.id) : sid;
+  // Current pointer Y, reconstructed from the activator pointerdown + drag delta.
+  const pointerYOf = (e: DragOverEvent | DragEndEvent): number | undefined => {
+    const ae = e.activatorEvent as { clientY?: number } | null;
+    if (!ae || typeof ae.clientY !== "number") return undefined;
+    return ae.clientY + (e.delta?.y ?? 0);
+  };
+
+  // Resolve the drop target (container + index) from the hovered droppable. A
+  // header resolves INTO its section, except its *upper half* drops the filter as
+  // a loose row BEFORE the section (so it can become the top-most free filter); a
+  // body appends into its section (or the top level); a row or section block uses
+  // its live position in the model.
+  const resolveDrop = (
+    over: DragEndEvent["over"], m: FilterLayout, pointerY?: number,
+  ): { container: string; index: number } | null => {
+    if (!over) return null;
+    const d = over.data.current as { type?: string; sectionId?: string | null } | undefined;
+    if (d?.type === "header") {
+      const sid = d.sectionId as string;
+      const r = over.rect;
+      if (pointerY != null && r && pointerY < r.top + r.height / 2) {
+        const idx = m.top.findIndex((e) => e.id === sid);
+        return { container: "__top__", index: idx < 0 ? m.top.length : idx };
+      }
+      return { container: sid, index: (m.inSection[sid] ?? []).length };
     }
-    if (t === "body") return (over!.data.current?.sectionId ?? null) as string | null;
-    return null;
+    if (d?.type === "body") {
+      const sid = (d.sectionId ?? null) as string | null;
+      return sid === null
+        ? { container: "__top__", index: m.top.length }
+        : { container: sid, index: (m.inSection[sid] ?? []).length };
+    }
+    if (d?.type === "bottomslot") return { container: "__top__", index: m.top.length };
+    return locate(String(over.id), m);
+  };
+
+  const cloneModel = (m: FilterLayout): FilterLayout => ({
+    top: m.top.map((e) => ({ ...e })),
+    inSection: Object.fromEntries(Object.entries(m.inSection).map(([k, v]) => [k, [...v]])),
+  });
+  const removeFromModel = (m: FilterLayout, id: string) => {
+    const ti = m.top.findIndex((e) => e.id === id);
+    if (ti >= 0) { m.top.splice(ti, 1); return; }
+    for (const sid of Object.keys(m.inSection)) {
+      const i = m.inSection[sid].indexOf(id);
+      if (i >= 0) { m.inSection[sid].splice(i, 1); return; }
+    }
+  };
+  const insertIntoModel = (m: FilterLayout, container: string, id: string, index: number) => {
+    if (container === "__top__") {
+      m.top.splice(Math.max(0, Math.min(index, m.top.length)), 0, { kind: "filter", id });
+    } else {
+      const arr = (m.inSection[container] ??= []);
+      arr.splice(Math.max(0, Math.min(index, arr.length)), 0, id);
+    }
+  };
+
+  function resetDnd() {
+    lastOverId.current = null;
+    recentlyMovedToNewContainer.current = false;
   }
 
-  function handleDragEnd(event: DragEndEvent) {
-    const { active, over } = event;
-    if (!over || over.id === active.id) return;
-    const aType = active.data.current?.type;
-    const overType = over.data.current?.type as string | undefined;
+  function handleDragStart(e: DragStartEvent) {
+    const type = e.active.data.current?.type === "section" ? "section" : "filter";
+    setDrag({ activeId: String(e.active.id), type, model: buildLayout() });
+  }
 
-    // Sections only ever reorder at the top level.
-    if (aType === "section") {
-      const overTop = topLevelIdFromOver(over);
-      if (overTop === active.id) return;
-      onReorderTop(String(active.id), overTop);
-      return;
-    }
-
-    // --- filter row ---
+  // Live cross-container move: only when a *filter* enters a different container.
+  // Within-container reordering is previewed for free by each SortableContext, so
+  // we leave it to drop time.
+  function handleDragOver(e: DragOverEvent) {
+    const { active, over } = e;
+    if (!over || drag?.type !== "filter") return;
     const activeId = String(active.id);
-
-    // Drop on a header = move INTO that section (append).
-    if (overType === "header") {
-      onMoveFilter(activeId, null, (over.data.current?.sectionId ?? null) as string | null);
-      return;
-    }
-    // Over another row: reorder at that row's level (loose, or the active's own section).
-    if (overType === "filter") {
-      onMoveFilter(activeId, String(over.id), (over.data.current?.sectionId ?? null) as string | null);
-      return;
-    }
-    // Over a section block (not its header) = stay loose, land next to the block.
-    if (overType === "section") {
-      onMoveFilter(activeId, String(over.id), null);
-      return;
-    }
-    // Over a body zone: own section → keep in it; top-level zone → loose at end.
-    onMoveFilter(activeId, null, (over.data.current?.sectionId ?? null) as string | null);
+    const pointerY = pointerYOf(e);
+    setDrag((cur) => {
+      if (!cur) return cur;
+      const src = locate(activeId, cur.model);
+      const target = resolveDrop(over, cur.model, pointerY);
+      if (!src || !target || target.container === src.container) return cur;
+      const next = cloneModel(cur.model);
+      removeFromModel(next, activeId);
+      insertIntoModel(next, target.container, activeId, target.index);
+      recentlyMovedToNewContainer.current = true;
+      return { ...cur, model: next };
+    });
   }
+
+  function handleDragEnd(e: DragEndEvent) {
+    const cur = drag;
+    if (!cur) { resetDnd(); return; }
+    const { active, over } = e;
+    const activeId = String(active.id);
+    let model = cur.model;
+    if (over) {
+      const src = locate(activeId, model);
+      const target = resolveDrop(over, model, pointerYOf(e));
+      if (src && target) {
+        const next = cloneModel(model);
+        if (cur.type === "section") {
+          next.top = arrayMove(next.top, src.index, target.index);
+        } else {
+          // Filter: remove then insert at the resolved slot, compensating for the
+          // gap the removal leaves when the source precedes the target in the same
+          // container. Unifies same- and cross-container drops (incl. popping a
+          // filter out to a loose row before a section).
+          let idx = target.index;
+          if (src.container === target.container && src.index < idx) idx -= 1;
+          removeFromModel(next, activeId);
+          insertIntoModel(next, target.container, activeId, idx);
+        }
+        model = next;
+      }
+    }
+    onApplyLayout(model);
+    setDrag(null);
+    resetDnd();
+  }
+
+  // Recipe collision: a section drag snaps to top-level slots; a filter drag uses
+  // a pointer-first strategy that ignores section *blocks* (a filter targets a
+  // section via its header/body/rows, never the block itself), with a stable
+  // fallback so the hovered container doesn't flicker mid-jump.
+  const collisionDetection: CollisionDetection = useCallback((args) => {
+    if (drag?.type === "section") {
+      const topSet = new Set(layout.top.map((e) => e.id));
+      return closestCenter({
+        ...args,
+        droppableContainers: args.droppableContainers.filter(
+          (c) => topSet.has(String(c.id)) || String(c.id) === "body:__null__"),
+      });
+    }
+    const sectionIdSet = new Set(sections.map((s) => s.id));
+    const containers = args.droppableContainers.filter((c) => !sectionIdSet.has(String(c.id)));
+    const pointer = pointerWithin({ ...args, droppableContainers: containers });
+    const intersections = pointer.length ? pointer : rectIntersection({ ...args, droppableContainers: containers });
+    const overId = getFirstCollision(intersections, "id");
+    if (overId != null) { lastOverId.current = overId; return [{ id: overId }]; }
+    if (recentlyMovedToNewContainer.current) lastOverId.current = drag?.activeId ?? null;
+    return lastOverId.current ? [{ id: lastOverId.current }] : [];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drag, layout.top, sections]);
 
   function handleGroupDragEnd(event: DragEndEvent) {
     const { active, over } = event;
@@ -753,7 +907,15 @@ export function FilterPanel({
           </PanelListZone>
         </DndContext>
       ) : (
-        <DndContext sensors={sensors} collisionDetection={collisionDetection} onDragEnd={handleDragEnd}>
+        <DndContext
+          sensors={sensors}
+          collisionDetection={collisionDetection}
+          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+          onDragCancel={() => { setDrag(null); resetDnd(); }}
+        >
           <PanelListZone onAddFilter={() => onAddFilter()} onAddSection={onAddSection} onBulk={onBulk}>
             <TopDropZone>
               <SortableContext items={topIds} strategy={verticalListSortingStrategy}>
@@ -775,12 +937,21 @@ export function FilterPanel({
                   )
                 )}
               </SortableContext>
+              <BottomSlot active={drag?.type === "filter"} />
             </TopDropZone>
 
             <button className="fsection-add" onClick={onAddSection}>
               <FolderPlus size={14} /> New group
             </button>
           </PanelListZone>
+
+          <DragOverlay>
+            {drag?.type === "filter" && filterById.get(drag.activeId) ? (
+              <FilterRowOverlay f={filterById.get(drag.activeId)!} count={counts[drag.activeId] ?? 0} />
+            ) : drag?.type === "section" && sectionById.get(drag.activeId) ? (
+              <SectionOverlay section={sectionById.get(drag.activeId)!} count={bySection(drag.activeId).length} />
+            ) : null}
+          </DragOverlay>
         </DndContext>
       )}
     </div>

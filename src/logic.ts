@@ -1,5 +1,5 @@
 import type {
-  Filter, CompiledFilter, ViewResult, Segment,
+  Filter, CompiledFilter, ViewResult, ViewRow, Segment,
   FieldType, FieldDef, FieldValue,
 } from "./types";
 
@@ -20,11 +20,6 @@ export function compile(f: Filter): CompiledFilter {
 
 export function compileAll(filters: Filter[]): CompiledFilter[] {
   return filters.map(compile);
-}
-
-function testRe(re: RegExp, line: string): boolean {
-  re.lastIndex = 0;
-  return re.test(line);
 }
 
 export function countMatches(lines: string[], re: RegExp): number {
@@ -123,43 +118,55 @@ function extractFields(re: RegExp, defs: FieldDef[], line: string): Record<strin
 }
 
 export function computeView(lines: string[], compiled: CompiledFilter[]): ViewResult {
-  const active = compiled.filter((c) => c.f.enabled && !c.empty && c.ok && c.re);
-  const excludes = active.filter((c) => c.f.exclude);
-  // `extractOnly` filters parse but never colour a line, so they're not winners.
-  const highlights = active.filter((c) => !c.f.exclude && !c.f.extractOnly);
-  // Structural filters (regex with named groups) that supply parsed fields.
-  const fieldProviders = active.filter((c) => !c.f.exclude && c.f.fields && c.f.fields.length > 0);
+  // Every filter with a usable regex. List order is significant: the colour
+  // winner and field provider go to the first match in this order.
+  const usable = compiled.filter((c) => c.re && !c.empty && c.ok);
+  // Existence flags reflect which enabled filters exist, not per-line matches.
+  const hasHighlights = usable.some((c) => c.f.enabled && !c.f.exclude && !c.f.extractOnly);
+  const hasExcludes = usable.some((c) => c.f.enabled && c.f.exclude);
 
-  const counts: Record<string, number> = {};
-  for (const c of compiled) {
-    counts[c.f.id] = c.re ? countMatches(lines, c.re) : 0;
+  // Field providers keyed by filter id, for lazy on-demand extraction.
+  const providers = new Map<string, { re: RegExp; defs: FieldDef[] }>();
+  for (const c of usable) {
+    if (c.f.enabled && !c.f.exclude && c.f.fields && c.f.fields.length > 0) {
+      providers.set(c.f.id, { re: c.re!, defs: c.f.fields });
+    }
   }
 
-  const rows = lines.map((text, i) => {
-    let excluded = false;
-    for (const e of excludes) {
-      if (testRe(e.re!, text)) { excluded = true; break; }
-    }
-    let winner: CompiledFilter | null = null;
-    for (const h of highlights) {
-      if (testRe(h.re!, text)) { winner = h; break; }
-    }
-    // First structural filter (in order) that matches supplies this line's fields.
-    let fields: Record<string, FieldValue> | undefined;
-    let fieldsFromId: string | undefined;
-    for (const p of fieldProviders) {
-      if (!testRe(p.re!, text)) continue;
-      fields = extractFields(p.re!, p.f.fields!, text);
-      fieldsFromId = p.f.id;
-      break;
-    }
-    return { n: i + 1, text, winner, excluded, fields, fieldsFromId };
-  });
+  // Init counts for every compiled filter (incl. disabled / empty) so badges
+  // always show a number.
+  const counts: Record<string, number> = {};
+  for (const c of compiled) counts[c.f.id] = 0;
 
-  return {
-    rows,
-    counts,
-    hasHighlights: highlights.length > 0,
-    hasExcludes: excludes.length > 0,
+  const rows: ViewRow[] = new Array(lines.length);
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i];
+    let winner: CompiledFilter | null = null;
+    let excluded = false;
+    let fieldsFromId: string | undefined;
+    // Single pass over every usable filter: test once, count the hit, then (for
+    // enabled filters) assign the row's role. Counting disabled filters too lets
+    // their badges show potential matches.
+    for (const c of usable) {
+      c.re!.lastIndex = 0;
+      if (!c.re!.test(text)) continue;
+      counts[c.f.id]++;
+      if (!c.f.enabled) continue;
+      if (c.f.exclude) { excluded = true; continue; }
+      if (winner === null && !c.f.extractOnly) winner = c;
+      if (fieldsFromId === undefined && c.f.fields && c.f.fields.length > 0) fieldsFromId = c.f.id;
+    }
+    rows[i] = { n: i + 1, text, winner, excluded, fieldsFromId };
+  }
+
+  // Extract a row's fields on demand from the provider that claimed it.
+  const fieldsFor = (n: number): Record<string, FieldValue> | undefined => {
+    const row = rows[n - 1];
+    if (!row || row.fieldsFromId === undefined) return undefined;
+    const p = providers.get(row.fieldsFromId);
+    if (!p) return undefined;
+    return extractFields(p.re, p.defs, row.text);
   };
+
+  return { rows, counts, hasHighlights, hasExcludes, fieldsFor };
 }

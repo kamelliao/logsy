@@ -774,7 +774,9 @@ button { font-family: inherit; }
 .filter-row:hover { border-color: var(--border-strong); box-shadow: 0 1px 2px rgba(0,0,0,0.04); }
 .filter-row.disabled { background: #fafafa; }
 .filter-row.disabled .fr-pattern { color: var(--text-3); }
-.filter-row.dragging { opacity: 0.4; }
+/* The in-list source row while its clone floats in the DragOverlay: a faint,
+   dashed placeholder marking the gap the row will drop back into. */
+.filter-row.dragging { opacity: 0.5; border-style: dashed; border-color: var(--accent); background: var(--accent-bg); }
 .filter-row.drop-before::before,
 .filter-row.drop-after::after {
   content: ""; position: absolute; left: 6px; right: 6px; height: 2px;
@@ -783,6 +785,11 @@ button { font-family: inherit; }
 .filter-row.drop-before::before { top: -2px; }
 .filter-row.drop-after::after { bottom: -2px; }
 
+/* The floating clone that follows the cursor (filter row or section). */
+.drag-overlay { cursor: grabbing; box-shadow: 0 10px 28px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.12); }
+.filter-row.drag-overlay { opacity: 1; border-color: var(--accent); background: #fff; }
+.fsection.drag-overlay { opacity: 1; background: #fff; border-radius: 8px; }
+
 .filter-row { cursor: grab; }
 .filter-row:active { cursor: grabbing; }
 .filter-row button, .filter-row input, .filter-row [role="checkbox"] { cursor: pointer; }
@@ -790,6 +797,10 @@ button { font-family: inherit; }
   flex: 0 0 auto; width: 13px; height: 100%;
   display: grid; place-items: center;
   color: #c2c7cd;
+  /* The checkbox to its right expands its hit area 12px outward via an ::after
+     overlay (and swallows pointerdown), covering the grip. Lift the grip above it
+     so grabbing the grip actually starts a drag instead of toggling the box. */
+  position: relative; z-index: 1;
 }
 .filter-row:hover .fr-handle { color: var(--text-3); }
 
@@ -962,6 +973,12 @@ button { font-family: inherit; }
 /* top-level interleaved list of loose filter rows + sections */
 .fp-toplevel { min-height: 6px; border-radius: 6px; }
 .fp-toplevel.drop-over { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent); }
+/* loose drop target below the last item — only takes space during a filter drag,
+   so a row can land as the bottom-most free filter instead of nesting in the
+   last group. */
+.fp-bottomslot { height: 0; }
+.fp-bottomslot.on { height: 16px; margin-top: 2px; border-radius: 5px; }
+.fp-bottomslot.on.drop-over { background: var(--accent-bg); box-shadow: inset 0 0 0 1px var(--accent); }
 
 /* whole section lights up when a dragged filter is over its header (= move into it) */
 .fsection.nest-target {

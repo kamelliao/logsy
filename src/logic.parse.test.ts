@@ -59,17 +59,17 @@ test("a regex filter with named groups extracts coerced fields on matching lines
       fields: F({ name: "ts", type: "float" }, { name: "lvl", type: "string" }, { name: "msg", type: "string" }),
     }),
   ]));
-  expect(view.rows[0].fields?.ts).toEqual({ raw: "12.0", value: 12 });
-  expect(view.rows[0].fields?.lvl.value).toBe("E");
+  expect(view.fieldsFor(1)?.ts).toEqual({ raw: "12.0", value: 12 });
+  expect(view.fieldsFor(1)?.lvl.value).toBe("E");
   expect(view.rows[0].fieldsFromId).toBe("p1");
-  expect(view.rows[1].fields).toBeUndefined();
+  expect(view.fieldsFor(2)).toBeUndefined();
   expect(view.rows[1].fieldsFromId).toBeUndefined();
 });
 
 test("a plain (non-named-group) filter highlights but extracts nothing", () => {
   const view = computeView(["error here"], compileAll([filter("h", "error")]));
   expect(view.rows[0].winner?.f.id).toBe("h");
-  expect(view.rows[0].fields).toBeUndefined();
+  expect(view.fieldsFor(1)).toBeUndefined();
 });
 
 test("field extraction is first-structural-filter-wins, independent of the colour winner", () => {
@@ -83,7 +83,7 @@ test("field extraction is first-structural-filter-wins, independent of the colou
   ]));
   expect(view.rows[0].winner?.f.id).toBe("color");      // highlight from the plain filter
   expect(view.rows[0].fieldsFromId).toBe("specific");   // fields from the first structural match
-  expect(view.rows[0].fields?.tag.value).toBe("i2c");
+  expect(view.fieldsFor(1)?.tag.value).toBe("i2c");
 });
 
 test("an extractOnly filter supplies fields but never becomes the colour winner", () => {
@@ -95,8 +95,21 @@ test("an extractOnly filter supplies fields but never becomes the colour winner"
   ]));
   expect(view.rows[0].winner).toBeNull();          // not coloured
   expect(view.hasHighlights).toBe(false);
-  expect(view.rows[0].fields?.lvl.value).toBe("E"); // but still parsed
+  expect(view.fieldsFor(1)?.lvl.value).toBe("E"); // but still parsed
   expect(view.rows[0].fieldsFromId).toBe("catchall");
+});
+
+test("counts cover every line and include disabled filters", () => {
+  const lines = ["error a", "ok b", "error c"];
+  const view = computeView(lines, compileAll([
+    filter("on", "error", { regex: false }),
+    filter("off", "error", { regex: false, enabled: false }),
+  ]));
+  // Both filters match the same two lines; the disabled one still gets a count.
+  expect(view.counts.on).toBe(2);
+  expect(view.counts.off).toBe(2);
+  // ...but a disabled filter never colours a row.
+  expect(view.rows[0].winner?.f.id).toBe("on");
 });
 
 test("excluded lines are removed and never used as field providers", () => {

@@ -30,6 +30,17 @@ export interface FilterSection {
   collapsed: boolean;
 }
 
+/**
+ * A whole-group layout snapshot used by the filter drag-and-drop while a drag is
+ * in flight (kept local to FilterPanel) and to commit the final arrangement in a
+ * single undoable step. `top` is the interleaved top-level order (section ids and
+ * loose filter ids); `inSection` maps a section id to its ordered filter ids.
+ */
+export interface FilterLayout {
+  top: { kind: "section" | "filter"; id: string }[];
+  inSection: Record<string, string[]>;
+}
+
 export interface FilterGroup {
   id: string;
   name: string;
@@ -144,6 +155,13 @@ export interface ViewResult {
   counts: Record<string, number>;
   hasHighlights: boolean;
   hasExcludes: boolean;
+  /**
+   * Lazily extract a row's parsed fields by line number. Fields are no longer
+   * computed for every line up front — only the rows that actually need them
+   * (compare table, an expanded row) call this. Returns undefined when the line
+   * has no field provider.
+   */
+  fieldsFor(n: number): Record<string, FieldValue> | undefined;
 }
 
 export interface Segment {

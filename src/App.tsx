@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useRef, Fragment, CSSProperties, ReactNode } from "react";
+import { useState, useMemo, useEffect, useCallback, useReducer, useRef, Fragment, CSSProperties, ReactNode } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderOpen, Minus, PanelBottom, PanelBottomClose, PanelRight, PanelRightOpen, Square, Upload, X } from "lucide-react";
 import { tinykeys } from "tinykeys";
@@ -7,7 +7,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { save, open, confirm } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { AppState, LogFile, FilterGroup, FilterSection, Filter } from "./types";
+import type { AppState, LogFile, FilterGroup, FilterSection, Filter, FilterLayout } from "./types";
 import {
   uid, makeFilter, initialState, normalizeState, PALETTE,
 } from "./data";
@@ -129,18 +129,74 @@ export function App() {
   const view = useMemo(() => computeView(lines, compiled), [lines, compiled]);
   // Rows shown in the comparison panel: explicitly-added, still-visible, parsed lines.
   const compareRows = useMemo(
-    () => view.rows.filter((r) => !r.excluded && compareLines.has(r.n) && r.fields),
+    () => view.rows
+      .filter((r) => !r.excluded && compareLines.has(r.n) && r.fieldsFromId !== undefined)
+      .map((r) => ({ ...r, fields: view.fieldsFor(r.n) })),
     [view, compareLines],
   );
 
   // ---------- helpers ----------
-  const patchState = useCallback((fn: (s: AppState) => void) => {
-    setState((s) => {
-      const n = JSON.parse(JSON.stringify(s)) as AppState;
-      fn(n);
-      return n;
-    });
+  // Latest state, readable from async callbacks (file loading) and from
+  // patchState / undo without stale closures.
+  const stateRef = useRef(state);
+  stateRef.current = state;
+
+  // ---------- undo / redo ----------
+  // Whole-AppState snapshots. Snapshots are immutable (patchState clones before
+  // mutating), so stacking the prior reference is cheap. Memory-only (not
+  // persisted); `bumpHistory` re-renders so menu enablement stays in sync.
+  const past = useRef<AppState[]>([]);
+  const future = useRef<AppState[]>([]);
+  const coalesceKey = useRef<string | null>(null);
+  const [, bumpHistory] = useReducer((x: number) => x + 1, 0);
+  const HISTORY_CAP = 50;
+
+  // Mutate state immutably. By default the edit is recorded for undo; pass
+  // { undoable: false } for navigation / file / view-only changes, or
+  // { coalesce } to fold a run of similar edits (typing, dragging) into one step.
+  const patchState = useCallback(
+    (fn: (s: AppState) => void, opts?: { undoable?: boolean; coalesce?: string }) => {
+      if (opts?.undoable !== false) {
+        const base = stateRef.current;
+        const top = past.current[past.current.length - 1];
+        const fold = !!opts?.coalesce && coalesceKey.current === opts.coalesce;
+        // Skip when folding, or when an earlier edit this tick already pushed the
+        // same base (so a single user action is one undo step).
+        if (!fold && top !== base) {
+          past.current.push(base);
+          if (past.current.length > HISTORY_CAP) past.current.shift();
+        }
+        future.current = [];
+        coalesceKey.current = opts?.coalesce ?? null;
+        bumpHistory();
+      }
+      setState((s) => {
+        const n = structuredClone(s);
+        fn(n);
+        return n;
+      });
+    },
+    [],
+  );
+
+  const undo = useCallback(() => {
+    if (past.current.length === 0) return;
+    const prev = past.current.pop()!;
+    future.current.push(stateRef.current);
+    coalesceKey.current = null;
+    bumpHistory();
+    setState(prev);
   }, []);
+  const redo = useCallback(() => {
+    if (future.current.length === 0) return;
+    const next = future.current.pop()!;
+    past.current.push(stateRef.current);
+    coalesceKey.current = null;
+    bumpHistory();
+    setState(next);
+  }, []);
+  const canUndo = past.current.length > 0;
+  const canRedo = future.current.length > 0;
 
   // Push a path to the front of a recent-list (deduped, capped at 10).
   const pushRecent = useCallback((key: "recentFiles" | "recentFilterFiles", path: string) => {
@@ -152,10 +208,6 @@ export function App() {
   }, []);
   const clearRecent = useCallback((key: "recentFiles" | "recentFilterFiles") =>
     setState((s) => ({ ...s, [key]: [] })), []);
-
-  // Latest state, readable from async callbacks (file loading) without stale closures.
-  const stateRef = useRef(state);
-  stateRef.current = state;
 
   function withFile(s: AppState, fid: string): LogFile {
     return s.files.find((f) => f.id === fid)!;
@@ -179,7 +231,7 @@ export function App() {
       s.files = s.files.filter((x) => x.id !== fid);
       if (s.activeFileId === fid) s.activeFileId = s.files[0]?.id ?? null;
       delete linesStore[fid];
-    });
+    }, { undoable: false });
   };
 
   // Read each path from disk and add it as a log file. The same path may be
@@ -228,7 +280,7 @@ export function App() {
         f.activeGroupId = f.groups[0].id;
         s.files.push(f);
         s.activeFileId = f.id;
-      });
+      }, { undoable: false });
     }
     setLinesVersion((v) => v + 1);
     if (lastErr) toast.error("Could not open file: " + lastErr);
@@ -259,7 +311,7 @@ export function App() {
       f.name = baseName(path);
       f.lineCount = lns.length;
       s.activeFileId = f.id;
-    });
+    }, { undoable: false });
     pushRecent("recentFiles", path);
     setCompareLines(new Set());      // line numbers are file-specific
     setLinesVersion((v) => v + 1);
@@ -329,7 +381,7 @@ export function App() {
   }, []);
 
   // ---------- groups ----------
-  const switchGroup = (gid: string) => patchState((s) => { if (!file) return; withFile(s, file.id).activeGroupId = gid; });
+  const switchGroup = (gid: string) => patchState((s) => { if (!file) return; withFile(s, file.id).activeGroupId = gid; }, { undoable: false });
   const addGroup = () => patchState((s) => {
     if (!file) return;
     const f = withFile(s, file.id);
@@ -378,7 +430,7 @@ export function App() {
     if (!file || !group) return;
     const sec = withGroup(s, file.id, group.id).sections.find((x) => x.id === sid);
     if (sec) sec.collapsed = !sec.collapsed;
-  });
+  }, { undoable: false });
   const deleteSection = (sid: string) => patchState((s) => {
     if (!file || !group) return;
     const g = withGroup(s, file.id, group.id);
@@ -391,17 +443,29 @@ export function App() {
     if (at >= 0) g.order.splice(at, 1, ...freed);
     else g.order.push(...freed);
   });
-  // Reorder a top-level item (section or ungrouped filter) to `toId`'s slot;
-  // toId === null moves it to the end.
-  const reorderTop = (fromId: string, toId: string | null) => patchState((s) => {
+  // Commit a whole-group drag-and-drop arrangement (built live in FilterPanel) in
+  // one undoable step. Rebuild `filters` in visual order — loose rows and each
+  // section's rows interleaved per `model.top` — and set every filter's sectionId;
+  // `order` becomes the new interleaved top-level order.
+  const applyLayout = (model: FilterLayout) => patchState((s) => {
     if (!file || !group) return;
-    const order = withGroup(s, file.id, group.id).order;
-    const from = order.indexOf(fromId);
-    if (from < 0) return;
-    const to = toId ? order.indexOf(toId) : -1;
-    const [m] = order.splice(from, 1);
-    if (to < 0) order.push(m);
-    else order.splice(to, 0, m);
+    const g = withGroup(s, file.id, group.id);
+    const byId = new Map(g.filters.map((f) => [f.id, f] as const));
+    const next: Filter[] = [];
+    for (const entry of model.top) {
+      if (entry.kind === "filter") {
+        const f = byId.get(entry.id);
+        if (f) { f.sectionId = null; next.push(f); byId.delete(entry.id); }
+      } else {
+        for (const fid of model.inSection[entry.id] ?? []) {
+          const f = byId.get(fid);
+          if (f) { f.sectionId = entry.id; next.push(f); byId.delete(fid); }
+        }
+      }
+    }
+    for (const f of byId.values()) next.push(f); // safety: never drop a filter
+    g.filters = next;
+    g.order = model.top.map((e) => e.id);
   });
   const setSectionEnabled = (sid: string, enabled: boolean) => patchState((s) => {
     if (!file || !group) return;
@@ -424,35 +488,6 @@ export function App() {
     });
     setEditing(null);
   };
-  // Move a filter to `overId`'s slot (arrayMove semantics), optionally into another section.
-  // overId === null drops it at the end of `targetSectionId`'s bucket.
-  const moveFilter = (activeId: string, overId: string | null, targetSectionId: string | null) =>
-    patchState((s) => {
-      if (!file || !group) return;
-      const g = withGroup(s, file.id, group.id);
-      const arr = g.filters;
-      const from = arr.findIndex((x) => x.id === activeId);
-      if (from < 0) return;
-      // Capture the destination index BEFORE removing the dragged item so that
-      // dragging downward lands the row *after* the drop target (matches dnd-kit's preview).
-      const to = overId ? arr.findIndex((x) => x.id === overId) : -1;
-      arr[from].sectionId = targetSectionId;
-      const [m] = arr.splice(from, 1);
-      if (to < 0) arr.push(m);
-      else arr.splice(to, 0, m);
-      // Maintain the top-level order: ungrouped filters appear in `order`,
-      // grouped ones do not.
-      const oi = g.order.indexOf(activeId);
-      if (targetSectionId === null) {
-        const oto = overId ? g.order.indexOf(overId) : -1;
-        if (oi >= 0) g.order.splice(oi, 1);
-        const at = oto >= 0 ? oto : -1;
-        if (at < 0) g.order.push(activeId);
-        else g.order.splice(at, 0, activeId);
-      } else if (oi >= 0) {
-        g.order.splice(oi, 1);
-      }
-    });
   const duplicateFilter = (fid: string) => patchState((s) => {
     if (!file || !group) return;
     const g = withGroup(s, file.id, group.id);
@@ -511,7 +546,7 @@ export function App() {
         // Mark this as the clean baseline so "Save Filter" disables until the
         // next edit.
         g.savedSnapshot = exportPayload(g);
-      });
+      }, { undoable: false });
       pushRecent("recentFilterFiles", path);
       toast.success("Filters saved");
     } catch (e) {
@@ -791,8 +826,18 @@ export function App() {
   // off tinykeys so there's exactly one handler (no double-toggle).
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey) return;
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
       const k = e.key.toLowerCase();
+      // Undo / redo — but let the browser's native undo handle editable fields
+      // (filter editor, inline rename) so typing isn't clobbered.
+      if (k === "z" || k === "y") {
+        const t = e.target as HTMLElement | null;
+        if (t && t.closest('input, textarea, [contenteditable="true"]')) return;
+        e.preventDefault();
+        if (k === "y" || e.shiftKey) redo(); else undo();
+        return;
+      }
+      if (e.shiftKey) return;
       if (k === "b") { e.preventDefault(); toggleFilterCollapsed(); }
       else if (k === "g") { e.preventDefault(); openGoto(); }
       else if (k === "r") { e.preventDefault(); location.reload(); }
@@ -821,7 +866,7 @@ export function App() {
 
   const recentFilesMenu: MenuItem[] = state.recentFiles.length
     ? [
-        ...state.recentFiles.map((p) => ({ label: baseName(p), action: () => void loadPaths([p]) })),
+        ...state.recentFiles.map((p, i) => ({ label: `${i + 1}   ${baseName(p)}`, action: () => void loadPaths([p]) })),
         { sep: true as const },
         { label: "Clear Recent Files", action: () => clearRecent("recentFiles") },
       ]
@@ -829,7 +874,7 @@ export function App() {
 
   const recentFilterFilesMenu: MenuItem[] = state.recentFilterFiles.length
     ? [
-        ...state.recentFilterFiles.map((p) => ({ label: baseName(p), disabled: !group, action: () => void loadFilterFromPath(p) })),
+        ...state.recentFilterFiles.map((p, i) => ({ label: `${i + 1}   ${baseName(p)}`, disabled: !group, action: () => void loadFilterFromPath(p) })),
         { sep: true as const },
         { label: "Clear Recent Filter Files", action: () => clearRecent("recentFilterFiles") },
       ]
@@ -849,6 +894,9 @@ export function App() {
       { label: "Exit", action: () => invoke("window_controls", { action: "close" }) },
     ],
     Edit: [
+      { label: "Undo", key: "Ctrl Z", disabled: !canUndo, action: undo },
+      { label: "Redo", key: "Ctrl Y", disabled: !canRedo, action: redo },
+      { sep: true },
       { label: "Select All", key: "Ctrl A", disabled: !file, action: selectAllLines },
       { label: "Find…", key: "Ctrl F", disabled: !file, action: () => setFindOpen(true) },
       { label: "Go to…", key: "Ctrl G", disabled: !file, action: openGoto },
@@ -917,14 +965,13 @@ export function App() {
         onRenameSection={renameSection}
         onToggleSection={toggleSection}
         onDeleteSection={deleteSection}
-        onReorderTop={reorderTop}
         onSetSectionEnabled={setSectionEnabled}
         onUpdateFilter={updateFilter}
         onAddFilter={openNewFilter}
         onDeleteFilter={deleteFilter}
         onDuplicateFilter={duplicateFilter}
         onEditFilter={openEditFilter}
-        onMoveFilter={moveFilter}
+        onApplyLayout={applyLayout}
         onBulk={bulk}
       />
     );
