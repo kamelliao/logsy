@@ -36,6 +36,7 @@ const gitIO = (...a) => execFileSync("git", a, { cwd: root, stdio: "inherit" });
 const pkgPath = join(root, "package.json");
 const confPath = join(root, "src-tauri", "tauri.conf.json");
 const cargoPath = join(root, "src-tauri", "Cargo.toml");
+const lockPath = join(root, "src-tauri", "Cargo.lock");
 
 const current = JSON.parse(readFileSync(pkgPath, "utf8")).version;
 if (!current) die("Could not read current version from package.json");
@@ -76,6 +77,10 @@ function replaceOnce(path, re, replacement, label) {
 replaceOnce(pkgPath, /("version"\s*:\s*)"[^"]*"/, `$1"${version}"`, "package.json");
 replaceOnce(confPath, /("version"\s*:\s*)"[^"]*"/, `$1"${version}"`, "tauri.conf.json");
 replaceOnce(cargoPath, /^version\s*=\s*"[^"]*"/m, `version = "${version}"`, "Cargo.toml");
+// Sync the app package's version in Cargo.lock too (the entry whose `name =
+// "app"`), so the lockfile doesn't lag a version behind in the release commit.
+// A targeted text edit — no cargo run, no network, no dependency re-resolution.
+replaceOnce(lockPath, /(name = "app"\r?\nversion = )"[^"]*"/, `$1"${version}"`, "Cargo.lock");
 
 console.log(`✓ ${current} → ${version} (package.json, tauri.conf.json, Cargo.toml, Cargo.lock)`);
 
