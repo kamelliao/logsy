@@ -366,7 +366,7 @@ export function LogView({
       } else if ((e.key === "ArrowRight" || e.key === "Enter") && selectedLines.size === 1) {
         // Expand the single selected line's parsed fields (if it has any).
         const n = [...selectedLines][0];
-        if (visible.find((r) => r.n === n)?.fields) { e.preventDefault(); setExpandedLines((s) => new Set(s).add(n)); }
+        if (visible.find((r) => r.n === n)?.fieldsFromId !== undefined) { e.preventDefault(); setExpandedLines((s) => new Set(s).add(n)); }
       } else if (e.key === "ArrowLeft" && selectedLines.size === 1) {
         const n = [...selectedLines][0];
         setExpandedLines((s) => { const x = new Set(s); x.delete(n); return x; });
@@ -509,8 +509,9 @@ export function LogView({
                 const w = r.winner;
                 const dim = viewMode === "all" && view.hasHighlights && !w;
                 const sel = selectedLines.has(r.n);
-                const canExpand = !!r.fields;
+                const canExpand = r.fieldsFromId !== undefined;
                 const expanded = expandedLines.has(r.n);
+                const expFields = expanded ? view.fieldsFor(r.n) : undefined;
                 const rowStyle: CSSProperties = {
                   height: rowH,
                   ...(w ? { background: w.f.bgColor, color: w.f.textColor, borderLeftColor: w.f.textColor } : {}),
@@ -544,9 +545,9 @@ export function LogView({
                       {showLineNumbers && <span className="log-gut">{r.n}</span>}
                       <span className="log-txt">{renderLine(r.text, w, findRe, currentKey, vItem.index)}</span>
                     </div>
-                    {expanded && r.fields && (
+                    {expFields && (
                       <div className="log-fieldpanel">
-                        <FieldTable fields={r.fields} />
+                        <FieldTable fields={expFields} />
                       </div>
                     )}
                   </div>
