@@ -12,11 +12,14 @@ import {
   uid, makeFilter, filterFromTatAttrs, initialState, normalizeState, PALETTE,
 } from "./data";
 
-const FILE_DIALOG_FILTERS = [
+// Open accepts native Logsy JSON plus TextAnalysisTool.NET (.tat/.xml) for import;
+// Save always writes Logsy JSON, so it only offers .json.
+const OPEN_DIALOG_FILTERS = [
   { name: "Filter files", extensions: ["json", "tat", "xml"] },
   { name: "Logsy filters", extensions: ["json"] },
   { name: "TextAnalysisTool.NET", extensions: ["tat", "xml"] },
 ];
+const SAVE_DIALOG_FILTERS = [{ name: "Logsy filters", extensions: ["json"] }];
 
 /**
  * Parse a TextAnalysisTool.NET (.tat) filter file so users of that tool can
@@ -579,7 +582,7 @@ export function App() {
     if (!group) return;
     const path = await save({
       defaultPath: group.name.replace(/\s+/g, "_") + "_filters.json",
-      filters: FILE_DIALOG_FILTERS,
+      filters: SAVE_DIALOG_FILTERS,
     });
     if (typeof path === "string") await writeFiltersTo(path);
   };
@@ -607,8 +610,9 @@ export function App() {
     try { text = await invoke<string>("read_text_file", { path }); }
     catch (e) { toast.error("Could not read file: " + String(e)); return; }
     let built: ReturnType<typeof buildGroupFromImport> = null;
+    let foreign = false; // a TAT import isn't a Logsy file, so don't make it the save target
     try { built = buildGroupFromImport(JSON.parse(text)); } catch { /* not JSON — try TAT below */ }
-    if (!built) built = parseTatFilters(text); // TextAnalysisTool.NET (.tat)
+    if (!built) { built = parseTatFilters(text); foreign = !!built; } // TextAnalysisTool.NET (.tat)
     if (!built) { toast.error("That file isn't Logsy or TextAnalysisTool.NET filters."); return; }
     patchState((s) => {
       if (!file || !group) return;
@@ -616,19 +620,28 @@ export function App() {
       g.filters = built.filters;
       g.sections = built.sections;
       g.order = built.order;
-      // The loaded file becomes the save target and the clean baseline.
-      g.filePath = path;
-      normalizeState(s);
-      g.savedSnapshot = exportPayload(g);
+      if (foreign) {
+        // Imported from a foreign format: the filters now live as Logsy filters,
+        // not tied to the source file. "Save Filter" stays enabled and opens
+        // Save As rather than writing back to the .tat.
+        g.filePath = undefined;
+        g.savedSnapshot = undefined;
+        normalizeState(s);
+      } else {
+        // A native Logsy file becomes the save target and the clean baseline.
+        g.filePath = path;
+        normalizeState(s);
+        g.savedSnapshot = exportPayload(g);
+      }
     });
-    pushRecent("recentFilterFiles", path);
-    toast.success("Filters loaded");
+    if (!foreign) pushRecent("recentFilterFiles", path);
+    toast.success(foreign ? "Filters imported" : "Filters loaded");
   };
 
   // "Load filters": pick a file, then load it into the current group.
   const importFilters = async () => {
     if (!file || !group) return;
-    const path = await open({ multiple: false, filters: FILE_DIALOG_FILTERS });
+    const path = await open({ multiple: false, filters: OPEN_DIALOG_FILTERS });
     if (typeof path !== "string") return;
     await loadFilterFromPath(path);
   };
