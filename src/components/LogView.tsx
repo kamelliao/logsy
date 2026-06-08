@@ -194,12 +194,26 @@ export function LogView({
     rowVirtualizer.scrollToIndex(h.ri, { align: "center", behavior: "smooth" });
   }, [current, hits]);
 
+  // Remembers, while the view mode is stable, the "keep" line — the selected line
+  // on screen, else the viewport-center line — together with its pixel offset
+  // inside the viewport, plus the shift-anchor line. A viewMode switch then keeps
+  // the "keep" line pinned at the same spot, mapping through the line number since
+  // a given line lands at different row indices in "all" vs "matches".
+  const prevViewModeRef = useRef(viewMode);
+  const keepLineRef = useRef<number | null>(null);
+  const keepOffsetRef = useRef(0);
+  const shiftAnchorLineRef = useRef<number | null>(null);
+
+  // Opening a different file resets scroll, selection and expansion entirely.
   useEffect(() => {
     rowVirtualizer.scrollToIndex(0);
     setSelectedLines(new Set());
     setAnchorRi(null);
     setExpandedLines(new Set());
-  }, [file.id, viewMode]);
+    keepLineRef.current = null;
+    shiftAnchorLineRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [file.id]);
 
   useEffect(() => { setSelectedLines(new Set()); setAnchorRi(null); }, [view]);
 
@@ -227,6 +241,50 @@ export function LogView({
 
   const scrollTop = rowVirtualizer.scrollOffset ?? 0;
   const viewH = scrollRef.current?.clientHeight ?? 600;
+
+  // Sample the "keep" line + shift-anchor line, but only while the mode is stable:
+  // on the switch render `visible` has already flipped to the new mode while
+  // `scrollTop` still reflects the old one, so pairing them would be wrong.
+  useEffect(() => {
+    if (prevViewModeRef.current !== viewMode) return;
+    if (!visible.length) { keepLineRef.current = null; shiftAnchorLineRef.current = null; return; }
+    const last = visible.length - 1;
+    const firstVi = Math.max(0, Math.floor(scrollTop / rowH));
+    const lastVi = Math.min(last, Math.floor((scrollTop + viewH) / rowH));
+    const centerIdx = Math.min(last, Math.max(0, Math.floor((scrollTop + viewH / 2) / rowH)));
+    // Prefer the on-screen selected line nearest the centre; otherwise the centre line.
+    let idx = centerIdx;
+    if (selectedLines.size) {
+      let best = -1, bestDist = Infinity;
+      for (let i = firstVi; i <= lastVi; i++) {
+        if (selectedLines.has(visible[i].n)) {
+          const d = Math.abs(i - centerIdx);
+          if (d < bestDist) { bestDist = d; best = i; }
+        }
+      }
+      if (best >= 0) idx = best;
+    }
+    keepLineRef.current = visible[idx].n;
+    keepOffsetRef.current = idx * rowH - scrollTop; // pixel offset of the line's top within the viewport
+    shiftAnchorLineRef.current = anchorRi != null ? visible[anchorRi]?.n ?? null : null;
+  }, [scrollTop, viewH, visible, viewMode, rowH, anchorRi, selectedLines]);
+
+  // Switching between "all" and "matches" keeps the "keep" line pinned at the same
+  // vertical spot (instead of jumping to the top) and preserves the selection.
+  useEffect(() => {
+    if (prevViewModeRef.current === viewMode) return;
+    prevViewModeRef.current = viewMode;
+    const keep = keepLineRef.current;
+    if (keep == null || !visible.length) { rowVirtualizer.scrollToIndex(0); return; }
+    let idx = visible.findIndex((r) => r.n === keep);
+    if (idx < 0) idx = visible.findIndex((r) => r.n >= keep); // line hidden in new mode → next one
+    if (idx < 0) idx = visible.length - 1;
+    rowVirtualizer.scrollToOffset(Math.max(0, idx * rowH - keepOffsetRef.current));
+    // remap the shift-anchor through its line number; null if it's no longer shown
+    const al = shiftAnchorLineRef.current;
+    setAnchorRi(al == null ? null : (() => { const i = visible.findIndex((r) => r.n === al); return i >= 0 ? i : null; })());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewMode]);
 
   useEffect(() => {
     const canvas = mapCanvasRef.current;
