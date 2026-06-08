@@ -287,7 +287,8 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
                     title={"Preset: " + p.name}
                     onClick={() => set({ textColor: p.text, bgColor: p.bg })}
                   >
-                    {selectedPal?.name === p.name && <Check size={15} />}
+                    {/* "A" previews the text colour over the background; selection shows as the ring. */}
+                    <span className="sw-a">A</span>
                   </button>
                 ))}
               </div>
