@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Columns3, Download, Filter, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Columns3, Download, Eye, Filter, Search, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { LogFile, ViewResult, CompiledFilter, FieldValue } from "../types";
@@ -70,6 +70,9 @@ interface LogViewProps {
   file: LogFile;
   view: ViewResult;
   viewMode: "all" | "matches";
+  /** When set, the view is soloed to one filter; shows the exit banner. */
+  soloPattern?: string | null;
+  onExitSolo?: () => void;
   findOpen: boolean;
   mapColorMode: "bg" | "text";
   mapWidth: number;
@@ -92,7 +95,7 @@ interface LogViewProps {
 }
 
 export function LogView({
-  file, view, viewMode, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, compareLines, style,
+  file, view, viewMode, soloPattern, onExitSolo, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, compareLines, style,
   selectAllNonce, gotoSignal, onExportView,
   onCloseFind, onBuildFilter, onAddToCompare, onRemoveFromCompare,
 }: LogViewProps) {
@@ -475,6 +478,15 @@ export function LogView({
           <Search size={15} style={{ color: "#4f8cff" }} />
           {file.name}
         </div>
+        {soloPattern != null && (
+          <div className="lv-solo" title="Showing only lines matched by this one filter">
+            <Eye size={13} />
+            <span className="lv-solo-label">Viewing only: <code>{soloPattern}</code></span>
+            <button className="lv-solo-x" title="Exit filter-only view" onClick={onExitSolo}>
+              <X size={12} />
+            </button>
+          </div>
+        )}
         <div className="lv-spacer" />
         <div className="lv-stat">
           <b>{visible.length.toLocaleString()}</b>

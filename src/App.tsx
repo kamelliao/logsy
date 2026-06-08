@@ -9,7 +9,7 @@ import { save, open, confirm } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import type { AppState, LogFile, FilterGroup, FilterSection, Filter, FilterLayout } from "./types";
 import {
-  uid, makeFilter, filterFromTatAttrs, initialState, normalizeState, PALETTE,
+  uid, makeFilter, filterFromTatAttrs, initialState, normalizeState,
 } from "./data";
 
 // Open accepts native Logsy JSON plus TextAnalysisTool.NET (.tat/.xml) for import;
@@ -135,6 +135,8 @@ export function App() {
   const [selectAllNonce, setSelectAllNonce] = useState(0);
   const [gotoSignal, setGotoSignal] = useState<{ n: number; nonce: number } | null>(null);
   const gotoInputRef = useRef<HTMLInputElement>(null);
+  // "View this filter only" — ephemeral focus on a single filter's matches.
+  const [soloFilterId, setSoloFilterId] = useState<string | null>(null);
 
   useEffect(() => { getVersion().then(setAppVersion).catch(() => { /* not under Tauri */ }); }, []);
 
@@ -145,12 +147,27 @@ export function App() {
   const file = state.files.find((f) => f.id === state.activeFileId) ?? state.files[0] ?? null;
   const group = file ? (file.groups.find((g) => g.id === file.activeGroupId) ?? file.groups[0]) : null;
 
+  // Switching filter sets (or files) exits "view this filter only".
+  useEffect(() => { setSoloFilterId(null); }, [file?.activeGroupId, file?.id]);
+
   const lines = useMemo(
     () => (file ? linesStore[file.id] ?? EMPTY_LINES : EMPTY_LINES),
     [file?.id, linesVersion]
   );
   const compiled = useMemo(() => compileAll(group?.filters ?? []), [group?.filters]);
   const view = useMemo(() => computeView(lines, compiled), [lines, compiled]);
+  // Soloing a filter ("View this filter only"): the log shows just that filter's
+  // matches (forced enabled, never excluding), while the filter panel keeps its
+  // badge counts from the full `view`. Ephemeral — not persisted, not undoable.
+  const soloFilter = soloFilterId ? group?.filters.find((f) => f.id === soloFilterId) ?? null : null;
+  const soloView = useMemo(() => {
+    if (!soloFilterId) return null;
+    const c = compiled.find((x) => x.f.id === soloFilterId);
+    if (!c || !c.re || !c.ok) return null;
+    return computeView(lines, [{ ...c, f: { ...c.f, enabled: true, exclude: false } }]);
+  }, [soloFilterId, compiled, lines]);
+  const logView = soloView ?? view;
+  const effectiveViewMode: "all" | "matches" = soloView ? "matches" : state.viewMode;
   // Rows shown in the comparison panel: explicitly-added, still-visible, parsed lines.
   const compareRows = useMemo(
     () => view.rows
@@ -436,6 +453,32 @@ export function App() {
     const [m] = f.groups.splice(from, 1);
     f.groups.splice(to, 0, m);
   });
+  // Duplicate a whole filter set: deep-copy its sections/filters with fresh ids,
+  // remap sectionId references and the top-level order, drop the save link, and
+  // insert the copy right after the original (then activate it).
+  const duplicateGroup = (gid: string) => patchState((s) => {
+    if (!file) return;
+    const f = withFile(s, file.id);
+    const idx = f.groups.findIndex((x) => x.id === gid);
+    if (idx < 0) return;
+    const src = f.groups[idx];
+    const secMap = new Map(src.sections.map((sec) => [sec.id, uid("sec")] as const));
+    const filMap = new Map(src.filters.map((fl) => [fl.id, uid("f")] as const));
+    const copy: FilterGroup = {
+      id: uid("g"),
+      name: src.name + " copy",
+      sections: src.sections.map((sec) => ({ ...sec, id: secMap.get(sec.id)! })),
+      filters: src.filters.map((fl) => ({
+        ...fl,
+        id: filMap.get(fl.id)!,
+        sectionId: fl.sectionId ? secMap.get(fl.sectionId) ?? null : null,
+        fields: fl.fields ? fl.fields.map((x) => ({ ...x })) : undefined,
+      })),
+      order: src.order.map((id) => secMap.get(id) ?? filMap.get(id)).filter((x): x is string => !!x),
+    };
+    f.groups.splice(idx + 1, 0, copy);
+    f.activeGroupId = copy.id;
+  });
 
   // ---------- sections ----------
   const addSection = () => patchState((s) => {
@@ -510,6 +553,7 @@ export function App() {
       const oi = g.order.indexOf(fid);
       if (oi >= 0) g.order.splice(oi, 1);
     });
+    if (soloFilterId === fid) setSoloFilterId(null);
     setEditing(null);
   };
   const duplicateFilter = (fid: string) => patchState((s) => {
@@ -525,15 +569,15 @@ export function App() {
       else g.order.push(copy.id);
     }
   });
+  // New filters default to the neutral white-bg / black-text style; the user
+  // picks a highlight colour in the editor when they want one.
   const openNewFilter = (sectionId: string | null = null) => {
     if (!group) return;
-    const pal = PALETTE[group.filters.length % PALETTE.length];
-    setEditing({ isNew: true, filter: makeFilter("", { textColor: pal.text, bgColor: pal.bg, sectionId }) });
+    setEditing({ isNew: true, filter: makeFilter("", { sectionId }) });
   };
   const openFilterFromPattern = (pattern: string) => {
     if (!group) return;
-    const pal = PALETTE[group.filters.length % PALETTE.length];
-    setEditing({ isNew: true, filter: makeFilter(pattern, { textColor: pal.text, bgColor: pal.bg }) });
+    setEditing({ isNew: true, filter: makeFilter(pattern) });
   };
   const openEditFilter = (fid: string) => {
     if (!group) return;
@@ -792,7 +836,8 @@ export function App() {
   }, [state.compareCollapsed]);
 
   // ---------- layout ----------
-  const setViewMode = (m: "all" | "matches") => setState((s) => ({ ...s, viewMode: m }));
+  // Any explicit view-mode toggle also exits "view this filter only".
+  const setViewMode = (m: "all" | "matches") => { setSoloFilterId(null); setState((s) => ({ ...s, viewMode: m })); };
   const toggleSidebar = () => setState((s) => ({ ...s, sidebarCollapsed: !s.sidebarCollapsed }));
   const toggleLineNumbers = () => setState((s) => ({ ...s, showLineNumbers: !(s.showLineNumbers ?? true) }));
 
@@ -964,8 +1009,10 @@ export function App() {
     const logview = (
       <LogView
         file={file!}
-        view={view}
-        viewMode={state.viewMode}
+        view={logView}
+        viewMode={effectiveViewMode}
+        soloPattern={soloView && soloFilter ? (soloFilter.pattern || "untitled filter") : null}
+        onExitSolo={() => setSoloFilterId(null)}
         onToggleViewMode={setViewMode}
         onToggleFind={() => setFindOpen((v) => !v)}
         findOpen={findOpen}
@@ -993,6 +1040,7 @@ export function App() {
         onAddGroup={addGroup}
         onRenameGroup={renameGroup}
         onDeleteGroup={deleteGroup}
+        onDuplicateGroup={duplicateGroup}
         onReorderGroup={reorderGroups}
         onAddSection={addSection}
         onRenameSection={renameSection}
@@ -1003,6 +1051,7 @@ export function App() {
         onAddFilter={openNewFilter}
         onDeleteFilter={deleteFilter}
         onDuplicateFilter={duplicateFilter}
+        onViewFilterOnly={setSoloFilterId}
         onEditFilter={openEditFilter}
         onApplyLayout={applyLayout}
         onBulk={bulk}
@@ -1213,7 +1262,6 @@ export function App() {
             onSetPanelPos={(pos) => setState((s) => ({ ...s, panelPos: pos }))}
             onSetMapColorMode={(mode) => setState((s) => ({ ...s, mapColorMode: mode }))}
             onSetMapWidth={(w) => setState((s) => ({ ...s, mapWidth: w }))}
-            onResetWorkspace={() => { localStorage.removeItem(STATE_KEY); location.reload(); }}
           />
           {file && group ? (
             renderWorkspace()

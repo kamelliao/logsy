@@ -40,6 +40,6 @@ test("filterFromTatAttrs uses our defaults for missing colours / text", () => {
   const f = filterFromTatAttrs({});
   expect(f.pattern).toBe("");
   expect(f.textColor).toBe("#1c1f23");
-  expect(f.bgColor).toBe("#fff7c2");
+  expect(f.bgColor).toBe("#ffffff");
   expect(f.enabled).toBe(false); // a missing enabled attr is treated as not "y"
 });
