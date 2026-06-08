@@ -5,7 +5,7 @@ import type { Filter, FieldDef } from "./types";
 function filter(id: string, pattern: string, over: Partial<Filter> = {}): Filter {
   return {
     id, pattern, description: "", enabled: true, caseSensitive: false,
-    regex: true, exclude: false, textColor: "#000", bgColor: "#fff", sectionId: null,
+    regex: true, exclude: false, textColor: "#000", bgColor: "#fff", groupId: null,
     ...over,
   };
 }

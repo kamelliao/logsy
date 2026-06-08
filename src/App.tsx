@@ -7,7 +7,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { save, open, confirm } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { AppState, LogFile, FilterGroup, FilterSection, Filter, FilterLayout } from "./types";
+import type { AppState, LogFile, FilterSet, FilterGroup, Filter, FilterLayout } from "./types";
 import {
   uid, makeFilter, filterFromTatAttrs, initialState, normalizeState,
 } from "./data";
@@ -27,7 +27,7 @@ const SAVE_DIALOG_FILTERS = [{ name: "Logsy filters", extensions: ["json"] }];
  */
 function parseTatFilters(
   text: string
-): { filters: Filter[]; sections: FilterSection[]; order: string[] } | null {
+): { filters: Filter[]; groups: FilterGroup[]; order: string[] } | null {
   const doc = new DOMParser().parseFromString(text, "application/xml");
   if (doc.getElementsByTagName("parsererror").length) return null;
   if (doc.documentElement?.tagName !== "TextAnalysisTool.NET") return null;
@@ -35,30 +35,31 @@ function parseTatFilters(
   const filters = Array.from(doc.getElementsByTagName("filter")).map((el) =>
     filterFromTatAttrs(Object.fromEntries(attrs.map((k) => [k, el.getAttribute(k)])))
   );
-  return { filters, sections: [], order: filters.map((f) => f.id) };
+  return { filters, groups: [], order: filters.map((f) => f.id) };
 }
 
-/** Parse an imported filters file into a group's filters/sections/order. */
+/** Parse an imported filters file into a set's filters/groups/order. */
 function buildGroupFromImport(
   data: unknown
-): { filters: Filter[]; sections: FilterSection[]; order: string[] } | null {
-  // Full structure: { filters, sections?, order? }
+): { filters: Filter[]; groups: FilterGroup[]; order: string[] } | null {
+  // Full structure: { filters, groups?, order? }. `sections`/`sectionId` are the
+  // pre-rename field names — still accepted so older saved files keep loading.
   if (data && typeof data === "object" && !Array.isArray(data) && Array.isArray((data as any).filters)) {
     const d = data as any;
-    const sections: FilterSection[] = Array.isArray(d.sections)
-      ? d.sections
-          .filter((s: any) => s && typeof s.id === "string")
-          .map((s: any) => ({ id: s.id, name: typeof s.name === "string" ? s.name : "Group", collapsed: !!s.collapsed }))
-      : [];
-    const validSec = new Set(sections.map((s) => s.id));
+    const rawGroups = Array.isArray(d.groups) ? d.groups : Array.isArray(d.sections) ? d.sections : [];
+    const groups: FilterGroup[] = rawGroups
+      .filter((s: any) => s && typeof s.id === "string")
+      .map((s: any) => ({ id: s.id, name: typeof s.name === "string" ? s.name : "Group", collapsed: !!s.collapsed }));
+    const validGroupIds = new Set(groups.map((s) => s.id));
     const filters: Filter[] = d.filters.map((x: any) => {
       const f = makeFilter(typeof x?.pattern === "string" ? x.pattern : "", x ?? {});
       if (typeof x?.id === "string") f.id = x.id;
-      f.sectionId = typeof x?.sectionId === "string" && validSec.has(x.sectionId) ? x.sectionId : null;
+      const gid = typeof x?.groupId === "string" ? x.groupId : typeof x?.sectionId === "string" ? x.sectionId : null;
+      f.groupId = gid && validGroupIds.has(gid) ? gid : null;
       return f;
     });
     const order: string[] = Array.isArray(d.order) ? d.order.filter((id: any) => typeof id === "string") : [];
-    return { filters, sections, order };
+    return { filters, groups, order };
   }
   // Legacy: a flat array of filters.
   if (Array.isArray(data)) {
@@ -67,7 +68,7 @@ function buildGroupFromImport(
       if (typeof x?.id === "string") f.id = x.id;
       return f;
     });
-    return { filters, sections: [], order: filters.map((f) => f.id) };
+    return { filters, groups: [], order: filters.map((f) => f.id) };
   }
   return null;
 }
@@ -145,21 +146,21 @@ export function App() {
   }, [state]);
 
   const file = state.files.find((f) => f.id === state.activeFileId) ?? state.files[0] ?? null;
-  const group = file ? (file.groups.find((g) => g.id === file.activeGroupId) ?? file.groups[0]) : null;
+  const set = file ? (file.sets.find((g) => g.id === file.activeSetId) ?? file.sets[0]) : null;
 
   // Switching filter sets (or files) exits "view this filter only".
-  useEffect(() => { setSoloFilterId(null); }, [file?.activeGroupId, file?.id]);
+  useEffect(() => { setSoloFilterId(null); }, [file?.activeSetId, file?.id]);
 
   const lines = useMemo(
     () => (file ? linesStore[file.id] ?? EMPTY_LINES : EMPTY_LINES),
     [file?.id, linesVersion]
   );
-  const compiled = useMemo(() => compileAll(group?.filters ?? []), [group?.filters]);
+  const compiled = useMemo(() => compileAll(set?.filters ?? []), [set?.filters]);
   const view = useMemo(() => computeView(lines, compiled), [lines, compiled]);
   // Soloing a filter ("View this filter only"): the log shows just that filter's
   // matches (forced enabled, never excluding), while the filter panel keeps its
   // badge counts from the full `view`. Ephemeral — not persisted, not undoable.
-  const soloFilter = soloFilterId ? group?.filters.find((f) => f.id === soloFilterId) ?? null : null;
+  const soloFilter = soloFilterId ? set?.filters.find((f) => f.id === soloFilterId) ?? null : null;
   const soloView = useMemo(() => {
     if (!soloFilterId) return null;
     const c = compiled.find((x) => x.f.id === soloFilterId);
@@ -253,8 +254,8 @@ export function App() {
   function withFile(s: AppState, fid: string): LogFile {
     return s.files.find((f) => f.id === fid)!;
   }
-  function withGroup(s: AppState, fid: string, gid: string): FilterGroup {
-    return withFile(s, fid).groups.find((g) => g.id === gid)!;
+  function withSet(s: AppState, fid: string, gid: string): FilterSet {
+    return withFile(s, fid).sets.find((g) => g.id === gid)!;
   }
 
   // ---------- files ----------
@@ -288,13 +289,13 @@ export function App() {
       if (!inheritFilters) return null;
       const cur = stateRef.current;
       const cf = cur.files.find((f) => f.id === cur.activeFileId) ?? cur.files[0] ?? null;
-      const cg = cf ? (cf.groups.find((g) => g.id === cf.activeGroupId) ?? cf.groups[0]) : null;
+      const cg = cf ? (cf.sets.find((g) => g.id === cf.activeSetId) ?? cf.sets[0]) : null;
       return cg ?? null;
     })();
-    const makeGroups = (): FilterGroup[] =>
+    const makeSets = (): FilterSet[] =>
       inherited
-        ? [{ ...(JSON.parse(JSON.stringify(inherited)) as FilterGroup), id: uid("g") }]
-        : [{ id: uid("g"), name: "Filters", filters: [], sections: [], order: [] }];
+        ? [{ ...(JSON.parse(JSON.stringify(inherited)) as FilterSet), id: uid("g") }]
+        : [{ id: uid("g"), name: "Filters", filters: [], groups: [], order: [] }];
     for (const path of paths) {
       let text: string;
       try {
@@ -315,10 +316,10 @@ export function App() {
           name: dupes > 0 ? `${baseName(path)} (${dupes + 1})` : baseName(path),
           path,
           lineCount: lns.length,
-          groups: makeGroups(),
-          activeGroupId: null,
+          sets: makeSets(),
+          activeSetId: null,
         };
-        f.activeGroupId = f.groups[0].id;
+        f.activeSetId = f.sets[0].id;
         s.files.push(f);
         s.activeFileId = f.id;
       }, { undoable: false });
@@ -422,17 +423,17 @@ export function App() {
   }, []);
 
   // ---------- groups ----------
-  const switchGroup = (gid: string) => patchState((s) => { if (!file) return; withFile(s, file.id).activeGroupId = gid; }, { undoable: false });
-  const addGroup = () => patchState((s) => {
+  const switchSet = (gid: string) => patchState((s) => { if (!file) return; withFile(s, file.id).activeSetId = gid; }, { undoable: false });
+  const addSet = () => patchState((s) => {
     if (!file) return;
     const f = withFile(s, file.id);
-    const g: FilterGroup = { id: uid("g"), name: "New set", filters: [], sections: [], order: [] };
-    f.groups.push(g); f.activeGroupId = g.id;
+    const g: FilterSet = { id: uid("g"), name: "New set", filters: [], groups: [], order: [] };
+    f.sets.push(g); f.activeSetId = g.id;
   });
-  const renameGroup = (gid: string, name: string) => patchState((s) => { if (!file) return; withGroup(s, file.id, gid).name = name; });
-  const deleteGroup = async (gid: string) => {
+  const renameSet = (gid: string, name: string) => patchState((s) => { if (!file) return; withSet(s, file.id, gid).name = name; });
+  const deleteSet = async (gid: string) => {
     if (!file) return;
-    const g = file.groups.find((x) => x.id === gid);
+    const g = file.sets.find((x) => x.id === gid);
     // Confirm only when the set actually holds filters (empty sets delete freely).
     if (g && g.filters.length > 0) {
       const ok = await confirm(
@@ -443,90 +444,90 @@ export function App() {
     }
     patchState((s) => {
       const f = withFile(s, file.id);
-      f.groups = f.groups.filter((x) => x.id !== gid);
-      if (f.activeGroupId === gid) f.activeGroupId = f.groups[0]?.id ?? null;
+      f.sets = f.sets.filter((x) => x.id !== gid);
+      if (f.activeSetId === gid) f.activeSetId = f.sets[0]?.id ?? null;
     });
   };
-  const reorderGroups = (from: number, to: number) => patchState((s) => {
+  const reorderSets = (from: number, to: number) => patchState((s) => {
     if (!file) return;
     const f = withFile(s, file.id);
-    const [m] = f.groups.splice(from, 1);
-    f.groups.splice(to, 0, m);
+    const [m] = f.sets.splice(from, 1);
+    f.sets.splice(to, 0, m);
   });
-  // Duplicate a whole filter set: deep-copy its sections/filters with fresh ids,
-  // remap sectionId references and the top-level order, drop the save link, and
+  // Duplicate a whole filter set: deep-copy its groups/filters with fresh ids,
+  // remap groupId references and the top-level order, drop the save link, and
   // insert the copy right after the original (then activate it).
-  const duplicateGroup = (gid: string) => patchState((s) => {
+  const duplicateSet = (gid: string) => patchState((s) => {
     if (!file) return;
     const f = withFile(s, file.id);
-    const idx = f.groups.findIndex((x) => x.id === gid);
+    const idx = f.sets.findIndex((x) => x.id === gid);
     if (idx < 0) return;
-    const src = f.groups[idx];
-    const secMap = new Map(src.sections.map((sec) => [sec.id, uid("sec")] as const));
+    const src = f.sets[idx];
+    const groupMap = new Map(src.groups.map((grp) => [grp.id, uid("grp")] as const));
     const filMap = new Map(src.filters.map((fl) => [fl.id, uid("f")] as const));
-    const copy: FilterGroup = {
+    const copy: FilterSet = {
       id: uid("g"),
       name: src.name + " copy",
-      sections: src.sections.map((sec) => ({ ...sec, id: secMap.get(sec.id)! })),
+      groups: src.groups.map((grp) => ({ ...grp, id: groupMap.get(grp.id)! })),
       filters: src.filters.map((fl) => ({
         ...fl,
         id: filMap.get(fl.id)!,
-        sectionId: fl.sectionId ? secMap.get(fl.sectionId) ?? null : null,
+        groupId: fl.groupId ? groupMap.get(fl.groupId) ?? null : null,
         fields: fl.fields ? fl.fields.map((x) => ({ ...x })) : undefined,
       })),
-      order: src.order.map((id) => secMap.get(id) ?? filMap.get(id)).filter((x): x is string => !!x),
+      order: src.order.map((id) => groupMap.get(id) ?? filMap.get(id)).filter((x): x is string => !!x),
     };
-    f.groups.splice(idx + 1, 0, copy);
-    f.activeGroupId = copy.id;
+    f.sets.splice(idx + 1, 0, copy);
+    f.activeSetId = copy.id;
   });
 
-  // ---------- sections ----------
-  const addSection = () => patchState((s) => {
-    if (!file || !group) return;
-    const g = withGroup(s, file.id, group.id);
-    const sec = { id: uid("sec"), name: "New group", collapsed: false };
-    g.sections.push(sec);
-    g.order.push(sec.id);
+  // ---------- groups ----------
+  const addGroup = () => patchState((s) => {
+    if (!file || !set) return;
+    const g = withSet(s, file.id, set.id);
+    const grp = { id: uid("grp"), name: "New group", collapsed: false };
+    g.groups.push(grp);
+    g.order.push(grp.id);
   });
-  const renameSection = (sid: string, name: string) => patchState((s) => {
-    if (!file || !group) return;
-    const sec = withGroup(s, file.id, group.id).sections.find((x) => x.id === sid);
-    if (sec) sec.name = name;
+  const renameGroup = (gid: string, name: string) => patchState((s) => {
+    if (!file || !set) return;
+    const grp = withSet(s, file.id, set.id).groups.find((x) => x.id === gid);
+    if (grp) grp.name = name;
   });
-  const toggleSection = (sid: string) => patchState((s) => {
-    if (!file || !group) return;
-    const sec = withGroup(s, file.id, group.id).sections.find((x) => x.id === sid);
-    if (sec) sec.collapsed = !sec.collapsed;
+  const toggleGroup = (gid: string) => patchState((s) => {
+    if (!file || !set) return;
+    const grp = withSet(s, file.id, set.id).groups.find((x) => x.id === gid);
+    if (grp) grp.collapsed = !grp.collapsed;
   }, { undoable: false });
-  const deleteSection = (sid: string) => patchState((s) => {
-    if (!file || !group) return;
-    const g = withGroup(s, file.id, group.id);
-    g.sections = g.sections.filter((x) => x.id !== sid);
+  const deleteGroup = (gid: string) => patchState((s) => {
+    if (!file || !set) return;
+    const g = withSet(s, file.id, set.id);
+    g.groups = g.groups.filter((x) => x.id !== gid);
     // Keep the filters — move them back to the ungrouped bucket, taking the
-    // section's old top-level slot (so they don't jump elsewhere).
-    const freed = g.filters.filter((f) => f.sectionId === sid).map((f) => f.id);
-    g.filters.forEach((f) => { if (f.sectionId === sid) f.sectionId = null; });
-    const at = g.order.indexOf(sid);
+    // group's old top-level slot (so they don't jump elsewhere).
+    const freed = g.filters.filter((f) => f.groupId === gid).map((f) => f.id);
+    g.filters.forEach((f) => { if (f.groupId === gid) f.groupId = null; });
+    const at = g.order.indexOf(gid);
     if (at >= 0) g.order.splice(at, 1, ...freed);
     else g.order.push(...freed);
   });
-  // Commit a whole-group drag-and-drop arrangement (built live in FilterPanel) in
+  // Commit a whole-set drag-and-drop arrangement (built live in FilterPanel) in
   // one undoable step. Rebuild `filters` in visual order — loose rows and each
-  // section's rows interleaved per `model.top` — and set every filter's sectionId;
+  // group's rows interleaved per `model.top` — and set every filter's groupId;
   // `order` becomes the new interleaved top-level order.
   const applyLayout = (model: FilterLayout) => patchState((s) => {
-    if (!file || !group) return;
-    const g = withGroup(s, file.id, group.id);
+    if (!file || !set) return;
+    const g = withSet(s, file.id, set.id);
     const byId = new Map(g.filters.map((f) => [f.id, f] as const));
     const next: Filter[] = [];
     for (const entry of model.top) {
       if (entry.kind === "filter") {
         const f = byId.get(entry.id);
-        if (f) { f.sectionId = null; next.push(f); byId.delete(entry.id); }
+        if (f) { f.groupId = null; next.push(f); byId.delete(entry.id); }
       } else {
-        for (const fid of model.inSection[entry.id] ?? []) {
+        for (const fid of model.inGroup[entry.id] ?? []) {
           const f = byId.get(fid);
-          if (f) { f.sectionId = entry.id; next.push(f); byId.delete(fid); }
+          if (f) { f.groupId = entry.id; next.push(f); byId.delete(fid); }
         }
       }
     }
@@ -534,21 +535,21 @@ export function App() {
     g.filters = next;
     g.order = model.top.map((e) => e.id);
   });
-  const setSectionEnabled = (sid: string, enabled: boolean) => patchState((s) => {
-    if (!file || !group) return;
-    withGroup(s, file.id, group.id).filters.forEach((f) => { if (f.sectionId === sid) f.enabled = enabled; });
+  const setGroupEnabled = (gid: string, enabled: boolean) => patchState((s) => {
+    if (!file || !set) return;
+    withSet(s, file.id, set.id).filters.forEach((f) => { if (f.groupId === gid) f.enabled = enabled; });
   });
 
   // ---------- filters ----------
   const updateFilter = (fid: string, patch: Partial<Filter>) => patchState((s) => {
-    if (!file || !group) return;
-    const g = withGroup(s, file.id, group.id);
+    if (!file || !set) return;
+    const g = withSet(s, file.id, set.id);
     Object.assign(g.filters.find((x) => x.id === fid)!, patch);
   });
   const deleteFilter = (fid: string) => {
     patchState((s) => {
-      if (!file || !group) return;
-      const g = withGroup(s, file.id, group.id);
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
       g.filters = g.filters.filter((x) => x.id !== fid);
       const oi = g.order.indexOf(fid);
       if (oi >= 0) g.order.splice(oi, 1);
@@ -557,13 +558,13 @@ export function App() {
     setEditing(null);
   };
   const duplicateFilter = (fid: string) => patchState((s) => {
-    if (!file || !group) return;
-    const g = withGroup(s, file.id, group.id);
+    if (!file || !set) return;
+    const g = withSet(s, file.id, set.id);
     const idx = g.filters.findIndex((x) => x.id === fid);
     if (idx < 0) return;
     const copy = { ...g.filters[idx], id: uid("f") };
     g.filters.splice(idx + 1, 0, copy);
-    if (copy.sectionId === null) {
+    if (copy.groupId === null) {
       const oi = g.order.indexOf(fid);
       if (oi >= 0) g.order.splice(oi + 1, 0, copy.id);
       else g.order.push(copy.id);
@@ -571,45 +572,45 @@ export function App() {
   });
   // New filters default to the neutral white-bg / black-text style; the user
   // picks a highlight colour in the editor when they want one.
-  const openNewFilter = (sectionId: string | null = null) => {
-    if (!group) return;
-    setEditing({ isNew: true, filter: makeFilter("", { sectionId }) });
+  const openNewFilter = (groupId: string | null = null) => {
+    if (!set) return;
+    setEditing({ isNew: true, filter: makeFilter("", { groupId }) });
   };
   const openFilterFromPattern = (pattern: string) => {
-    if (!group) return;
+    if (!set) return;
     setEditing({ isNew: true, filter: makeFilter(pattern) });
   };
   const openEditFilter = (fid: string) => {
-    if (!group) return;
-    const fl = group.filters.find((x) => x.id === fid)!;
+    if (!set) return;
+    const fl = set.filters.find((x) => x.id === fid)!;
     setEditing({ isNew: false, filter: { ...fl } });
   };
   const saveFilter = (draft: Filter) => {
     patchState((s) => {
-      if (!file || !group) return;
-      const g = withGroup(s, file.id, group.id);
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
       const idx = g.filters.findIndex((x) => x.id === draft.id);
       if (idx >= 0) g.filters[idx] = draft; else g.filters.push(draft);
-      // Reconcile top-level order with the (possibly changed) section.
+      // Reconcile top-level order with the (possibly changed) set.
       const oi = g.order.indexOf(draft.id);
-      if (draft.sectionId === null && oi < 0) g.order.push(draft.id);
-      else if (draft.sectionId !== null && oi >= 0) g.order.splice(oi, 1);
+      if (draft.groupId === null && oi < 0) g.order.push(draft.id);
+      else if (draft.groupId !== null && oi >= 0) g.order.splice(oi, 1);
     });
     setEditing(null);
   };
 
   // ---------- save / import ----------
-  // Exported file keeps the full structure: filters, sections and top-level order.
-  const exportPayload = (g: FilterGroup) =>
-    JSON.stringify({ version: 1, name: g.name, sections: g.sections, order: g.order, filters: g.filters }, null, 2);
+  // Exported file keeps the full structure: filters, groups and top-level order.
+  const exportPayload = (g: FilterSet) =>
+    JSON.stringify({ version: 1, name: g.name, groups: g.groups, order: g.order, filters: g.filters }, null, 2);
 
   const writeFiltersTo = async (path: string) => {
-    if (!file || !group) return;
+    if (!file || !set) return;
     try {
-      await invoke("write_text_file", { path, contents: exportPayload(group) });
+      await invoke("write_text_file", { path, contents: exportPayload(set) });
       patchState((s) => {
-        if (!file || !group) return;
-        const g = withGroup(s, file.id, group.id);
+        if (!file || !set) return;
+        const g = withSet(s, file.id, set.id);
         g.filePath = path;
         // Mark this as the clean baseline so "Save Filter" disables until the
         // next edit.
@@ -623,9 +624,9 @@ export function App() {
   };
 
   const saveFiltersAs = async () => {
-    if (!group) return;
+    if (!set) return;
     const path = await save({
-      defaultPath: group.name.replace(/\s+/g, "_") + "_filters.json",
+      defaultPath: set.name.replace(/\s+/g, "_") + "_filters.json",
       filters: SAVE_DIALOG_FILTERS,
     });
     if (typeof path === "string") await writeFiltersTo(path);
@@ -633,17 +634,17 @@ export function App() {
 
   // "Save filters": update the file it was last saved to; if never saved, behave as Save As.
   const saveFilters = async () => {
-    if (!group) return;
-    if (group.filePath) await writeFiltersTo(group.filePath);
+    if (!set) return;
+    if (set.filePath) await writeFiltersTo(set.filePath);
     else await saveFiltersAs();
   };
 
-  // Load a filter file from a known path into the current group (replacing its
-  // contents). Confirms first when the group isn't empty. Used by both the
+  // Load a filter file from a known path into the current set (replacing its
+  // contents). Confirms first when the set isn't empty. Used by both the
   // "Load Filters" dialog and the Recent Filter Files menu.
   const loadFilterFromPath = async (path: string) => {
-    if (!file || !group) return;
-    if (group.filters.length > 0) {
+    if (!file || !set) return;
+    if (set.filters.length > 0) {
       const ok = await confirm(
         "Loading will replace every filter and group in the current set. This can't be undone.",
         { title: "Replace current filters?", kind: "warning", okLabel: "Replace", cancelLabel: "Cancel" }
@@ -659,10 +660,10 @@ export function App() {
     if (!built) { built = parseTatFilters(text); foreign = !!built; } // TextAnalysisTool.NET (.tat)
     if (!built) { toast.error("That file isn't Logsy or TextAnalysisTool.NET filters."); return; }
     patchState((s) => {
-      if (!file || !group) return;
-      const g = withGroup(s, file.id, group.id);
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
       g.filters = built.filters;
-      g.sections = built.sections;
+      g.groups = built.groups;
       g.order = built.order;
       if (foreign) {
         // Imported from a foreign format: the filters now live as Logsy filters,
@@ -682,9 +683,9 @@ export function App() {
     toast.success(foreign ? "Filters imported" : "Filters loaded");
   };
 
-  // "Load filters": pick a file, then load it into the current group.
+  // "Load filters": pick a file, then load it into the current set.
   const importFilters = async () => {
-    if (!file || !group) return;
+    if (!file || !set) return;
     const path = await open({ multiple: false, filters: OPEN_DIALOG_FILTERS });
     if (typeof path !== "string") return;
     await loadFilterFromPath(path);
@@ -692,9 +693,9 @@ export function App() {
 
   // ---------- bulk ----------
   const bulk = (action: string) => {
-    if (action === "enableAll")   patchState((s) => { if (file && group) withGroup(s, file.id, group.id).filters.forEach((f) => (f.enabled = true)); });
-    else if (action === "disableAll") patchState((s) => { if (file && group) withGroup(s, file.id, group.id).filters.forEach((f) => (f.enabled = false)); });
-    else if (action === "clear")  patchState((s) => { if (!file || !group) return; const g = withGroup(s, file.id, group.id); g.filters = []; g.order = g.order.filter((id) => g.sections.some((sec) => sec.id === id)); });
+    if (action === "enableAll")   patchState((s) => { if (file && set) withSet(s, file.id, set.id).filters.forEach((f) => (f.enabled = true)); });
+    else if (action === "disableAll") patchState((s) => { if (file && set) withSet(s, file.id, set.id).filters.forEach((f) => (f.enabled = false)); });
+    else if (action === "clear")  patchState((s) => { if (!file || !set) return; const g = withSet(s, file.id, set.id); g.filters = []; g.order = g.order.filter((id) => g.groups.some((grp) => grp.id === id)); });
     else if (action === "save")   void saveFilters();
     else if (action === "saveAs") void saveFiltersAs();
     else if (action === "import") void importFilters();
@@ -713,7 +714,7 @@ export function App() {
   // Drop comparison lines when switching files (line numbers are file-specific).
   useEffect(() => { setCompareLines(new Set()); }, [state.activeFileId]);
 
-  // Build CSV text for a single pattern-group's rows.
+  // Build CSV text for a single pattern-set's rows.
   const buildCsv = (rows: typeof compareRows) => {
     const esc = (s: string) => /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     const cols: string[] = []; const seen = new Set<string>();
@@ -783,7 +784,7 @@ export function App() {
   // Default share (weight) for a panel that has no persisted size yet. Docks
   // open generously so they reveal a useful amount of content.
   const DEFAULT_WEIGHT: Record<string, number> = { lv: 100, center: 100, fp: 82, cmp: 120 };
-  // Build a group's initial layout from its persisted-size bucket, normalised to 100%.
+  // Build a set's initial layout from its persisted-size bucket, normalised to 100%.
   const layoutFor = (groupKey: string, ids: string[]): Record<string, number> => {
     const bucket = state.panelSizes?.[groupKey] ?? {};
     const out: Record<string, number> = {};
@@ -940,7 +941,7 @@ export function App() {
 
   // Save Filter is disabled when the current set was already saved/loaded and
   // hasn't changed since (nothing to write).
-  const saveFilterDisabled = !group || (!!group.filePath && group.savedSnapshot === exportPayload(group));
+  const saveFilterDisabled = !set || (!!set.filePath && set.savedSnapshot === exportPayload(set));
 
   const recentFilesMenu: MenuItem[] = state.recentFiles.length
     ? [
@@ -952,7 +953,7 @@ export function App() {
 
   const recentFilterFilesMenu: MenuItem[] = state.recentFilterFiles.length
     ? [
-        ...state.recentFilterFiles.map((p, i) => ({ label: `${i + 1}   ${baseName(p)}`, disabled: !group, action: () => void loadFilterFromPath(p) })),
+        ...state.recentFilterFiles.map((p, i) => ({ label: `${i + 1}   ${baseName(p)}`, disabled: !set, action: () => void loadFilterFromPath(p) })),
         { sep: true as const },
         { label: "Clear Recent Filter Files", action: () => clearRecent("recentFilterFiles") },
       ]
@@ -961,9 +962,9 @@ export function App() {
   const menuDefs: Record<string, MenuItem[]> = {
     File: [
       { label: "Open…", key: "Ctrl O", action: () => void openFiles() },
-      { label: "Load Filters…", disabled: !group, action: () => void importFilters() },
+      { label: "Load Filters…", disabled: !set, action: () => void importFilters() },
       { label: "Save Filter", disabled: saveFilterDisabled, action: () => void saveFilters() },
-      { label: "Save Filter As…", disabled: !group, action: () => void saveFiltersAs() },
+      { label: "Save Filter As…", disabled: !set, action: () => void saveFiltersAs() },
       { sep: true },
       { label: "Recent Files", submenu: recentFilesMenu },
       { label: "Recent Filter Files", submenu: recentFilterFilesMenu },
@@ -991,11 +992,11 @@ export function App() {
       { label: `Reset Zoom  (${fontSize}px)`, key: "Ctrl 0", action: zoomReset },
     ],
     Filters: [
-      { label: "Add new filter…", disabled: !group, action: () => openNewFilter() },
+      { label: "Add new filter…", disabled: !set, action: () => openNewFilter() },
       { sep: true },
-      { label: "Enable all filters", disabled: !group, action: () => bulk("enableAll") },
-      { label: "Disable all filters", disabled: !group, action: () => bulk("disableAll") },
-      { label: "Remove all filters", disabled: !group, action: () => bulk("clear") },
+      { label: "Enable all filters", disabled: !set, action: () => bulk("enableAll") },
+      { label: "Disable all filters", disabled: !set, action: () => bulk("disableAll") },
+      { label: "Remove all filters", disabled: !set, action: () => bulk("clear") },
     ],
     Help: [
       { label: "Documentation", action: openDocs },
@@ -1034,19 +1035,19 @@ export function App() {
     const filterBody = (
       <FilterPanel
         file={file!}
-        group={group!}
+        set={set!}
         counts={view.counts}
-        onSwitchGroup={switchGroup}
+        onSwitchSet={switchSet}
+        onAddSet={addSet}
+        onRenameSet={renameSet}
+        onDeleteSet={deleteSet}
+        onDuplicateSet={duplicateSet}
+        onReorderSet={reorderSets}
         onAddGroup={addGroup}
         onRenameGroup={renameGroup}
+        onToggleGroup={toggleGroup}
         onDeleteGroup={deleteGroup}
-        onDuplicateGroup={duplicateGroup}
-        onReorderGroup={reorderGroups}
-        onAddSection={addSection}
-        onRenameSection={renameSection}
-        onToggleSection={toggleSection}
-        onDeleteSection={deleteSection}
-        onSetSectionEnabled={setSectionEnabled}
+        onSetGroupEnabled={setGroupEnabled}
         onUpdateFilter={updateFilter}
         onAddFilter={openNewFilter}
         onDeleteFilter={deleteFilter}
@@ -1063,10 +1064,10 @@ export function App() {
         onRemove={removeFromCompare}
         onExport={exportGroupCsv}
         labelFor={(id) => {
-          const f = group!.filters.find((x) => x.id === id);
+          const f = set!.filters.find((x) => x.id === id);
           return (f?.description?.trim() || f?.pattern) ?? "Fields";
         }}
-        colorFor={(id) => group!.filters.find((x) => x.id === id)?.textColor ?? "#c2c7cd"}
+        colorFor={(id) => set!.filters.find((x) => x.id === id)?.textColor ?? "#c2c7cd"}
       />
     );
 
@@ -1155,8 +1156,8 @@ export function App() {
     type PanelDesc = { id: string; node: ReactNode; collapsible?: boolean; collapsed?: boolean; collapsedSize?: string; ref?: React.RefObject<PanelImperativeHandle | null> };
     const buildGroup = (orientation: "vertical" | "horizontal", gid: string, panels: PanelDesc[]): ReactNode => {
       const ids = panels.map((p) => p.id);
-      // Remount the group when its panel set changes — the library can't have a
-      // Panel inserted into / removed from a live group ("constraints not found").
+      // Remount the set when its panel set changes — the library can't have a
+      // Panel inserted into / removed from a live set ("constraints not found").
       const groupKey = gid + ":" + ids.join(",");
       const dl = layoutFor(groupKey, ids);
       return (
@@ -1263,7 +1264,7 @@ export function App() {
             onSetMapColorMode={(mode) => setState((s) => ({ ...s, mapColorMode: mode }))}
             onSetMapWidth={(w) => setState((s) => ({ ...s, mapWidth: w }))}
           />
-          {file && group ? (
+          {file && set ? (
             renderWorkspace()
           ) : (
             <div className="empty-workspace">
@@ -1281,12 +1282,12 @@ export function App() {
         </div>
 
         {/* modal */}
-        {editing && group && (
+        {editing && set && (
           <EditModal
             filter={editing.filter}
             isNew={editing.isNew}
             lines={lines}
-            sections={group.sections}
+            groups={set.groups}
             onSave={saveFilter}
             onClose={() => setEditing(null)}
             onDelete={() => deleteFilter(editing.filter.id)}

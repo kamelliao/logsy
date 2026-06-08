@@ -101,7 +101,7 @@ export function makeFilter(pattern: string, opts: Partial<Filter> = {}): Filter 
     exclude: !!opts.exclude,
     textColor: opts.textColor ?? "#1c1f23",
     bgColor: opts.bgColor ?? "#ffffff",
-    sectionId: opts.sectionId ?? null,
+    groupId: opts.groupId ?? null,
     fields: opts.fields,
   };
 }
@@ -158,30 +158,44 @@ export function initialState(): AppState {
 
 export function normalizeState(state: AppState): AppState {
   for (const f of state.files) {
-    for (const g of f.groups) {
-      if (!Array.isArray(g.sections)) g.sections = [];
-      const validIds = new Set(g.sections.map((s) => s.id));
+    // Migrate the pre-rename persisted shape: a file's sets were "groups", a
+    // set's groups were "sections", and Filter.groupId was "sectionId".
+    const fAny = f as any;
+    if (!Array.isArray(fAny.sets) && Array.isArray(fAny.groups)) fAny.sets = fAny.groups;
+    delete fAny.groups;
+    if (fAny.activeSetId == null && fAny.activeGroupId != null) fAny.activeSetId = fAny.activeGroupId;
+    delete fAny.activeGroupId;
+    if (!Array.isArray(f.sets)) f.sets = [];
+    for (const g of f.sets) {
+      const gAny = g as any;
+      if (!Array.isArray(gAny.groups) && Array.isArray(gAny.sections)) gAny.groups = gAny.sections;
+      delete gAny.sections;
+      if (!Array.isArray(g.groups)) g.groups = [];
+      const validIds = new Set(g.groups.map((s) => s.id));
       for (const flt of g.filters) {
-        // Backfill older filters and drop references to deleted sections.
-        if (flt.sectionId === undefined || (flt.sectionId !== null && !validIds.has(flt.sectionId))) {
-          flt.sectionId = null;
+        const flAny = flt as any;
+        if (flAny.groupId === undefined && flAny.sectionId !== undefined) flAny.groupId = flAny.sectionId;
+        delete flAny.sectionId;
+        // Backfill older filters and drop references to deleted groups.
+        if (flt.groupId === undefined || (flt.groupId !== null && !validIds.has(flt.groupId))) {
+          flt.groupId = null;
         }
       }
-      // Build / validate the top-level layout order (sections + ungrouped filters).
+      // Build / validate the top-level layout order (groups + ungrouped filters).
       if (!Array.isArray(g.order)) g.order = [];
-      const sectionIds = g.sections.map((s) => s.id);
-      const ungroupedIds = g.filters.filter((f) => f.sectionId === null).map((f) => f.id);
-      const valid = new Set<string>([...sectionIds, ...ungroupedIds]);
+      const groupIds = g.groups.map((s) => s.id);
+      const ungroupedIds = g.filters.filter((f) => f.groupId === null).map((f) => f.id);
+      const valid = new Set<string>([...groupIds, ...ungroupedIds]);
       g.order = g.order.filter((id) => valid.has(id));
       const present = new Set(g.order);
       // Append anything missing. On first migration this preserves the old
-      // layout: loose filter rows first (on top), then sections.
-      for (const id of [...ungroupedIds, ...sectionIds]) {
+      // layout: loose filter rows first (on top), then groups.
+      for (const id of [...ungroupedIds, ...groupIds]) {
         if (!present.has(id)) g.order.push(id);
       }
     }
-    if (!f.activeGroupId || !f.groups.find((g) => g.id === f.activeGroupId)) {
-      f.activeGroupId = f.groups[0]?.id ?? null;
+    if (!f.activeSetId || !f.sets.find((g) => g.id === f.activeSetId)) {
+      f.activeSetId = f.sets[0]?.id ?? null;
     }
   }
   if (!state.activeFileId || !state.files.find((f) => f.id === state.activeFileId)) {

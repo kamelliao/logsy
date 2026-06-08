@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { Check, ChevronDown, EyeOff, Pipette, Trash2, X } from "lucide-react";
-import type { Filter, FilterSection, FieldType } from "../types";
+import type { Filter, FilterGroup, FieldType } from "../types";
 import { compile, countMatches, deriveFields } from "../logic";
 import { PALETTE, TEXT_SWATCHES, BG_SWATCHES } from "../data";
 
@@ -56,13 +56,13 @@ interface EditModalProps {
   filter: Filter;
   lines: string[];
   isNew: boolean;
-  sections: FilterSection[];
+  groups: FilterGroup[];
   onSave: (filter: Filter) => void;
   onClose: () => void;
   onDelete: () => void;
 }
 
-export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onDelete }: EditModalProps) {
+export function EditModal({ filter, lines, isNew, groups, onSave, onClose, onDelete }: EditModalProps) {
   const [draft, setDraft] = useState<Filter>({ ...filter });
   // User-chosen types for named groups, keyed by group name (survives regex edits).
   const [fieldTypes, setFieldTypes] = useState<Record<string, FieldType>>(
@@ -212,24 +212,24 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
           </div>
 
           {/* group */}
-          {sections.length > 0 && (
+          {groups.length > 0 && (
             <div className="field">
               <Label>Group</Label>
               <DropdownMenu>
                 <DropdownMenuTrigger render={<button type="button" className="section-select" />}>
-                  <span className={"ss-label" + (draft.sectionId === null ? " placeholder" : "")}>
-                    {sections.find((s) => s.id === draft.sectionId)?.name ?? "No group (ungrouped)"}
+                  <span className={"ss-label" + (draft.groupId === null ? " placeholder" : "")}>
+                    {groups.find((s) => s.id === draft.groupId)?.name ?? "No group (ungrouped)"}
                   </span>
                   <ChevronDown size={15} className="ss-chev" />
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="bottom" align="start" zIndex={1000} className="section-select-pop">
-                  <DropdownMenuItem onClick={() => set({ sectionId: null })}>
-                    <span className="mi-ico">{draft.sectionId === null ? <Check size={15} /> : null}</span>
+                  <DropdownMenuItem onClick={() => set({ groupId: null })}>
+                    <span className="mi-ico">{draft.groupId === null ? <Check size={15} /> : null}</span>
                     No group (ungrouped)
                   </DropdownMenuItem>
-                  {sections.map((s) => (
-                    <DropdownMenuItem key={s.id} onClick={() => set({ sectionId: s.id })}>
-                      <span className="mi-ico">{draft.sectionId === s.id ? <Check size={15} /> : null}</span>
+                  {groups.map((s) => (
+                    <DropdownMenuItem key={s.id} onClick={() => set({ groupId: s.id })}>
+                      <span className="mi-ico">{draft.groupId === s.id ? <Check size={15} /> : null}</span>
                       {s.name}
                     </DropdownMenuItem>
                   ))}

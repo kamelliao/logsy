@@ -31,7 +31,7 @@ import {
   horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { LogFile, FilterGroup, FilterSection, Filter, FilterLayout } from "../types";
+import type { LogFile, FilterSet, FilterGroup, Filter, FilterLayout } from "../types";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { ScrollArea, ScrollBar } from "./ui/scroll-area";
@@ -75,7 +75,7 @@ function RowMenuItems({ onEdit, onViewOnly, onDuplicate, onDelete }: {
   );
 }
 
-function GroupTabMenuItems({ onRename, onDuplicate, onDelete, canDelete }: {
+function SetTabMenuItems({ onRename, onDuplicate, onDelete, canDelete }: {
   onRename: () => void; onDuplicate: () => void; onDelete: () => void; canDelete: boolean;
 }) {
   return (
@@ -94,7 +94,7 @@ function GroupTabMenuItems({ onRename, onDuplicate, onDelete, canDelete }: {
   );
 }
 
-function SectionMenuItems({ onRename, onAddFilter, onSetEnabled, onDelete }: {
+function GroupMenuItems({ onRename, onAddFilter, onSetEnabled, onDelete }: {
   onRename: () => void; onAddFilter: () => void;
   onSetEnabled: (enabled: boolean) => void; onDelete: () => void;
 }) {
@@ -121,15 +121,15 @@ function SectionMenuItems({ onRename, onAddFilter, onSetEnabled, onDelete }: {
   );
 }
 
-function PanelMenuItems({ onAddFilter, onAddSection, onBulk }: {
-  onAddFilter: () => void; onAddSection: () => void; onBulk: (action: string) => void;
+function PanelMenuItems({ onAddFilter, onAddGroup, onBulk }: {
+  onAddFilter: () => void; onAddGroup: () => void; onBulk: (action: string) => void;
 }) {
   return (
     <>
       <DropdownMenuItem onClick={onAddFilter}>
         <span className="mi-ico"><Plus size={15} /></span>Add filter
       </DropdownMenuItem>
-      <DropdownMenuItem onClick={onAddSection}>
+      <DropdownMenuItem onClick={onAddGroup}>
         <span className="mi-ico"><FolderPlus size={15} /></span>New group
       </DropdownMenuItem>
       <DropdownMenuSeparator />
@@ -157,10 +157,10 @@ function PanelMenuItems({ onAddFilter, onAddSection, onBulk }: {
   );
 }
 
-// ---- group tab ----
+// ---- set tab ----
 
-interface GroupTabProps {
-  group: FilterGroup;
+interface SetTabProps {
+  set: FilterSet;
   active: boolean;
   dot: string;
   canDelete: boolean;
@@ -170,14 +170,14 @@ interface GroupTabProps {
   onDuplicate: () => void;
 }
 
-function GroupTab({ group, active, dot, canDelete, onSelect, onRename, onDelete, onDuplicate }: GroupTabProps) {
+function SetTab({ set, active, dot, canDelete, onSelect, onRename, onDelete, onDuplicate }: SetTabProps) {
   const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(group.name);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: group.id });
+  const [val, setVal] = useState(set.name);
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: set.id });
 
   function commit() {
     const v = val.trim();
-    if (v) onRename(v); else setVal(group.name);
+    if (v) onRename(v); else setVal(set.name);
     setEditing(false);
   }
 
@@ -197,7 +197,7 @@ function GroupTab({ group, active, dot, canDelete, onSelect, onRename, onDelete,
             style={style}
             className={"gtab" + (active ? " active" : "")}
             onClick={onSelect}
-            onDoubleClick={() => { setVal(group.name); setEditing(true); }}
+            onDoubleClick={() => { setVal(set.name); setEditing(true); }}
             title="Drag to reorder · double-click to rename · right-click for menu"
             {...attributes}
             {...(editing ? {} : listeners)}
@@ -215,13 +215,13 @@ function GroupTab({ group, active, dot, canDelete, onSelect, onRename, onDelete,
             onBlur={commit}
             onKeyDown={(e) => {
               if (e.key === "Enter") commit();
-              if (e.key === "Escape") { setVal(group.name); setEditing(false); }
+              if (e.key === "Escape") { setVal(set.name); setEditing(false); }
             }}
           />
         ) : (
-          <span className="gtab-name">{group.name}</span>
+          <span className="gtab-name">{set.name}</span>
         )}
-        <span className="gtab-count">{group.filters.length}</span>
+        <span className="gtab-count">{set.filters.length}</span>
         {canDelete && (
           <button
             className="gtab-x"
@@ -233,8 +233,8 @@ function GroupTab({ group, active, dot, canDelete, onSelect, onRename, onDelete,
         )}
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <GroupTabMenuItems
-          onRename={() => { setVal(group.name); setEditing(true); }}
+        <SetTabMenuItems
+          onRename={() => { setVal(set.name); setEditing(true); }}
           onDuplicate={onDuplicate}
           onDelete={onDelete}
           canDelete={canDelete}
@@ -261,7 +261,7 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: f.id,
     disabled: searching,
-    data: { type: "filter", sectionId: f.sectionId },
+    data: { type: "filter", groupId: f.groupId },
   });
 
   const flags: { t: string; title: string }[] = [];
@@ -366,10 +366,10 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
   );
 }
 
-// ---- section ----
+// ---- group ----
 
-interface SectionBlockProps {
-  section: FilterSection;
+interface GroupBlockProps {
+  group: FilterGroup;
   filters: Filter[];
   onToggle: () => void;
   onRename: (name: string) => void;
@@ -379,30 +379,30 @@ interface SectionBlockProps {
   renderRow: (f: Filter) => ReactNode;
 }
 
-function SectionBlock({
-  section, filters, onToggle, onRename, onDelete, onAddFilter, onSetEnabled, renderRow,
-}: SectionBlockProps) {
+function GroupBlock({
+  group, filters, onToggle, onRename, onDelete, onAddFilter, onSetEnabled, renderRow,
+}: GroupBlockProps) {
   const [editing, setEditing] = useState(false);
-  const [val, setVal] = useState(section.name);
+  const [val, setVal] = useState(group.name);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: section.id,
-    data: { type: "section" },
+    id: group.id,
+    data: { type: "group" },
   });
   const { setNodeRef: setDropRef, isOver } = useDroppable({
-    id: `body:${section.id}`,
-    data: { type: "body", sectionId: section.id },
+    id: `body:${group.id}`,
+    data: { type: "body", groupId: group.id },
   });
-  // A filter can be dropped anywhere on the section (header or body) to move in.
+  // A filter can be dropped anywhere on the group (header or body) to move in.
   const { setNodeRef: setHeadRef, isOver: headOver, active: dragActive } = useDroppable({
-    id: `head:${section.id}`,
-    data: { type: "header", sectionId: section.id },
+    id: `head:${group.id}`,
+    data: { type: "header", groupId: group.id },
   });
-  // Light up the whole section while a filter row is dragged over its header or body.
+  // Light up the whole group while a filter row is dragged over its header or body.
   const nestTarget = (headOver || isOver) && dragActive?.data.current?.type === "filter";
 
   function commit() {
     const v = val.trim();
-    if (v) onRename(v); else setVal(section.name);
+    if (v) onRename(v); else setVal(group.name);
     setEditing(false);
   }
 
@@ -431,11 +431,11 @@ function SectionBlock({
         </span>
         <button
           className="fs-chevron"
-          title={section.collapsed ? "Expand" : "Collapse"}
+          title={group.collapsed ? "Expand" : "Collapse"}
           onClick={onToggle}
           onPointerDown={(e) => e.stopPropagation()}
         >
-          {section.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+          {group.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
         </button>
         {editing ? (
           <input
@@ -447,17 +447,17 @@ function SectionBlock({
             onBlur={commit}
             onKeyDown={(e) => {
               if (e.key === "Enter") commit();
-              if (e.key === "Escape") { setVal(section.name); setEditing(false); }
+              if (e.key === "Escape") { setVal(group.name); setEditing(false); }
             }}
           />
         ) : (
           <span
             className="fs-name"
             onClick={onToggle}
-            onDoubleClick={() => { setVal(section.name); setEditing(true); }}
+            onDoubleClick={() => { setVal(group.name); setEditing(true); }}
             title="Click to collapse · double-click to rename"
           >
-            {section.name}
+            {group.name}
           </span>
         )}
         <span className="fs-count">{filters.length}</span>
@@ -474,8 +474,8 @@ function SectionBlock({
             <MoreVertical />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="end">
-            <SectionMenuItems
-              onRename={() => { setVal(section.name); setEditing(true); }}
+            <GroupMenuItems
+              onRename={() => { setVal(group.name); setEditing(true); }}
               onAddFilter={onAddFilter}
               onSetEnabled={onSetEnabled}
               onDelete={onDelete}
@@ -484,8 +484,8 @@ function SectionBlock({
         </DropdownMenu>
         </ContextMenuTrigger>
         <ContextMenuContent>
-          <SectionMenuItems
-            onRename={() => { setVal(section.name); setEditing(true); }}
+          <GroupMenuItems
+            onRename={() => { setVal(group.name); setEditing(true); }}
             onAddFilter={onAddFilter}
             onSetEnabled={onSetEnabled}
             onDelete={onDelete}
@@ -493,7 +493,7 @@ function SectionBlock({
         </ContextMenuContent>
       </ContextMenu>
 
-      {!section.collapsed && (
+      {!group.collapsed && (
         <div
           ref={setDropRef}
           className={"fsection-body" + (isOver ? " drop-over" : "")}
@@ -516,7 +516,7 @@ function SectionBlock({
 function TopDropZone({ children }: { children: ReactNode }) {
   const { setNodeRef, isOver } = useDroppable({
     id: "body:__null__",
-    data: { type: "body", sectionId: null },
+    data: { type: "body", groupId: null },
   });
   return (
     <div ref={setNodeRef} className={"fp-toplevel" + (isOver ? " drop-over" : "")}>
@@ -526,7 +526,7 @@ function TopDropZone({ children }: { children: ReactNode }) {
 }
 
 // A loose drop target below every top-level item — so a filter can be dropped
-// past the last section to become the bottom-most free filter (the section body
+// past the last group to become the bottom-most free filter (the group body
 // itself always nests). Collapses to nothing unless a filter drag is active.
 function BottomSlot({ active }: { active: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: "bottomslot", data: { type: "bottomslot" } });
@@ -535,8 +535,8 @@ function BottomSlot({ active }: { active: boolean }) {
 
 // ---- panel-level right-click zone (wraps the scrollable filter list) ----
 
-function PanelListZone({ onAddFilter, onAddSection, onBulk, children }: {
-  onAddFilter: () => void; onAddSection: () => void; onBulk: (action: string) => void; children: ReactNode;
+function PanelListZone({ onAddFilter, onAddGroup, onBulk, children }: {
+  onAddFilter: () => void; onAddGroup: () => void; onBulk: (action: string) => void; children: ReactNode;
 }) {
   return (
     <ContextMenu>
@@ -544,7 +544,7 @@ function PanelListZone({ onAddFilter, onAddSection, onBulk, children }: {
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <PanelMenuItems onAddFilter={onAddFilter} onAddSection={onAddSection} onBulk={onBulk} />
+        <PanelMenuItems onAddFilter={onAddFilter} onAddGroup={onAddGroup} onBulk={onBulk} />
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -570,13 +570,13 @@ function FilterRowOverlay({ f, count }: { f: Filter; count: number }) {
   );
 }
 
-function SectionOverlay({ section, count }: { section: FilterSection; count: number }) {
+function GroupOverlay({ group, count }: { group: FilterGroup; count: number }) {
   return (
     <div className="fsection drag-overlay">
       <div className="fsection-head">
         <span className="fs-grip"><GripVertical size={12} /></span>
-        <span className="fs-chevron">{section.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</span>
-        <span className="fs-name">{section.name}</span>
+        <span className="fs-chevron">{group.collapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}</span>
+        <span className="fs-name">{group.name}</span>
         <span className="fs-count">{count}</span>
       </div>
     </div>
@@ -587,22 +587,22 @@ function SectionOverlay({ section, count }: { section: FilterSection; count: num
 
 interface FilterPanelProps {
   file: LogFile;
-  group: FilterGroup;
+  set: FilterSet;
   counts: Record<string, number>;
   style?: CSSProperties;
-  onSwitchGroup: (id: string) => void;
+  onSwitchSet: (id: string) => void;
+  onAddSet: () => void;
+  onRenameSet: (id: string, name: string) => void;
+  onDeleteSet: (id: string) => void;
+  onDuplicateSet: (id: string) => void;
+  onReorderSet: (from: number, to: number) => void;
   onAddGroup: () => void;
   onRenameGroup: (id: string, name: string) => void;
+  onToggleGroup: (id: string) => void;
   onDeleteGroup: (id: string) => void;
-  onDuplicateGroup: (id: string) => void;
-  onReorderGroup: (from: number, to: number) => void;
-  onAddSection: () => void;
-  onRenameSection: (id: string, name: string) => void;
-  onToggleSection: (id: string) => void;
-  onDeleteSection: (id: string) => void;
-  onSetSectionEnabled: (id: string, enabled: boolean) => void;
+  onSetGroupEnabled: (id: string, enabled: boolean) => void;
   onUpdateFilter: (id: string, patch: Partial<Filter>) => void;
-  onAddFilter: (sectionId?: string | null) => void;
+  onAddFilter: (groupId?: string | null) => void;
   onDeleteFilter: (id: string) => void;
   onDuplicateFilter: (id: string) => void;
   onViewFilterOnly: (id: string) => void;
@@ -613,9 +613,9 @@ interface FilterPanelProps {
 }
 
 export function FilterPanel({
-  file, group, counts, style,
-  onSwitchGroup, onAddGroup, onRenameGroup, onDeleteGroup, onDuplicateGroup, onReorderGroup,
-  onAddSection, onRenameSection, onToggleSection, onDeleteSection, onSetSectionEnabled,
+  file, set, counts, style,
+  onSwitchSet, onAddSet, onRenameSet, onDeleteSet, onDuplicateSet, onReorderSet,
+  onAddGroup, onRenameGroup, onToggleGroup, onDeleteGroup, onSetGroupEnabled,
   onUpdateFilter, onAddFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onEditFilter,
   onApplyLayout, onBulk,
 }: FilterPanelProps) {
@@ -624,47 +624,47 @@ export function FilterPanel({
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
   const q = search.trim().toLowerCase();
-  const filters = group.filters;
-  const sections = group.sections;
+  const filters = set.filters;
+  const groups = set.groups;
   const searching = !!q;
   const filtered = q ? filters.filter((f) => f.pattern.toLowerCase().includes(q)) : filters;
 
   // Section / filter metadata lookups (stable across a drag — only order moves).
-  const sectionById = new Map(sections.map((s) => [s.id, s] as const));
+  const groupById = new Map(groups.map((s) => [s.id, s] as const));
   const filterById = new Map(filters.map((f) => [f.id, f] as const));
 
   // Snapshot the committed arrangement as a FilterLayout: the interleaved
-  // top-level order plus each section's ordered members. Appends anything
+  // top-level order plus each group's ordered members. Appends anything
   // `order` is missing so a row never disappears.
   const buildLayout = (): FilterLayout => {
     const top: FilterLayout["top"] = [];
     const seen = new Set<string>();
-    for (const id of group.order) {
+    for (const id of set.order) {
       if (seen.has(id)) continue;
-      if (sectionById.has(id)) { top.push({ kind: "section", id }); seen.add(id); continue; }
+      if (groupById.has(id)) { top.push({ kind: "group", id }); seen.add(id); continue; }
       const f = filterById.get(id);
-      if (f && f.sectionId === null) { top.push({ kind: "filter", id }); seen.add(id); }
+      if (f && f.groupId === null) { top.push({ kind: "filter", id }); seen.add(id); }
     }
-    for (const f of filters) if (f.sectionId === null && !seen.has(f.id)) { top.push({ kind: "filter", id: f.id }); seen.add(f.id); }
-    for (const s of sections) if (!seen.has(s.id)) { top.push({ kind: "section", id: s.id }); seen.add(s.id); }
-    const inSection: Record<string, string[]> = {};
-    for (const s of sections) inSection[s.id] = filters.filter((f) => f.sectionId === s.id).map((f) => f.id);
-    return { top, inSection };
+    for (const f of filters) if (f.groupId === null && !seen.has(f.id)) { top.push({ kind: "filter", id: f.id }); seen.add(f.id); }
+    for (const s of groups) if (!seen.has(s.id)) { top.push({ kind: "group", id: s.id }); seen.add(s.id); }
+    const inGroup: Record<string, string[]> = {};
+    for (const s of groups) inGroup[s.id] = filters.filter((f) => f.groupId === s.id).map((f) => f.id);
+    return { top, inGroup };
   };
 
   // While a drag is in flight we render from this local model and commit once
   // (one undoable step) on drop; otherwise we render straight from props.
-  const [drag, setDrag] = useState<{ activeId: string; type: "filter" | "section"; model: FilterLayout } | null>(null);
+  const [drag, setDrag] = useState<{ activeId: string; type: "filter" | "group"; model: FilterLayout } | null>(null);
   const layout = drag ? drag.model : buildLayout();
 
-  const bySection = (sid: string) =>
-    (layout.inSection[sid] ?? []).map((id) => filterById.get(id)).filter(Boolean) as Filter[];
+  const byGroup = (gid: string) =>
+    (layout.inGroup[gid] ?? []).map((id) => filterById.get(id)).filter(Boolean) as Filter[];
   const topItems = layout.top
-    .map((e) => e.kind === "section"
-      ? { kind: "section" as const, section: sectionById.get(e.id) }
+    .map((e) => e.kind === "group"
+      ? { kind: "group" as const, group: groupById.get(e.id) }
       : { kind: "filter" as const, filter: filterById.get(e.id) })
-    .filter((it) => (it.kind === "section" ? it.section : it.filter)) as
-      ({ kind: "section"; section: FilterSection } | { kind: "filter"; filter: Filter })[];
+    .filter((it) => (it.kind === "group" ? it.group : it.filter)) as
+      ({ kind: "group"; group: FilterGroup } | { kind: "filter"; filter: Filter })[];
   const topIds = layout.top.map((e) => e.id);
 
   function renderRow(f: Filter) {
@@ -691,13 +691,13 @@ export function FilterPanel({
     requestAnimationFrame(() => { recentlyMovedToNewContainer.current = false; });
   }, [drag?.model]);
 
-  // Locate an id in a model: which container ("__top__" or a section id) + index.
+  // Locate an id in a model: which container ("__top__" or a group id) + index.
   const locate = (id: string, m: FilterLayout): { container: string; index: number } | null => {
     const ti = m.top.findIndex((e) => e.id === id);
     if (ti >= 0) return { container: "__top__", index: ti };
-    for (const sid of Object.keys(m.inSection)) {
-      const i = m.inSection[sid].indexOf(id);
-      if (i >= 0) return { container: sid, index: i };
+    for (const gid of Object.keys(m.inGroup)) {
+      const i = m.inGroup[gid].indexOf(id);
+      if (i >= 0) return { container: gid, index: i };
     }
     return null;
   };
@@ -710,29 +710,29 @@ export function FilterPanel({
   };
 
   // Resolve the drop target (container + index) from the hovered droppable. A
-  // header resolves INTO its section, except its *upper half* drops the filter as
-  // a loose row BEFORE the section (so it can become the top-most free filter); a
-  // body appends into its section (or the top level); a row or section block uses
+  // header resolves INTO its group, except its *upper half* drops the filter as
+  // a loose row BEFORE the group (so it can become the top-most free filter); a
+  // body appends into its group (or the top level); a row or group block uses
   // its live position in the model.
   const resolveDrop = (
     over: DragEndEvent["over"], m: FilterLayout, pointerY?: number,
   ): { container: string; index: number } | null => {
     if (!over) return null;
-    const d = over.data.current as { type?: string; sectionId?: string | null } | undefined;
+    const d = over.data.current as { type?: string; groupId?: string | null } | undefined;
     if (d?.type === "header") {
-      const sid = d.sectionId as string;
+      const gid = d.groupId as string;
       const r = over.rect;
       if (pointerY != null && r && pointerY < r.top + r.height / 2) {
-        const idx = m.top.findIndex((e) => e.id === sid);
+        const idx = m.top.findIndex((e) => e.id === gid);
         return { container: "__top__", index: idx < 0 ? m.top.length : idx };
       }
-      return { container: sid, index: (m.inSection[sid] ?? []).length };
+      return { container: gid, index: (m.inGroup[gid] ?? []).length };
     }
     if (d?.type === "body") {
-      const sid = (d.sectionId ?? null) as string | null;
-      return sid === null
+      const gid = (d.groupId ?? null) as string | null;
+      return gid === null
         ? { container: "__top__", index: m.top.length }
-        : { container: sid, index: (m.inSection[sid] ?? []).length };
+        : { container: gid, index: (m.inGroup[gid] ?? []).length };
     }
     if (d?.type === "bottomslot") return { container: "__top__", index: m.top.length };
     return locate(String(over.id), m);
@@ -740,21 +740,21 @@ export function FilterPanel({
 
   const cloneModel = (m: FilterLayout): FilterLayout => ({
     top: m.top.map((e) => ({ ...e })),
-    inSection: Object.fromEntries(Object.entries(m.inSection).map(([k, v]) => [k, [...v]])),
+    inGroup: Object.fromEntries(Object.entries(m.inGroup).map(([k, v]) => [k, [...v]])),
   });
   const removeFromModel = (m: FilterLayout, id: string) => {
     const ti = m.top.findIndex((e) => e.id === id);
     if (ti >= 0) { m.top.splice(ti, 1); return; }
-    for (const sid of Object.keys(m.inSection)) {
-      const i = m.inSection[sid].indexOf(id);
-      if (i >= 0) { m.inSection[sid].splice(i, 1); return; }
+    for (const gid of Object.keys(m.inGroup)) {
+      const i = m.inGroup[gid].indexOf(id);
+      if (i >= 0) { m.inGroup[gid].splice(i, 1); return; }
     }
   };
   const insertIntoModel = (m: FilterLayout, container: string, id: string, index: number) => {
     if (container === "__top__") {
       m.top.splice(Math.max(0, Math.min(index, m.top.length)), 0, { kind: "filter", id });
     } else {
-      const arr = (m.inSection[container] ??= []);
+      const arr = (m.inGroup[container] ??= []);
       arr.splice(Math.max(0, Math.min(index, arr.length)), 0, id);
     }
   };
@@ -765,7 +765,7 @@ export function FilterPanel({
   }
 
   function handleDragStart(e: DragStartEvent) {
-    const type = e.active.data.current?.type === "section" ? "section" : "filter";
+    const type = e.active.data.current?.type === "group" ? "group" : "filter";
     setDrag({ activeId: String(e.active.id), type, model: buildLayout() });
   }
 
@@ -801,13 +801,13 @@ export function FilterPanel({
       const target = resolveDrop(over, model, pointerYOf(e));
       if (src && target) {
         const next = cloneModel(model);
-        if (cur.type === "section") {
+        if (cur.type === "group") {
           next.top = arrayMove(next.top, src.index, target.index);
         } else {
           // Filter: remove then insert at the resolved slot, compensating for the
           // gap the removal leaves when the source precedes the target in the same
           // container. Unifies same- and cross-container drops (incl. popping a
-          // filter out to a loose row before a section).
+          // filter out to a loose row before a group).
           let idx = target.index;
           if (src.container === target.container && src.index < idx) idx -= 1;
           removeFromModel(next, activeId);
@@ -821,12 +821,12 @@ export function FilterPanel({
     resetDnd();
   }
 
-  // Recipe collision: a section drag snaps to top-level slots; a filter drag uses
-  // a pointer-first strategy that ignores section *blocks* (a filter targets a
-  // section via its header/body/rows, never the block itself), with a stable
+  // Recipe collision: a group drag snaps to top-level slots; a filter drag uses
+  // a pointer-first strategy that ignores group *blocks* (a filter targets a
+  // group via its header/body/rows, never the block itself), with a stable
   // fallback so the hovered container doesn't flicker mid-jump.
   const collisionDetection: CollisionDetection = useCallback((args) => {
-    if (drag?.type === "section") {
+    if (drag?.type === "group") {
       const topSet = new Set(layout.top.map((e) => e.id));
       return closestCenter({
         ...args,
@@ -834,8 +834,8 @@ export function FilterPanel({
           (c) => topSet.has(String(c.id)) || String(c.id) === "body:__null__"),
       });
     }
-    const sectionIdSet = new Set(sections.map((s) => s.id));
-    const containers = args.droppableContainers.filter((c) => !sectionIdSet.has(String(c.id)));
+    const groupIdSet = new Set(groups.map((s) => s.id));
+    const containers = args.droppableContainers.filter((c) => !groupIdSet.has(String(c.id)));
     const pointer = pointerWithin({ ...args, droppableContainers: containers });
     const intersections = pointer.length ? pointer : rectIntersection({ ...args, droppableContainers: containers });
     const overId = getFirstCollision(intersections, "id");
@@ -843,21 +843,21 @@ export function FilterPanel({
     if (recentlyMovedToNewContainer.current) lastOverId.current = drag?.activeId ?? null;
     return lastOverId.current ? [{ id: lastOverId.current }] : [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag, layout.top, sections]);
+  }, [drag, layout.top, groups]);
 
-  function handleGroupDragEnd(event: DragEndEvent) {
+  function handleSetDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const from = file.groups.findIndex((g) => g.id === active.id);
-    const to = file.groups.findIndex((g) => g.id === over.id);
-    if (from >= 0 && to >= 0) onReorderGroup(from, to);
+    const from = file.sets.findIndex((g) => g.id === active.id);
+    const to = file.sets.findIndex((g) => g.id === over.id);
+    if (from >= 0 && to >= 0) onReorderSet(from, to);
   }
 
   return (
     <div className="filter-panel" style={style}>
       {/* group tabs */}
-      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleGroupDragEnd}>
-        <SortableContext items={file.groups.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
+      <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSetDragEnd}>
+        <SortableContext items={file.sets.map((g) => g.id)} strategy={horizontalListSortingStrategy}>
           <ScrollArea
             orientation="horizontal"
             className="group-tabs"
@@ -871,20 +871,20 @@ export function FilterPanel({
               },
             }}
           >
-            {file.groups.map((g) => (
-              <GroupTab
+            {file.sets.map((g) => (
+              <SetTab
                 key={g.id}
-                group={g}
-                active={g.id === file.activeGroupId}
+                set={g}
+                active={g.id === file.activeSetId}
                 dot={(g.filters.find((f) => f.enabled && !f.exclude) ?? g.filters[0])?.textColor ?? "#9aa0a6"}
-                canDelete={file.groups.length > 1}
-                onSelect={() => onSwitchGroup(g.id)}
-                onRename={(name) => onRenameGroup(g.id, name)}
-                onDelete={() => onDeleteGroup(g.id)}
-                onDuplicate={() => onDuplicateGroup(g.id)}
+                canDelete={file.sets.length > 1}
+                onSelect={() => onSwitchSet(g.id)}
+                onRename={(name) => onRenameSet(g.id, name)}
+                onDelete={() => onDeleteSet(g.id)}
+                onDuplicate={() => onDuplicateSet(g.id)}
               />
             ))}
-            <div className="gtab-add" title="New filter set" onClick={onAddGroup}>
+            <div className="gtab-add" title="New filter set" onClick={onAddSet}>
               <Plus size={16} />
             </div>
             <ScrollBar orientation="horizontal" />
@@ -918,14 +918,14 @@ export function FilterPanel({
             <MoreHorizontal />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="end">
-            <PanelMenuItems onAddFilter={() => onAddFilter()} onAddSection={onAddSection} onBulk={onBulk} />
+            <PanelMenuItems onAddFilter={() => onAddFilter()} onAddGroup={onAddGroup} onBulk={onBulk} />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
       {/* filter list */}
       {filters.length === 0 ? (
-        <PanelListZone onAddFilter={() => onAddFilter()} onAddSection={onAddSection} onBulk={onBulk}>
+        <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={onAddGroup} onBulk={onBulk}>
           <div className="filter-empty">
             <FilterIcon size={26} style={{ color: "var(--text-3)" }} />
             <div className="fe-title">No filters yet</div>
@@ -934,7 +934,7 @@ export function FilterPanel({
         </PanelListZone>
       ) : searching ? (
         <DndContext sensors={sensors} collisionDetection={closestCenter}>
-          <PanelListZone onAddFilter={() => onAddFilter()} onAddSection={onAddSection} onBulk={onBulk}>
+          <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={onAddGroup} onBulk={onBulk}>
             {filtered.length === 0 ? (
               <div className="filter-empty">
                 <FilterIcon size={26} style={{ color: "var(--text-3)" }} />
@@ -958,20 +958,20 @@ export function FilterPanel({
           onDragEnd={handleDragEnd}
           onDragCancel={() => { setDrag(null); resetDnd(); }}
         >
-          <PanelListZone onAddFilter={() => onAddFilter()} onAddSection={onAddSection} onBulk={onBulk}>
+          <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={onAddGroup} onBulk={onBulk}>
             <TopDropZone>
               <SortableContext items={topIds} strategy={verticalListSortingStrategy}>
                 {topItems.map((it) =>
-                  it.kind === "section" ? (
-                    <SectionBlock
-                      key={it.section.id}
-                      section={it.section}
-                      filters={bySection(it.section.id)}
-                      onToggle={() => onToggleSection(it.section.id)}
-                      onRename={(name) => onRenameSection(it.section.id, name)}
-                      onDelete={() => onDeleteSection(it.section.id)}
-                      onAddFilter={() => onAddFilter(it.section.id)}
-                      onSetEnabled={(enabled) => onSetSectionEnabled(it.section.id, enabled)}
+                  it.kind === "group" ? (
+                    <GroupBlock
+                      key={it.group.id}
+                      group={it.group}
+                      filters={byGroup(it.group.id)}
+                      onToggle={() => onToggleGroup(it.group.id)}
+                      onRename={(name) => onRenameGroup(it.group.id, name)}
+                      onDelete={() => onDeleteGroup(it.group.id)}
+                      onAddFilter={() => onAddFilter(it.group.id)}
+                      onSetEnabled={(enabled) => onSetGroupEnabled(it.group.id, enabled)}
                       renderRow={renderRow}
                     />
                   ) : (
@@ -982,7 +982,7 @@ export function FilterPanel({
               <BottomSlot active={drag?.type === "filter"} />
             </TopDropZone>
 
-            <button className="fsection-add" onClick={onAddSection}>
+            <button className="fsection-add" onClick={onAddGroup}>
               <FolderPlus size={14} /> New group
             </button>
           </PanelListZone>
@@ -990,8 +990,8 @@ export function FilterPanel({
           <DragOverlay>
             {drag?.type === "filter" && filterById.get(drag.activeId) ? (
               <FilterRowOverlay f={filterById.get(drag.activeId)!} count={counts[drag.activeId] ?? 0} />
-            ) : drag?.type === "section" && sectionById.get(drag.activeId) ? (
-              <SectionOverlay section={sectionById.get(drag.activeId)!} count={bySection(drag.activeId).length} />
+            ) : drag?.type === "group" && groupById.get(drag.activeId) ? (
+              <GroupOverlay group={groupById.get(drag.activeId)!} count={byGroup(drag.activeId).length} />
             ) : null}
           </DragOverlay>
         </DndContext>
