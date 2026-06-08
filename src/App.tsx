@@ -9,10 +9,31 @@ import { save, open, confirm } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import type { AppState, LogFile, FilterGroup, FilterSection, Filter, FilterLayout } from "./types";
 import {
-  uid, makeFilter, initialState, normalizeState, PALETTE,
+  uid, makeFilter, filterFromTatAttrs, initialState, normalizeState, PALETTE,
 } from "./data";
 
-const FILE_DIALOG_FILTERS = [{ name: "Logsy filters", extensions: ["json"] }];
+const FILE_DIALOG_FILTERS = [
+  { name: "Filter files", extensions: ["json", "tat", "xml"] },
+  { name: "Logsy filters", extensions: ["json"] },
+  { name: "TextAnalysisTool.NET", extensions: ["tat", "xml"] },
+];
+
+/**
+ * Parse a TextAnalysisTool.NET (.tat) filter file so users of that tool can
+ * import their filters here. Returns null when the text isn't a TAT document.
+ */
+function parseTatFilters(
+  text: string
+): { filters: Filter[]; sections: FilterSection[]; order: string[] } | null {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  if (doc.getElementsByTagName("parsererror").length) return null;
+  if (doc.documentElement?.tagName !== "TextAnalysisTool.NET") return null;
+  const attrs = ["text", "description", "enabled", "excluding", "case_sensitive", "regex", "foreColor", "backColor"];
+  const filters = Array.from(doc.getElementsByTagName("filter")).map((el) =>
+    filterFromTatAttrs(Object.fromEntries(attrs.map((k) => [k, el.getAttribute(k)])))
+  );
+  return { filters, sections: [], order: filters.map((f) => f.id) };
+}
 
 /** Parse an imported filters file into a group's filters/sections/order. */
 function buildGroupFromImport(
@@ -585,11 +606,10 @@ export function App() {
     let text: string;
     try { text = await invoke<string>("read_text_file", { path }); }
     catch (e) { toast.error("Could not read file: " + String(e)); return; }
-    let data: unknown;
-    try { data = JSON.parse(text); }
-    catch { toast.error("That file isn't valid JSON."); return; }
-    const built = buildGroupFromImport(data);
-    if (!built) { toast.error("That file doesn't contain Logsy filters."); return; }
+    let built: ReturnType<typeof buildGroupFromImport> = null;
+    try { built = buildGroupFromImport(JSON.parse(text)); } catch { /* not JSON — try TAT below */ }
+    if (!built) built = parseTatFilters(text); // TextAnalysisTool.NET (.tat)
+    if (!built) { toast.error("That file isn't Logsy or TextAnalysisTool.NET filters."); return; }
     patchState((s) => {
       if (!file || !group) return;
       const g = withGroup(s, file.id, group.id);

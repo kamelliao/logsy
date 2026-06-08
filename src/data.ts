@@ -106,6 +106,32 @@ export function makeFilter(pattern: string, opts: Partial<Filter> = {}): Filter 
   };
 }
 
+// ---------------------------------------------------------------------------
+// TextAnalysisTool.NET (.tat) import — lets users migrate their filter sets.
+// These helpers are the pure mapping layer; the DOM parsing lives in App.tsx.
+// ---------------------------------------------------------------------------
+
+/** Map a TextAnalysisTool.NET hex colour ("808000", or 8-digit ARGB) to #rrggbb. */
+export function tatColor(raw: string | null | undefined, fallback: string): string {
+  let h = (raw ?? "").trim().replace(/^#/, "");
+  if (h.length === 8) h = h.slice(2); // drop the leading ARGB alpha byte
+  return /^[0-9a-fA-F]{6}$/.test(h) ? `#${h.toLowerCase()}` : fallback;
+}
+
+/** Build one of our filters from a TextAnalysisTool.NET <filter> element's attrs. */
+export function filterFromTatAttrs(a: Record<string, string | null | undefined>): Filter {
+  const yes = (v: string | null | undefined) => (v ?? "").trim().toLowerCase() === "y";
+  return makeFilter(a.text ?? "", {
+    description: a.description ?? "",
+    enabled: yes(a.enabled),
+    exclude: yes(a.excluding),
+    caseSensitive: yes(a.case_sensitive),
+    regex: yes(a.regex),
+    textColor: tatColor(a.foreColor, "#1c1f23"),
+    bgColor: tatColor(a.backColor, "#fff7c2"),
+  });
+}
+
 /** A fresh, empty workspace. Files are added by the user loading logs from disk. */
 export function initialState(): AppState {
   return {
