@@ -1,6 +1,7 @@
 import type { AppState, Filter, PaletteEntry } from "./types";
 
 export const PALETTE: PaletteEntry[] = [
+  { name: "default", text: "#1c1f23", bg: "#ffffff" },
   { name: "red",    text: "#b42318", bg: "#fce4e4" },
   { name: "orange", text: "#b54708", bg: "#fcebd9" },
   { name: "amber",  text: "#854d0e", bg: "#fef7c3" },
@@ -99,10 +100,9 @@ export function makeFilter(pattern: string, opts: Partial<Filter> = {}): Filter 
     regex: !!opts.regex,
     exclude: !!opts.exclude,
     textColor: opts.textColor ?? "#1c1f23",
-    bgColor: opts.bgColor ?? "#fff7c2",
+    bgColor: opts.bgColor ?? "#ffffff",
     sectionId: opts.sectionId ?? null,
     fields: opts.fields,
-    extractOnly: opts.extractOnly,
   };
 }
 
@@ -128,7 +128,7 @@ export function filterFromTatAttrs(a: Record<string, string | null | undefined>)
     caseSensitive: yes(a.case_sensitive),
     regex: yes(a.regex),
     textColor: tatColor(a.foreColor, "#1c1f23"),
-    bgColor: tatColor(a.backColor, "#fff7c2"),
+    bgColor: tatColor(a.backColor, "#ffffff"),
   });
 }
 
@@ -204,7 +204,7 @@ export function normalizeState(state: AppState): AppState {
     state.panelSizes = {};
   }
   // Drop the short-lived app-level parse-profile fields; parsing now lives on
-  // individual regex filters (Filter.fields / Filter.extractOnly).
+  // individual regex filters (Filter.fields).
   delete (state as Partial<Record<"profiles" | "activeProfileId" | "structuredView", unknown>>).profiles;
   delete (state as Partial<Record<"profiles" | "activeProfileId" | "structuredView", unknown>>).activeProfileId;
   delete (state as Partial<Record<"profiles" | "activeProfileId" | "structuredView", unknown>>).structuredView;

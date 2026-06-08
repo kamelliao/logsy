@@ -16,12 +16,6 @@ export interface Filter {
    * a matching line then exposes these as parsed fields.
    */
   fields?: FieldDef[];
-  /**
-   * When true the filter only extracts fields and does not colour matching
-   * lines — needed for a catch-all structural filter that would otherwise paint
-   * the whole log.
-   */
-  extractOnly?: boolean;
 }
 
 export interface FilterSection {

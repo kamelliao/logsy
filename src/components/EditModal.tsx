@@ -68,7 +68,6 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
   const [fieldTypes, setFieldTypes] = useState<Record<string, FieldType>>(
     () => Object.fromEntries((filter.fields ?? []).map((f) => [f.name, f.type])),
   );
-  const [extractOnly, setExtractOnly] = useState<boolean>(!!filter.extractOnly);
   const patternRef = useRef<HTMLInputElement>(null);
 
   // Width resize via the left/right edge handles. The modal is centre-anchored,
@@ -135,16 +134,15 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
     onSave({
       ...draft,
       fields: hasFields ? fields : undefined,
-      extractOnly: hasFields ? extractOnly : false,
     });
   }
 
   // Has anything actually changed from the filter we opened?
   const dirty = useMemo(() => {
-    const current = JSON.stringify({ ...draft, fields: hasFields ? fields : undefined, extractOnly: hasFields ? extractOnly : false });
-    const original = JSON.stringify({ ...filter, fields: filter.fields, extractOnly: filter.extractOnly ?? false });
+    const current = JSON.stringify({ ...draft, fields: hasFields ? fields : undefined });
+    const original = JSON.stringify({ ...filter, fields: filter.fields });
     return current !== original;
-  }, [draft, fields, extractOnly, hasFields, filter]);
+  }, [draft, fields, hasFields, filter]);
 
   const [confirmingClose, setConfirmingClose] = useState(false);
   // Closing with unsaved edits asks for confirmation first.
@@ -273,20 +271,11 @@ export function EditModal({ filter, lines, isNew, sections, onSave, onClose, onD
                   </div>
                 ))}
               </div>
-              <div style={{ marginTop: 9 }}>
-                <ToggleCard
-                  on={extractOnly}
-                  glyph="{ }"
-                  name="Extract only"
-                  desc="Parse these fields but don't colour matching lines"
-                  onClick={() => setExtractOnly(!extractOnly)}
-                />
-              </div>
             </div>
           )}
 
           {/* colors */}
-          {!draft.exclude && !extractOnly && (
+          {!draft.exclude && (
             <div className="field">
               <Label>Color</Label>
               <div className="swatches">

@@ -122,7 +122,7 @@ export function computeView(lines: string[], compiled: CompiledFilter[]): ViewRe
   // winner and field provider go to the first match in this order.
   const usable = compiled.filter((c) => c.re && !c.empty && c.ok);
   // Existence flags reflect which enabled filters exist, not per-line matches.
-  const hasHighlights = usable.some((c) => c.f.enabled && !c.f.exclude && !c.f.extractOnly);
+  const hasHighlights = usable.some((c) => c.f.enabled && !c.f.exclude);
   const hasExcludes = usable.some((c) => c.f.enabled && c.f.exclude);
 
   // Field providers keyed by filter id, for lazy on-demand extraction.
@@ -153,7 +153,7 @@ export function computeView(lines: string[], compiled: CompiledFilter[]): ViewRe
       counts[c.f.id]++;
       if (!c.f.enabled) continue;
       if (c.f.exclude) { excluded = true; continue; }
-      if (winner === null && !c.f.extractOnly) winner = c;
+      if (winner === null) winner = c;
       if (fieldsFromId === undefined && c.f.fields && c.f.fields.length > 0) fieldsFromId = c.f.id;
     }
     rows[i] = { n: i + 1, text, winner, excluded, fieldsFromId };

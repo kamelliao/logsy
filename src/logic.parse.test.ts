@@ -86,19 +86,6 @@ test("field extraction is first-structural-filter-wins, independent of the colou
   expect(view.fieldsFor(1)?.tag.value).toBe("i2c");
 });
 
-test("an extractOnly filter supplies fields but never becomes the colour winner", () => {
-  const view = computeView(["12.0 E boom"], compileAll([
-    structural("catchall", "(?<ts>\\d+\\.\\d+)\\s+(?<lvl>[EWID])\\s+(?<msg>.*)", {
-      extractOnly: true,
-      fields: F({ name: "ts", type: "float" }, { name: "lvl", type: "string" }, { name: "msg", type: "string" }),
-    }),
-  ]));
-  expect(view.rows[0].winner).toBeNull();          // not coloured
-  expect(view.hasHighlights).toBe(false);
-  expect(view.fieldsFor(1)?.lvl.value).toBe("E"); // but still parsed
-  expect(view.rows[0].fieldsFromId).toBe("catchall");
-});
-
 test("counts cover every line and include disabled filters", () => {
   const lines = ["error a", "ok b", "error c"];
   const view = computeView(lines, compileAll([

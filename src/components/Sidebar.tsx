@@ -45,13 +45,12 @@ interface SidebarProps {
   onSetPanelPos: (pos: "bottom" | "right") => void;
   onSetMapColorMode: (mode: "bg" | "text") => void;
   onSetMapWidth: (w: number) => void;
-  onResetWorkspace: () => void;
 }
 
 export function Sidebar({
   state, collapsed, onToggleCollapse, onSelectFile,
   onOpenFile, onDeleteFile,
-  onSetPanelPos, onSetMapColorMode, onSetMapWidth, onResetWorkspace,
+  onSetPanelPos, onSetMapColorMode, onSetMapWidth,
 }: SidebarProps) {
   return (
     <div className={"sidebar" + (collapsed ? " collapsed" : "")}>
@@ -126,16 +125,6 @@ export function Sidebar({
             <div className="sp-row">
               <span>Toggle matches only</span>
               <Kbd>Ctrl H</Kbd>
-            </div>
-            <div className="sp-row">
-              <span>Reset workspace</span>
-              <Button
-                variant="ghost"
-                style={{ height: 28, padding: "0 10px", fontSize: 12 }}
-                onClick={onResetWorkspace}
-              >
-                Reset
-              </Button>
             </div>
           </PopoverContent>
         </Popover>

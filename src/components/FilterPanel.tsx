@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, CSSProperties, ReactNode } from "react";
 import {
-  ChevronDown, ChevronRight, Copy, EyeOff,
+  ChevronDown, ChevronRight, Copy, Eye, EyeOff,
   Filter as FilterIcon, FileDown, FolderPlus, GripVertical,
   ListChecks, ListX, MoreVertical, MoreHorizontal, Pencil,
   Plus, Save, Search, Trash2, Upload, X,
@@ -53,13 +53,16 @@ import {
 // (base-ui's ContextMenu reuses the same MenuItem/Separator parts, so these
 // fragments work in either popup.)
 
-function RowMenuItems({ onEdit, onDuplicate, onDelete }: {
-  onEdit: () => void; onDuplicate: () => void; onDelete: () => void;
+function RowMenuItems({ onEdit, onViewOnly, onDuplicate, onDelete }: {
+  onEdit: () => void; onViewOnly: () => void; onDuplicate: () => void; onDelete: () => void;
 }) {
   return (
     <>
       <DropdownMenuItem onClick={onEdit}>
         <span className="mi-ico"><Pencil size={15} /></span>Edit
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={onViewOnly}>
+        <span className="mi-ico"><Eye size={15} /></span>View this filter only
       </DropdownMenuItem>
       <DropdownMenuItem onClick={onDuplicate}>
         <span className="mi-ico"><Copy size={15} /></span>Duplicate
@@ -67,6 +70,25 @@ function RowMenuItems({ onEdit, onDuplicate, onDelete }: {
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onClick={onDelete}>
         <span className="mi-ico"><Trash2 size={15} /></span>Delete
+      </DropdownMenuItem>
+    </>
+  );
+}
+
+function GroupTabMenuItems({ onRename, onDuplicate, onDelete, canDelete }: {
+  onRename: () => void; onDuplicate: () => void; onDelete: () => void; canDelete: boolean;
+}) {
+  return (
+    <>
+      <DropdownMenuItem onClick={onRename}>
+        <span className="mi-ico"><Pencil size={15} /></span>Rename set
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={onDuplicate}>
+        <span className="mi-ico"><Copy size={15} /></span>Duplicate set
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem variant="destructive" disabled={!canDelete} onClick={() => { if (canDelete) onDelete(); }}>
+        <span className="mi-ico"><Trash2 size={15} /></span>Delete set
       </DropdownMenuItem>
     </>
   );
@@ -145,9 +167,10 @@ interface GroupTabProps {
   onSelect: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
+  onDuplicate: () => void;
 }
 
-function GroupTab({ group, active, dot, canDelete, onSelect, onRename, onDelete }: GroupTabProps) {
+function GroupTab({ group, active, dot, canDelete, onSelect, onRename, onDelete, onDuplicate }: GroupTabProps) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(group.name);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: group.id });
@@ -166,44 +189,58 @@ function GroupTab({ group, active, dot, canDelete, onSelect, onRename, onDelete 
   };
 
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={"gtab" + (active ? " active" : "")}
-      onClick={onSelect}
-      onDoubleClick={() => { setVal(group.name); setEditing(true); }}
-      title="Drag to reorder · double-click to rename"
-      {...attributes}
-      {...(editing ? {} : listeners)}
-    >
-      <span className="gtab-dot" style={{ background: dot }} />
-      {editing ? (
-        <input
-          className="gtab-name-input"
-          value={val}
-          autoFocus
-          onClick={(e) => e.stopPropagation()}
-          onChange={(e) => setVal(e.target.value)}
-          onBlur={commit}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") commit();
-            if (e.key === "Escape") { setVal(group.name); setEditing(false); }
-          }}
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={
+          <div
+            ref={setNodeRef}
+            style={style}
+            className={"gtab" + (active ? " active" : "")}
+            onClick={onSelect}
+            onDoubleClick={() => { setVal(group.name); setEditing(true); }}
+            title="Drag to reorder · double-click to rename · right-click for menu"
+            {...attributes}
+            {...(editing ? {} : listeners)}
+          />
+        }
+      >
+        <span className="gtab-dot" style={{ background: dot }} />
+        {editing ? (
+          <input
+            className="gtab-name-input"
+            value={val}
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+            onChange={(e) => setVal(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") { setVal(group.name); setEditing(false); }
+            }}
+          />
+        ) : (
+          <span className="gtab-name">{group.name}</span>
+        )}
+        <span className="gtab-count">{group.filters.length}</span>
+        {canDelete && (
+          <button
+            className="gtab-x"
+            title="Delete set"
+            onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          >
+            <X size={12} />
+          </button>
+        )}
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <GroupTabMenuItems
+          onRename={() => { setVal(group.name); setEditing(true); }}
+          onDuplicate={onDuplicate}
+          onDelete={onDelete}
+          canDelete={canDelete}
         />
-      ) : (
-        <span className="gtab-name">{group.name}</span>
-      )}
-      <span className="gtab-count">{group.filters.length}</span>
-      {canDelete && (
-        <button
-          className="gtab-x"
-          title="Delete set"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        >
-          <X size={12} />
-        </button>
-      )}
-    </div>
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }
 
@@ -217,9 +254,10 @@ interface FilterRowProps {
   onEdit: () => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onViewOnly: () => void;
 }
 
-function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicate }: FilterRowProps) {
+function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicate, onViewOnly }: FilterRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: f.id,
     disabled: searching,
@@ -316,13 +354,13 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
               <MoreVertical />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="bottom" align="end">
-              <RowMenuItems onEdit={onEdit} onDuplicate={onDuplicate} onDelete={onDelete} />
+              <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} />
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <RowMenuItems onEdit={onEdit} onDuplicate={onDuplicate} onDelete={onDelete} />
+        <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} />
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -556,6 +594,7 @@ interface FilterPanelProps {
   onAddGroup: () => void;
   onRenameGroup: (id: string, name: string) => void;
   onDeleteGroup: (id: string) => void;
+  onDuplicateGroup: (id: string) => void;
   onReorderGroup: (from: number, to: number) => void;
   onAddSection: () => void;
   onRenameSection: (id: string, name: string) => void;
@@ -566,6 +605,7 @@ interface FilterPanelProps {
   onAddFilter: (sectionId?: string | null) => void;
   onDeleteFilter: (id: string) => void;
   onDuplicateFilter: (id: string) => void;
+  onViewFilterOnly: (id: string) => void;
   onEditFilter: (id: string) => void;
   /** Commit a whole-group drag arrangement in one undoable step. */
   onApplyLayout: (model: FilterLayout) => void;
@@ -574,9 +614,9 @@ interface FilterPanelProps {
 
 export function FilterPanel({
   file, group, counts, style,
-  onSwitchGroup, onAddGroup, onRenameGroup, onDeleteGroup, onReorderGroup,
+  onSwitchGroup, onAddGroup, onRenameGroup, onDeleteGroup, onDuplicateGroup, onReorderGroup,
   onAddSection, onRenameSection, onToggleSection, onDeleteSection, onSetSectionEnabled,
-  onUpdateFilter, onAddFilter, onDeleteFilter, onDuplicateFilter, onEditFilter,
+  onUpdateFilter, onAddFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onEditFilter,
   onApplyLayout, onBulk,
 }: FilterPanelProps) {
   const [search, setSearch] = useState("");
@@ -638,6 +678,7 @@ export function FilterPanel({
         onEdit={() => onEditFilter(f.id)}
         onDelete={() => onDeleteFilter(f.id)}
         onDuplicate={() => onDuplicateFilter(f.id)}
+        onViewOnly={() => onViewFilterOnly(f.id)}
       />
     );
   }
@@ -840,6 +881,7 @@ export function FilterPanel({
                 onSelect={() => onSwitchGroup(g.id)}
                 onRename={(name) => onRenameGroup(g.id, name)}
                 onDelete={() => onDeleteGroup(g.id)}
+                onDuplicate={() => onDuplicateGroup(g.id)}
               />
             ))}
             <div className="gtab-add" title="New filter set" onClick={onAddGroup}>
