@@ -8,8 +8,8 @@ export interface Filter {
   exclude: boolean;
   textColor: string;
   bgColor: string;
-  /** Section this filter belongs to; null = ungrouped (renders above sections). */
-  sectionId: string | null;
+  /** Group this filter belongs to; null = ungrouped (renders above groups). */
+  groupId: string | null;
   /**
    * Structured fields this filter extracts, one per named capture group in its
    * regex. Present only for regex filters whose pattern has `(?<name>…)` groups;
@@ -18,41 +18,41 @@ export interface Filter {
   fields?: FieldDef[];
 }
 
-export interface FilterSection {
+export interface FilterGroup {
   id: string;
   name: string;
   collapsed: boolean;
 }
 
 /**
- * A whole-group layout snapshot used by the filter drag-and-drop while a drag is
+ * A whole-set layout snapshot used by the filter drag-and-drop while a drag is
  * in flight (kept local to FilterPanel) and to commit the final arrangement in a
- * single undoable step. `top` is the interleaved top-level order (section ids and
- * loose filter ids); `inSection` maps a section id to its ordered filter ids.
+ * single undoable step. `top` is the interleaved top-level order (group ids and
+ * loose filter ids); `inGroup` maps a group id to its ordered filter ids.
  */
 export interface FilterLayout {
-  top: { kind: "section" | "filter"; id: string }[];
-  inSection: Record<string, string[]>;
+  top: { kind: "group" | "filter"; id: string }[];
+  inGroup: Record<string, string[]>;
 }
 
-export interface FilterGroup {
+export interface FilterSet {
   id: string;
   name: string;
-  /** Flat, ordered list of all filters in the group (across sections). */
+  /** Flat, ordered list of all filters in the set (across groups). */
   filters: Filter[];
-  /** Ordered section metadata; filters reference these via Filter.sectionId. */
-  sections: FilterSection[];
+  /** Ordered group metadata; filters reference these via Filter.groupId. */
+  groups: FilterGroup[];
   /**
-   * Top-level layout order: a mixed sequence of section ids and ungrouped
-   * filter ids. Lets loose filter rows and sections be freely interleaved.
-   * Filters that belong to a section are not listed here (they live inside
-   * the section, ordered by their position in `filters`).
+   * Top-level layout order: a mixed sequence of group ids and ungrouped
+   * filter ids. Lets loose filter rows and groups be freely interleaved.
+   * Filters that belong to a group are not listed here (they live inside
+   * the group, ordered by their position in `filters`).
    */
   order: string[];
-  /** Last path this group's filters were saved to (for "Save filters"). */
+  /** Last path this set's filters were saved to (for "Save filters"). */
   filePath?: string;
   /**
-   * Serialized payload (exportPayload) at the moment the group was last saved or
+   * Serialized payload (exportPayload) at the moment the set was last saved or
    * loaded. "Save Filter" is disabled while the current payload still equals this
    * — i.e. nothing has changed since the last save.
    */
@@ -65,8 +65,8 @@ export interface LogFile {
   /** Absolute path on disk the log was loaded from (used to reload on restart). */
   path: string | null;
   lineCount: number;
-  groups: FilterGroup[];
-  activeGroupId: string | null;
+  sets: FilterSet[];
+  activeSetId: string | null;
 }
 
 export interface AppState {
