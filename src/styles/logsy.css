@@ -1230,10 +1230,17 @@ button { font-family: inherit; }
 .swatch {
   width: 28px; height: 28px; border-radius: 7px; cursor: pointer;
   display: grid; place-items: center; border: 2px solid transparent;
+  /* faint inset ring so a white/very-light background still reads as a swatch */
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.10);
   position: relative;
 }
 .swatch.sel { border-color: var(--text); }
 .swatch .sw-check { color: currentColor; }
+/* preview the preset's text colour as a centred glyph */
+.swatch .sw-a {
+  font-family: var(--ui-font); font-weight: 700; font-size: 14px; line-height: 1;
+  color: currentColor;
+}
 
 /* per-channel color comboboxes (text / background) */
 .color-palette { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
