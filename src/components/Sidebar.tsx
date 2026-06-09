@@ -1,43 +1,80 @@
+import { useEffect, useState } from "react";
 import { FilePlus, FileText, PanelLeft, Settings, X } from "lucide-react";
 import type { AppState, LogFile } from "../types";
 import { Button } from "./ui/button";
 import { Kbd } from "./ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
 interface FileItemProps {
   file: LogFile;
   active: boolean;
   canDelete: boolean;
+  collapsed: boolean;
   onSelect: () => void;
   onDelete: () => void;
 }
 
-function FileItem({ file, active, canDelete, onSelect, onDelete }: FileItemProps) {
+function FileItem({ file, active, canDelete, collapsed, onSelect, onDelete }: FileItemProps) {
+  // Right-click context menu, anchored at the cursor.
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    if (!menu) return;
+    function down(e: MouseEvent) {
+      if (!(e.target as HTMLElement).closest(".file-menu")) setMenu(null);
+    }
+    function esc(e: KeyboardEvent) { if (e.key === "Escape") setMenu(null); }
+    document.addEventListener("mousedown", down);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", down); document.removeEventListener("keydown", esc); };
+  }, [menu]);
+
   return (
-    <div
-      className={"file-item" + (active ? " active" : "")}
-      onClick={onSelect}
-      title={file.name}
-    >
-      <span className="file-ico"><FileText size={16} /></span>
-      <span className="file-name">{file.name}</span>
-      <span className="file-lines">{file.lineCount.toLocaleString()}</span>
-      {canDelete && (
-        <button
-          className="file-x"
-          title="Close file"
-          onClick={(e) => { e.stopPropagation(); onDelete(); }}
-        >
-          <X size={13} />
-        </button>
+    <>
+      <Tooltip>
+        <TooltipTrigger render={
+          <div
+            className={"file-item" + (active ? " active" : "")}
+            onClick={onSelect}
+            onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
+          />
+        }>
+          <span className="file-ico"><FileText size={16} /></span>
+          <span className="file-name">{file.name}</span>
+          <span className="file-lines">{file.lineCount.toLocaleString()}</span>
+          {canDelete && (
+            <button
+              className="file-x"
+              title="Close file"
+              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+            >
+              <X size={13} />
+            </button>
+          )}
+        </TooltipTrigger>
+        <TooltipContent side={collapsed ? "right" : "top"}>{file.name}</TooltipContent>
+      </Tooltip>
+
+      {menu && (
+        <div className="menu-pop file-menu" style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 200 }}>
+          <div
+            className="menu-item danger"
+            onClick={() => { setMenu(null); onDelete(); }}
+          >
+            <span className="mi-ico"><X size={14} /></span> Close file
+          </div>
+        </div>
       )}
-    </div>
+    </>
   );
 }
 
 interface SidebarProps {
   state: AppState;
   collapsed: boolean;
+  /** When the center is showing the "open a file" screen, no file is active. */
+  openScreen: boolean;
   onToggleCollapse: () => void;
   onSelectFile: (id: string) => void;
   onOpenFile: () => void;
@@ -48,7 +85,7 @@ interface SidebarProps {
 }
 
 export function Sidebar({
-  state, collapsed, onToggleCollapse, onSelectFile,
+  state, collapsed, openScreen, onToggleCollapse, onSelectFile,
   onOpenFile, onDeleteFile,
   onSetPanelPos, onSetMapColorMode, onSetMapWidth,
 }: SidebarProps) {
@@ -64,14 +101,14 @@ export function Sidebar({
           <PanelLeft size={18} />
         </Button>
       </div>
-      {!collapsed && <div className="sidebar-section-label">Files</div>}
       <div className="file-list scroll">
         {state.files.map((f) => (
           <FileItem
             key={f.id}
             file={f}
-            active={f.id === state.activeFileId}
+            active={!openScreen && f.id === state.activeFileId}
             canDelete={true}
+            collapsed={collapsed}
             onSelect={() => onSelectFile(f.id)}
             onDelete={() => onDeleteFile(f.id)}
           />

@@ -77,6 +77,8 @@ export interface LogFile {
   /** Absolute path on disk the log was loaded from (used to reload on restart). */
   path: string | null;
   lineCount: number;
+  /** Character encoding the file was decoded with (e.g. "UTF-8", "Big5"). */
+  encoding?: string;
   sets: FilterSet[];
   activeSetId: string | null;
   /** User bookmarks pinned to line numbers (persisted with the file). */

@@ -16,7 +16,7 @@ export function BookmarksPanel({ markers, onJump, onSetNote, onRemove }: Bookmar
       <div className="bm-empty">
         <Bookmark size={22} style={{ color: "var(--text-3)", marginBottom: 6 }} />
         <div>No bookmarks yet.</div>
-        <div style={{ fontSize: 12 }}>Click a line's gutter (left of the number) to add one.</div>
+        <div style={{ fontSize: "0.92em" }}>Click a line's gutter (left of the number) to add one.</div>
       </div>
     );
   }
