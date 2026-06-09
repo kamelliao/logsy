@@ -59,6 +59,18 @@ export interface FilterSet {
   savedSnapshot?: string;
 }
 
+/** The set of bookmark glyphs a marker can use. */
+export type MarkerIcon = "bookmark" | "star" | "flag" | "bug" | "pin" | "alert";
+
+/** A user-placed bookmark pinned to one log line, with an optional note. */
+export interface Marker {
+  /** Line number the marker is pinned to. */
+  n: number;
+  icon: MarkerIcon;
+  /** Free-text note; "" when none. */
+  note: string;
+}
+
 export interface LogFile {
   id: string;
   name: string;
@@ -67,6 +79,8 @@ export interface LogFile {
   lineCount: number;
   sets: FilterSet[];
   activeSetId: string | null;
+  /** User bookmarks pinned to line numbers (persisted with the file). */
+  markers?: Marker[];
 }
 
 export interface AppState {
@@ -90,8 +104,8 @@ export interface AppState {
   /** Collapsed (rolled-up) state of the main tabbed panel / popped compare dock. */
   filterCollapsed: boolean;
   compareCollapsed: boolean;
-  /** Active tab in the main panel (Filters or Compare share one tabbed dock). */
-  activePanelTab: "filters" | "compare";
+  /** Active tab in the main panel (Filters, Compare, Bookmarks share one tabbed dock). */
+  activePanelTab: "filters" | "compare" | "bookmarks";
   /** When true, Compare is shown as its own dock (so it can sit beside Filters)
    *  instead of as a tab in the main panel. */
   comparePopped: boolean;

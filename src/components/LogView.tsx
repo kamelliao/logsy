@@ -1,9 +1,10 @@
 import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "react";
-import { ArrowDown, ArrowUp, ChevronDown, ChevronRight, Columns3, Download, Eye, Filter, Search, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bookmark, ChevronDown, ChevronRight, Columns3, Download, Eye, Filter, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { LogFile, ViewResult, CompiledFilter, FieldValue } from "../types";
+import type { LogFile, ViewResult, CompiledFilter, FieldValue, Marker, MarkerIcon } from "../types";
 import { escapeRegex, segments } from "../logic";
+import { MARKER_ICONS, MarkerGlyph, markerColor } from "./markers";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
@@ -86,6 +87,12 @@ interface LogViewProps {
   gotoSignal?: { n: number; nonce: number } | null;
   /** Save the filtered view text via a native dialog (provided by App). */
   onExportView?: (defaultName: string, text: string) => void;
+  /** Bookmarks for the active file (one per line number). */
+  markers: Marker[];
+  /** Set by the Bookmarks tab to scroll/select a marked line (nonce re-triggers). */
+  markerJump?: { n: number; nonce: number } | null;
+  onSetMarker: (n: number, icon: MarkerIcon, note: string) => void;
+  onRemoveMarker: (n: number) => void;
   onToggleViewMode: (m: "all" | "matches") => void;
   onToggleFind: () => void;
   onCloseFind: () => void;
@@ -96,7 +103,7 @@ interface LogViewProps {
 
 export function LogView({
   file, view, viewMode, soloPattern, onExitSolo, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, compareLines, style,
-  selectAllNonce, gotoSignal, onExportView,
+  selectAllNonce, gotoSignal, onExportView, markers, markerJump, onSetMarker, onRemoveMarker,
   onCloseFind, onBuildFilter, onAddToCompare, onRemoveFromCompare,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
@@ -110,6 +117,11 @@ export function LogView({
   const [selectedLines, setSelectedLines] = useState<Set<number>>(() => new Set());
   const [anchorRi, setAnchorRi] = useState<number | null>(null);
   const [expandedLines, setExpandedLines] = useState<Set<number>>(() => new Set());
+  // Open bookmark editor popover, anchored at a screen position for one line.
+  const [markerPop, setMarkerPop] = useState<{ x: number; y: number; n: number } | null>(null);
+
+  // Markers indexed by line number for O(1) gutter lookups.
+  const markerMap = useMemo(() => new Map(markers.map((m) => [m.n, m])), [markers]);
 
   const [altDown, setAltDown] = useState(false);
 
@@ -152,11 +164,11 @@ export function LogView({
   }, [visible]);
   // Size the line-number gutter to the file's largest line number (≥4 digits),
   // so big files aren't clipped to the old fixed 5-digit column. The left
-  // padding (18px, matching .log-gut) reserves a lane for the expand chevron so
-  // the digits never sit underneath it.
+  // padding (35px, matching .log-gut) reserves two lanes — the bookmark marker
+  // and the expand chevron — so the digits never sit underneath them.
   const gutterW = useMemo(() => {
     const digits = Math.max(4, String(Math.max(1, file.lineCount || 0)).length);
-    return Math.ceil(digits * charWidth(fontSize)) + 18 + 12; // chevron lane + right padding
+    return Math.ceil(digits * charWidth(fontSize)) + 35 + 12; // marker + chevron lanes + right padding
   }, [file.lineCount, fontSize]);
   const minW = (showLineNumbers ? gutterW : 0) + 12 + Math.ceil(maxLen * charWidth(fontSize)) + 28;
 
@@ -206,6 +218,10 @@ export function LogView({
   const keepLineRef = useRef<number | null>(null);
   const keepOffsetRef = useRef(0);
   const shiftAnchorLineRef = useRef<number | null>(null);
+  // The selected line nearest the viewport centre, tracked across the *whole*
+  // view (not just on-screen rows): switching to "Show all" recentres it even
+  // when it was scrolled out of sight.
+  const selKeepLineRef = useRef<number | null>(null);
 
   // Opening a different file resets scroll, selection and expansion entirely.
   useEffect(() => {
@@ -213,6 +229,7 @@ export function LogView({
     setSelectedLines(new Set());
     setAnchorRi(null);
     setExpandedLines(new Set());
+    setMarkerPop(null);
     keepLineRef.current = null;
     shiftAnchorLineRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -270,6 +287,21 @@ export function LogView({
     keepLineRef.current = visible[idx].n;
     keepOffsetRef.current = idx * rowH - scrollTop; // pixel offset of the line's top within the viewport
     shiftAnchorLineRef.current = anchorRi != null ? visible[anchorRi]?.n ?? null : null;
+
+    // Separately remember the selected line nearest the centre across the whole
+    // view (off-screen rows included), so a "Show all" switch can recentre it.
+    if (selectedLines.size) {
+      let best = -1, bestDist = Infinity;
+      for (let i = 0; i < visible.length; i++) {
+        if (selectedLines.has(visible[i].n)) {
+          const d = Math.abs(i - centerIdx);
+          if (d < bestDist) { bestDist = d; best = i; }
+        }
+      }
+      selKeepLineRef.current = best >= 0 ? visible[best].n : null;
+    } else {
+      selKeepLineRef.current = null;
+    }
   }, [scrollTop, viewH, visible, viewMode, rowH, anchorRi, selectedLines]);
 
   // Switching between "all" and "matches" keeps the "keep" line pinned at the same
@@ -277,17 +309,44 @@ export function LogView({
   useEffect(() => {
     if (prevViewModeRef.current === viewMode) return;
     prevViewModeRef.current = viewMode;
+    // remap the shift-anchor through its line number; null if it's no longer shown
+    const remapAnchor = () => {
+      const al = shiftAnchorLineRef.current;
+      setAnchorRi(al == null ? null : (() => { const i = visible.findIndex((r) => r.n === al); return i >= 0 ? i : null; })());
+    };
+    // Switching to "Show all": if a line is selected, recentre it — even one
+    // scrolled off-screen — so the selection is always brought back into view.
+    if (viewMode === "all" && selKeepLineRef.current != null && visible.length) {
+      const idx = visible.findIndex((r) => r.n === selKeepLineRef.current);
+      if (idx >= 0) {
+        rowVirtualizer.scrollToIndex(idx, { align: "center" });
+        remapAnchor();
+        return;
+      }
+    }
     const keep = keepLineRef.current;
     if (keep == null || !visible.length) { rowVirtualizer.scrollToIndex(0); return; }
     let idx = visible.findIndex((r) => r.n === keep);
     if (idx < 0) idx = visible.findIndex((r) => r.n >= keep); // line hidden in new mode → next one
     if (idx < 0) idx = visible.length - 1;
     rowVirtualizer.scrollToOffset(Math.max(0, idx * rowH - keepOffsetRef.current));
-    // remap the shift-anchor through its line number; null if it's no longer shown
-    const al = shiftAnchorLineRef.current;
-    setAnchorRi(al == null ? null : (() => { const i = visible.findIndex((r) => r.n === al); return i >= 0 ? i : null; })());
+    remapAnchor();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewMode]);
+
+  // Jump to a bookmarked line from the Bookmarks tab: scroll it to centre and
+  // select it. Declared after the view-mode switch effect so that when a hidden
+  // marker forces a switch to "Show all", this final scroll wins.
+  useEffect(() => {
+    if (!markerJump || !visible.length) return;
+    let idx = visible.findIndex((r) => r.n === markerJump.n);
+    if (idx < 0) idx = visible.findIndex((r) => r.n >= markerJump.n);
+    if (idx < 0) idx = visible.length - 1;
+    rowVirtualizer.scrollToIndex(idx, { align: "center" });
+    setSelectedLines(new Set([visible[idx].n]));
+    setAnchorRi(idx);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [markerJump?.nonce]);
 
   useEffect(() => {
     const canvas = mapCanvasRef.current;
@@ -313,7 +372,18 @@ export function LogView({
     ctx.strokeStyle = "rgba(0,0,0,0.22)";
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, vpTop + 0.5, w - 1, Math.max(5, vpH - 1));
-  }, [view, visible, viewH, scrollTop, mapColorMode, mapWidth]);
+    // Bookmark notches on the left edge, drawn last so they sit above matches.
+    if (markerMap.size) {
+      const notchW = Math.min(4, w);
+      for (let ri = 0; ri < visible.length; ri++) {
+        const mk = markerMap.get(visible[ri].n);
+        if (!mk) continue;
+        const y = Math.round((ri / total) * h);
+        ctx.fillStyle = markerColor(mk.icon);
+        ctx.fillRect(0, Math.max(0, y - 1), notchW, Math.max(2, markH));
+      }
+    }
+  }, [view, visible, viewH, scrollTop, mapColorMode, mapWidth, markerMap]);
 
   function nav(dir: number) { if (!hits.length) return; setCurrent((c) => (c + dir + hits.length) % hits.length); }
   const currentKey = hits.length ? hits[Math.min(current, hits.length - 1)].key : null;
@@ -325,6 +395,14 @@ export function LogView({
     const y = e.clientY - rect.top;
     const ri = Math.max(0, Math.min(visible.length - 1, Math.floor((y / rect.height) * visible.length)));
     rowVirtualizer.scrollToIndex(ri, { align: "center" });
+  }
+
+  // Click the gutter marker lane: add a default bookmark if none, then open the
+  // editor popover next to the icon so the icon/note can be set right away.
+  function onMarkClick(e: React.MouseEvent, n: number) {
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+    if (!markerMap.has(n)) onSetMarker(n, "bookmark", "");
+    setMarkerPop({ x: rect.right + 6, y: rect.top - 4, n });
   }
 
   function onRowClick(e: React.MouseEvent, ri: number, n: number) {
@@ -470,6 +548,17 @@ export function LogView({
     return () => { document.removeEventListener("mousedown", h); document.removeEventListener("keydown", esc); };
   }, [rowMenu]);
 
+  // Dismiss the bookmark popover on an outside click (Esc is handled in-input).
+  useEffect(() => {
+    if (!markerPop) return;
+    function h(e: MouseEvent) {
+      const pop = document.querySelector(".marker-pop");
+      if (pop && !pop.contains(e.target as Node)) setMarkerPop(null);
+    }
+    document.addEventListener("mousedown", h);
+    return () => document.removeEventListener("mousedown", h);
+  }, [markerPop]);
+
   return (
     <div className="logview" style={{ ...style, "--log-gut-w": `${gutterW}px` } as CSSProperties}>
       {/* header */}
@@ -579,6 +668,7 @@ export function LogView({
                 const w = r.winner;
                 const dim = viewMode === "all" && view.hasHighlights && !w;
                 const sel = selectedLines.has(r.n);
+                const mk = markerMap.get(r.n);
                 const canExpand = r.fieldsFromId !== undefined;
                 const expanded = expandedLines.has(r.n);
                 const expFields = expanded ? view.fieldsFor(r.n) : undefined;
@@ -602,6 +692,14 @@ export function LogView({
                       onClick={(e) => onRowClick(e, vItem.index, r.n)}
                       onContextMenu={(e) => onRowContextMenu(e, vItem.index, r.n, canExpand)}
                     >
+                      <span
+                        className={"log-mark" + (mk ? " on" : "")}
+                        title={mk ? (mk.note || "Edit bookmark") : "Add bookmark"}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onClick={(e) => { e.stopPropagation(); onMarkClick(e, r.n); }}
+                      >
+                        {mk ? <MarkerGlyph icon={mk.icon} /> : <Bookmark size={12} />}
+                      </span>
                       {canExpand && (
                         <span
                           className={"log-exp" + (expanded ? " on" : "")}
@@ -650,6 +748,21 @@ export function LogView({
       {/* logline right-click menu */}
       {rowMenu && (
         <div className="menu-pop row-menu" style={{ position: "fixed", left: rowMenu.x, top: rowMenu.y, zIndex: 60 }}>
+          {markerMap.has(rowMenu.n) ? (
+            <>
+              <div className="menu-item" onClick={() => { setMarkerPop({ x: rowMenu.x, y: rowMenu.y, n: rowMenu.n }); setRowMenu(null); }}>
+                <span className="mi-ico"><Bookmark size={14} /></span> Edit bookmark…
+              </div>
+              <div className="menu-item danger" onClick={() => { onRemoveMarker(rowMenu.n); setRowMenu(null); }}>
+                <span className="mi-ico"><Trash2 size={14} /></span> Remove bookmark
+              </div>
+            </>
+          ) : (
+            <div className="menu-item" onClick={() => { onSetMarker(rowMenu.n, "bookmark", ""); setMarkerPop({ x: rowMenu.x, y: rowMenu.y, n: rowMenu.n }); setRowMenu(null); }}>
+              <span className="mi-ico"><Bookmark size={14} /></span> Add bookmark…
+            </div>
+          )}
+          <div className="menu-sep" />
           {compareLines.has(rowMenu.n) ? (
             <div className="menu-item" onClick={() => { onRemoveFromCompare(rowMenu.n); setRowMenu(null); }}>
               <span className="mi-ico"><Columns3 size={14} /></span> Remove from compare
@@ -667,6 +780,42 @@ export function LogView({
           )}
         </div>
       )}
+
+      {/* bookmark editor popover */}
+      {markerPop && markerMap.get(markerPop.n) && (() => {
+        const mk = markerMap.get(markerPop.n)!;
+        return (
+          <div className="marker-pop" style={{ position: "fixed", left: markerPop.x, top: markerPop.y, zIndex: 70 }}>
+            <div className="mp-head">Line {markerPop.n}</div>
+            <div className="mp-icons">
+              {MARKER_ICONS.map((opt) => (
+                <button
+                  key={opt.id}
+                  className={"mp-ico" + (mk.icon === opt.id ? " active" : "")}
+                  title={opt.label}
+                  onClick={() => onSetMarker(markerPop.n, opt.id, mk.note)}
+                >
+                  <opt.Icon size={15} color={opt.color} fill={opt.color} fillOpacity={0.18} />
+                </button>
+              ))}
+            </div>
+            <input
+              className="mp-note"
+              placeholder="Add a note…"
+              autoFocus
+              value={mk.note}
+              onChange={(e) => onSetMarker(markerPop.n, mk.icon, e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setMarkerPop(null); }}
+            />
+            <div className="mp-foot">
+              <button className="mp-del" onClick={() => { onRemoveMarker(markerPop.n); setMarkerPop(null); }}>
+                <Trash2 size={13} /> Remove
+              </button>
+              <button className="mp-done" onClick={() => setMarkerPop(null)}>Done</button>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

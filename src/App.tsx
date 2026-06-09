@@ -7,7 +7,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { save, open, confirm } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { AppState, LogFile, FilterSet, FilterGroup, Filter, FilterLayout } from "./types";
+import type { AppState, LogFile, FilterSet, FilterGroup, Filter, FilterLayout, MarkerIcon } from "./types";
 import {
   uid, makeFilter, filterFromTatAttrs, initialState, normalizeState,
 } from "./data";
@@ -78,6 +78,7 @@ import { LogView } from "./components/LogView";
 import { FilterPanel } from "./components/FilterPanel";
 import { EditModal } from "./components/EditModal";
 import { CompareTable } from "./components/CompareTable";
+import { BookmarksPanel } from "./components/BookmarksPanel";
 import { MenuPopup, type MenuItem } from "./components/MenuPopup";
 import { AboutModal } from "./components/AboutModal";
 import { Button } from "./components/ui/button";
@@ -135,6 +136,8 @@ export function App() {
   const [gotoVal, setGotoVal] = useState("");
   const [selectAllNonce, setSelectAllNonce] = useState(0);
   const [gotoSignal, setGotoSignal] = useState<{ n: number; nonce: number } | null>(null);
+  // Pushed to LogView to scroll/select a bookmarked line from the Bookmarks tab.
+  const [markerJump, setMarkerJump] = useState<{ n: number; nonce: number } | null>(null);
   const gotoInputRef = useRef<HTMLInputElement>(null);
   // "View this filter only" — ephemeral focus on a single filter's matches.
   const [soloFilterId, setSoloFilterId] = useState<string | null>(null);
@@ -714,6 +717,34 @@ export function App() {
   // Drop comparison lines when switching files (line numbers are file-specific).
   useEffect(() => { setCompareLines(new Set()); }, [state.activeFileId]);
 
+  // ---------- bookmarks ----------
+  const markers = file?.markers ?? [];
+  // Upsert a bookmark on a line (persisted with the file; not on the undo stack).
+  const setMarker = (n: number, icon: MarkerIcon, note: string) => patchState((s) => {
+    if (!file) return;
+    const f = withFile(s, file.id);
+    if (!Array.isArray(f.markers)) f.markers = [];
+    const m = f.markers.find((x) => x.n === n);
+    if (m) { m.icon = icon; m.note = note; }
+    else f.markers.push({ n, icon, note });
+    f.markers.sort((a, b) => a.n - b.n);
+  }, { undoable: false });
+  const removeMarker = (n: number) => patchState((s) => {
+    if (!file) return;
+    const f = withFile(s, file.id);
+    if (Array.isArray(f.markers)) f.markers = f.markers.filter((m) => m.n !== n);
+  }, { undoable: false });
+  // Jump to a bookmark from the Bookmarks tab. Bookmarks only render in "Show
+  // all"; if the target line is hidden *because* of matches-only mode (not
+  // excluded, just unmatched), switch to all first so the jump lands on it.
+  const jumpToMarker = (n: number) => {
+    const row = view.rows.find((r) => r.n === n);
+    if (state.viewMode === "matches" && view.hasHighlights && row && !row.excluded && !row.winner) {
+      setViewMode("all");
+    }
+    setMarkerJump({ n, nonce: Date.now() });
+  };
+
   // Build CSV text for a single pattern-set's rows.
   const buildCsv = (rows: typeof compareRows) => {
     const esc = (s: string) => /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -762,7 +793,7 @@ export function App() {
   const toggleFilterCollapsed = () => setState((s) => ({ ...s, filterCollapsed: !s.filterCollapsed }));
   const toggleCompareCollapsed = () => setState((s) => ({ ...s, compareCollapsed: !s.compareCollapsed }));
   // Select a tab in the main panel (always expands it if it was collapsed).
-  const selectPanelTab = (tab: "filters" | "compare") =>
+  const selectPanelTab = (tab: "filters" | "compare" | "bookmarks") =>
     setState((s) => ({ ...s, activePanelTab: tab, filterCollapsed: false }));
   // Pop Compare out to its own dock (so it can sit beside Filters); Filters takes
   // over the main tab area.
@@ -778,8 +809,11 @@ export function App() {
   const showCompare = compareRows.length > 0;
   // Compare is a tab in the main panel only when it has rows and isn't popped out.
   const compareTabAvailable = showCompare && !state.comparePopped;
-  const activePanelTab: "filters" | "compare" =
-    state.activePanelTab === "compare" && compareTabAvailable ? "compare" : "filters";
+  // Bookmarks is always a tab. Compare falls back to Filters when unavailable.
+  const activePanelTab: "filters" | "compare" | "bookmarks" =
+    state.activePanelTab === "bookmarks" ? "bookmarks"
+      : state.activePanelTab === "compare" && compareTabAvailable ? "compare"
+      : "filters";
 
   // Default share (weight) for a panel that has no persisted size yet. Docks
   // open generously so they reveal a useful amount of content.
@@ -1029,6 +1063,10 @@ export function App() {
         selectAllNonce={selectAllNonce}
         gotoSignal={gotoSignal}
         onExportView={exportFilteredView}
+        markers={markers}
+        markerJump={markerJump}
+        onSetMarker={setMarker}
+        onRemoveMarker={removeMarker}
       />
     );
 
@@ -1070,6 +1108,14 @@ export function App() {
         colorFor={(id) => set!.filters.find((x) => x.id === id)?.textColor ?? "#c2c7cd"}
       />
     );
+    const bookmarksBody = (
+      <BookmarksPanel
+        markers={markers}
+        onJump={jumpToMarker}
+        onSetNote={(n, note) => { const m = markers.find((x) => x.n === n); setMarker(n, m?.icon ?? "bookmark", note); }}
+        onRemove={removeMarker}
+      />
+    );
 
     const foldChevron = (pos: "bottom" | "right", collapsed: boolean) =>
       pos === "bottom"
@@ -1089,7 +1135,7 @@ export function App() {
           <div className="dock dock-right collapsed panel-dock">
             <div className="dock-head" onClick={toggleFilterCollapsed} title="Expand  (Ctrl+B)">
               <span className="dock-chevron">{chevron}</span>
-              <span className="dock-title">{activePanelTab === "compare" ? `Compare · ${compareRows.length}` : "Filters"}</span>
+              <span className="dock-title">{activePanelTab === "compare" ? `Compare · ${compareRows.length}` : activePanelTab === "bookmarks" ? `Bookmarks · ${markers.length}` : "Filters"}</span>
             </div>
           </div>
         );
@@ -1107,6 +1153,9 @@ export function App() {
                   Compare<span className="ptab-badge">{compareRows.length}</span>
                 </button>
               )}
+              <button className={"ptab" + (activePanelTab === "bookmarks" ? " active" : "")} onClick={() => selectPanelTab("bookmarks")}>
+                Bookmarks{markers.length > 0 && <span className="ptab-badge">{markers.length}</span>}
+              </button>
             </div>
             <div className="dock-spacer" />
             {activePanelTab === "compare" && (
@@ -1121,7 +1170,7 @@ export function App() {
             <button className="dock-btn" title={(collapsed ? "Expand" : "Collapse") + "  (Ctrl+B)"} onClick={toggleFilterCollapsed}>{chevron}</button>
           </div>
           {!collapsed && (
-            <div className="dock-body">{activePanelTab === "filters" ? filterBody : compareBody}</div>
+            <div className="dock-body">{activePanelTab === "filters" ? filterBody : activePanelTab === "compare" ? compareBody : bookmarksBody}</div>
           )}
         </div>
       );

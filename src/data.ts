@@ -197,6 +197,11 @@ export function normalizeState(state: AppState): AppState {
     if (!f.activeSetId || !f.sets.find((g) => g.id === f.activeSetId)) {
       f.activeSetId = f.sets[0]?.id ?? null;
     }
+    // Bookmarks: keep only well-formed entries (a numeric line + a string note).
+    f.markers = Array.isArray(f.markers)
+      ? f.markers.filter((m) => m && typeof m.n === "number" && typeof m.icon === "string")
+          .map((m) => ({ n: m.n, icon: m.icon, note: typeof m.note === "string" ? m.note : "" }))
+      : [];
   }
   if (!state.activeFileId || !state.files.find((f) => f.id === state.activeFileId)) {
     state.activeFileId = state.files[0]?.id ?? null;
@@ -210,7 +215,7 @@ export function normalizeState(state: AppState): AppState {
   if (state.comparePos !== "bottom" && state.comparePos !== "right") state.comparePos = "right";
   if (state.filterCollapsed === undefined) state.filterCollapsed = false;
   if (state.compareCollapsed === undefined) state.compareCollapsed = false;
-  if (state.activePanelTab !== "filters" && state.activePanelTab !== "compare") state.activePanelTab = "filters";
+  if (state.activePanelTab !== "filters" && state.activePanelTab !== "compare" && state.activePanelTab !== "bookmarks") state.activePanelTab = "filters";
   if (typeof state.comparePopped !== "boolean") state.comparePopped = false;
   // panelSizes is bucketed (group → id → percent); drop any old flat/invalid shape.
   if (!state.panelSizes || typeof state.panelSizes !== "object" ||
