@@ -1310,8 +1310,7 @@ export function App() {
         {/* titlebar */}
         <div className="titlebar" data-tauri-drag-region>
           <div className="brand">
-            <span className="logo" />
-            logsy
+            Logsy
           </div>
           <div className="menubar">
             {(["File", "Edit", "View", "Filters", "Help"] as const).map((m) => (

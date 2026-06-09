@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 import { Button } from "./ui/button";
+import logo from "../assets/logo.png";
 
 interface AboutModalProps {
   version: string;
@@ -16,9 +17,9 @@ export function AboutModal({ version, onClose }: AboutModalProps) {
           <X size={18} />
         </Button>
         <div className="about-head">
-          <span className="about-logo" />
+          <img className="about-logo" src={logo} alt="Logsy" />
           <div>
-            <div className="about-name">logsy</div>
+            <div className="about-name">Logsy</div>
             <div className="about-ver">Version {version}</div>
           </div>
         </div>
