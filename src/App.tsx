@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useReducer, useRef, Fragment, CSSProperties, ReactNode } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderOpen, Minus, PanelBottom, PanelBottomClose, PanelRight, PanelRightOpen, Square, Upload, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderOpen, Minus, PanelBottom, PanelBottomClose, PanelRightClose, PanelLeftOpen, PanelRight, PanelTopOpen, Square, Upload, X } from "lucide-react";
 import { tinykeys } from "tinykeys";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
@@ -1192,7 +1192,9 @@ export function App() {
             {activePanelTab === "compare" && (
               <>
                 <button className="dock-btn" title="Clear comparison" onClick={clearCompare}><X size={14} /></button>
-                <button className="dock-btn" title="Pop out beside Filters" onClick={popCompareOut}><PanelRightOpen size={14} /></button>
+                <button className="dock-btn" title="Pop out beside Filters" onClick={popCompareOut}>
+                  {pos === "bottom" ? <PanelLeftOpen size={14} /> : <PanelTopOpen size={14} />}
+                </button>
               </>
             )}
             <button className="dock-btn" title={pos === "bottom" ? "Dock right" : "Dock bottom"} onClick={() => setFilterPos(pos === "bottom" ? "right" : "bottom")}>
@@ -1224,7 +1226,9 @@ export function App() {
             {!collapsed && (
               <>
                 <button className="dock-btn" title="Clear comparison" onClick={(e) => { e.stopPropagation(); clearCompare(); }}><X size={14} /></button>
-                <button className="dock-btn" title="Dock back into panel" onClick={(e) => { e.stopPropagation(); dockCompareBack(); }}><PanelBottomClose size={14} /></button>
+                <button className="dock-btn" title="Dock back into panel" onClick={(e) => { e.stopPropagation(); dockCompareBack(); }}>
+                  {pos === "bottom" ? <PanelRightClose size={14} /> : <PanelBottomClose size={14} />}
+                </button>
               </>
             )}
           </div>
