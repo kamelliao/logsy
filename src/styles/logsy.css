@@ -352,7 +352,7 @@ button { font-family: inherit; }
 }
 .lv-solo-x {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 17px; height: 17px; border-radius: 50%;
+  width: 15px; height: 15px; border-radius: 100%;
   border: none; background: transparent; color: inherit; cursor: pointer;
 }
 .lv-solo-x:hover { background: rgba(30, 64, 175, 0.16); }
@@ -510,7 +510,13 @@ button { font-family: inherit; }
   border-bottom: none;   /* VSCode style: only the active tab is underlined */
 }
 .dock-head.tabbed:hover { background: var(--panel-bg-2, #f6f7f8); }
-.panel-tabs { display: flex; align-items: stretch; gap: 2px; height: 100%; min-width: 0; }
+.panel-tabs {
+  display: flex; align-items: stretch; gap: 2px; height: 100%; min-width: 0;
+  /* narrow right-dock: let the tabs scroll rather than overflow the header and
+     push the dock-position / collapse buttons out of the clipped strip */
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+.panel-tabs::-webkit-scrollbar { display: none; }
 /* VSCode-style underline tabs */
 .ptab {
   display: inline-flex; align-items: center; gap: 6px; height: 100%; padding: 0 11px;
@@ -885,7 +891,11 @@ button { font-family: inherit; }
 /* scrollbar-gutter keeps a stable reserved track so rows don't shift when the
    vertical scrollbar appears/disappears */
 /* left pad 8px aligns each filter row's edge with the search box above it */
-.filter-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 6px 8px 8px; scrollbar-gutter: stable; }
+/* container-type drives the narrow-dock rules below off the list's own width.
+   It's scoped here (not on .filter-panel) so the dnd DragOverlay — a fixed-
+   positioned sibling of this element — isn't trapped by the layout containment
+   container-type implies. */
+.filter-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: auto; padding: 0 6px 8px 8px; scrollbar-gutter: stable; container: fpanel / inline-size; }
 .filter-row {
   display: flex; align-items: center; gap: 5px;
   height: var(--filter-row-h, 22px); padding: 0 4px 0 1px; margin: 1px 0;
@@ -1015,6 +1025,81 @@ button { font-family: inherit; }
 }
 .fr-count.ex { color: var(--error); }
 .fr-count b { color: var(--text-2); font-weight: 600; }
+.fr-hits { color: var(--text-3); }
+
+/* ---- narrow side-dock: progressive disclosure ----
+   When Filters is docked on the right and dragged narrow, a row can't keep the
+   pattern, description, field/flag chips and the hit count on one line. The row
+   is `overflow: hidden`, so without shedding, the right-most items (hit count +
+   ⋮ menu) get clipped — exactly what must stay visible. So drop the metadata in
+   least-essential-first order; full details live in the row's hover tooltip. */
+@container fpanel (max-width: 360px) {
+  /* field + flag chips: the bulkiest, least essential inline metadata. Shed
+     these first so the hit count and row menu are never pushed out of view. */
+  .fr-flags { display: none; }
+}
+@container fpanel (max-width: 300px) {
+  /* description is secondary text */
+  .fr-desc { display: none; }
+}
+@container fpanel (max-width: 240px) {
+  /* keep the hit number, drop the " hits" unit and the reserved 70px track */
+  .fr-hits { display: none; }
+  .fr-count { min-width: 0; padding-left: 4px; }
+}
+
+/* ---- filter row hover card (full detail; shadcn/base-ui PreviewCard) ---- */
+.fr-card { font-family: var(--ui-font); color: var(--text); }
+.fr-card-head {
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 9px 11px;
+  background: var(--panel-bg-2, #f6f7f9);
+  border-bottom: 1px solid var(--border);
+}
+.fr-card-swatch {
+  flex: 0 0 auto; margin-top: 2px; width: 11px; height: 11px;
+  border-radius: 3px; border: 1px solid rgba(0,0,0,0.18);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.03);
+}
+.fr-card-pattern {
+  font-family: var(--mono-font); font-size: 12px; line-height: 1.45; color: var(--text);
+  word-break: break-all;   /* show the whole pattern, however long */
+}
+.fr-card-pattern .placeholder { color: var(--text-3); font-style: italic; font-family: var(--ui-font); }
+.fr-card-body { padding: 10px 11px 11px; display: flex; flex-direction: column; gap: 10px; }
+.fr-card-desc { font-size: 12px; line-height: 1.45; color: var(--text-2); }
+.fr-card-stat { display: flex; align-items: baseline; gap: 7px; }
+.fr-card-count {
+  font-size: 19px; font-weight: 650; line-height: 1; color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.fr-card-count.ex { color: var(--error); }
+.fr-card-unit {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.fr-card-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+.fr-pill {
+  display: inline-flex; align-items: center; gap: 5px; height: 20px; padding: 0 7px 0 6px;
+  border-radius: 5px; background: #fff; border: 1px solid var(--border-strong);
+  font-size: 11px; font-weight: 600; color: var(--text-2);
+}
+.fr-pill-g {
+  font-family: var(--mono-font); font-size: 10px; font-weight: 700; color: var(--text-3);
+}
+.fr-pill.ex { background: #fbe3e1; border-color: #f1c7c2; color: var(--error); }
+.fr-pill.ex svg { color: var(--error); }
+.fr-card-fields { display: flex; flex-direction: column; gap: 6px; }
+.fr-card-flabel {
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--text-3);
+}
+.fr-card-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.fr-chip-field {
+  display: inline-flex; align-items: center; height: 18px; padding: 0 6px;
+  border-radius: 4px; background: var(--accent-bg, rgba(44,108,230,0.1)); color: #2c6ce6;
+  font-family: var(--mono-font); font-size: 10.5px; font-weight: 600;
+}
 .fr-actions { flex: 0 0 auto; display: flex; gap: 1px; position: relative; }
 .fr-actions [data-slot="button"] {
   height: max(14px, calc(var(--filter-row-h, 22px) - 2px));
