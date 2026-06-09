@@ -17,9 +17,34 @@ pub fn run() {
     .expect("error while running tauri application");
 }
 
+#[derive(serde::Serialize)]
+struct ReadResult {
+  text: String,
+  /// The encoding label the file was decoded with (e.g. "UTF-8", "Big5").
+  encoding: String,
+}
+
+/// Read a text file, transparently handling non-UTF-8 encodings. A leading BOM
+/// (UTF-8 / UTF-16 LE / BE) picks the encoding directly; otherwise chardetng
+/// sniffs the bytes (covers UTF-16, Big5, GBK, Shift-JIS, Latin-1, …). Decoding
+/// is lossy: undecodable bytes become U+FFFD instead of failing the open.
 #[tauri::command]
-fn read_text_file(path: String) -> Result<String, String> {
-  std::fs::read_to_string(&path).map_err(|e| e.to_string())
+fn read_text_file(path: String) -> Result<ReadResult, String> {
+  let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+
+  // Honor a BOM when present, else detect from the content.
+  let encoding = match encoding_rs::Encoding::for_bom(&bytes) {
+    Some((enc, _bom_len)) => enc,
+    None => {
+      let mut detector = chardetng::EncodingDetector::new();
+      detector.feed(&bytes, true);
+      detector.guess(None, true)
+    }
+  };
+
+  // `decode` re-sniffs any BOM and reports the encoding actually used.
+  let (text, used, _had_errors) = encoding.decode(&bytes);
+  Ok(ReadResult { text: text.into_owned(), encoding: used.name().to_string() })
 }
 
 #[tauri::command]

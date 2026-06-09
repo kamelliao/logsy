@@ -119,6 +119,9 @@ export function LogView({
   const [expandedLines, setExpandedLines] = useState<Set<number>>(() => new Set());
   // Open bookmark editor popover, anchored at a screen position for one line.
   const [markerPop, setMarkerPop] = useState<{ x: number; y: number; n: number } | null>(null);
+  // Draft for the bookmark editor — edits stay local until committed via Done/Enter,
+  // so a new bookmark isn't created (and an existing one isn't changed) on dismiss.
+  const [markerDraft, setMarkerDraft] = useState<{ icon: MarkerIcon; note: string; isNew: boolean } | null>(null);
 
   // Markers indexed by line number for O(1) gutter lookups.
   const markerMap = useMemo(() => new Map(markers.map((m) => [m.n, m])), [markers]);
@@ -230,6 +233,7 @@ export function LogView({
     setAnchorRi(null);
     setExpandedLines(new Set());
     setMarkerPop(null);
+    setMarkerDraft(null);
     keepLineRef.current = null;
     shiftAnchorLineRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -388,21 +392,48 @@ export function LogView({
   function nav(dir: number) { if (!hits.length) return; setCurrent((c) => (c + dir + hits.length) % hits.length); }
   const currentKey = hits.length ? hits[Math.min(current, hits.length - 1)].key : null;
 
-  function onMapClick(e: React.MouseEvent<HTMLDivElement>) {
+  // Scrub the view by clicking or dragging the match map: map a y position to a
+  // row index and centre it.
+  const mapDragRef = useRef(false);
+  function scrollMapToY(clientY: number) {
     const canvas = mapCanvasRef.current;
     if (!canvas || !visible.length) return;
     const rect = canvas.getBoundingClientRect();
-    const y = e.clientY - rect.top;
+    const y = clientY - rect.top;
     const ri = Math.max(0, Math.min(visible.length - 1, Math.floor((y / rect.height) * visible.length)));
     rowVirtualizer.scrollToIndex(ri, { align: "center" });
   }
+  function onMapPointerDown(e: React.PointerEvent<HTMLDivElement>) {
+    e.preventDefault();
+    e.currentTarget.setPointerCapture(e.pointerId);
+    mapDragRef.current = true;
+    scrollMapToY(e.clientY);
+  }
+  function onMapPointerMove(e: React.PointerEvent<HTMLDivElement>) {
+    if (mapDragRef.current) scrollMapToY(e.clientY);
+  }
+  function onMapPointerUp(e: React.PointerEvent<HTMLDivElement>) {
+    mapDragRef.current = false;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+  }
 
-  // Click the gutter marker lane: add a default bookmark if none, then open the
-  // editor popover next to the icon so the icon/note can be set right away.
+  // Open the bookmark editor with a fresh draft (seeded from the existing marker
+  // when one is present). Nothing is created/changed until Done/Enter commits.
+  function openMarkerEditor(n: number, x: number, y: number) {
+    const ex = markerMap.get(n);
+    setMarkerDraft(ex ? { icon: ex.icon, note: ex.note, isNew: false } : { icon: "bookmark", note: "", isNew: true });
+    setMarkerPop({ x, y, n });
+  }
+  function closeMarkerEditor() { setMarkerPop(null); setMarkerDraft(null); }
+  function commitMarker() {
+    if (markerPop && markerDraft) onSetMarker(markerPop.n, markerDraft.icon, markerDraft.note);
+    closeMarkerEditor();
+  }
+
+  // Click the gutter marker lane: open the editor popover next to the icon.
   function onMarkClick(e: React.MouseEvent, n: number) {
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-    if (!markerMap.has(n)) onSetMarker(n, "bookmark", "");
-    setMarkerPop({ x: rect.right + 6, y: rect.top - 4, n });
+    openMarkerEditor(n, rect.right + 6, rect.top - 4);
   }
 
   function onRowClick(e: React.MouseEvent, ri: number, n: number) {
@@ -548,12 +579,13 @@ export function LogView({
     return () => { document.removeEventListener("mousedown", h); document.removeEventListener("keydown", esc); };
   }, [rowMenu]);
 
-  // Dismiss the bookmark popover on an outside click (Esc is handled in-input).
+  // Dismiss the bookmark popover on an outside click (discards uncommitted edits;
+  // Esc is handled in-input).
   useEffect(() => {
     if (!markerPop) return;
     function h(e: MouseEvent) {
       const pop = document.querySelector(".marker-pop");
-      if (pop && !pop.contains(e.target as Node)) setMarkerPop(null);
+      if (pop && !pop.contains(e.target as Node)) closeMarkerEditor();
     }
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
@@ -566,6 +598,12 @@ export function LogView({
         <div className="lv-title">
           <Search size={15} style={{ color: "#4f8cff" }} />
           {file.name}
+          {file.encoding && (
+            <Tooltip>
+              <TooltipTrigger render={<span className="enc-badge" />}>{file.encoding}</TooltipTrigger>
+              <TooltipContent>Detected text encoding</TooltipContent>
+            </Tooltip>
+          )}
         </div>
         {soloPattern != null && (
           <div className="lv-solo" title="Showing only lines matched by this one filter">
@@ -674,8 +712,9 @@ export function LogView({
                 const expFields = expanded ? view.fieldsFor(r.n) : undefined;
                 const rowStyle: CSSProperties = {
                   height: rowH,
-                  ...(w ? { background: w.f.bgColor, color: w.f.textColor, borderLeftColor: w.f.textColor } : {}),
-                };
+                  // --strip colors the sticky left rail's 3px strip (see .log-left).
+                  ...(w ? { background: w.f.bgColor, color: w.f.textColor, ["--strip" as string]: w.f.bgColor } : {}),
+                } as CSSProperties;
                 return (
                   <div
                     key={r.n}
@@ -692,25 +731,29 @@ export function LogView({
                       onClick={(e) => onRowClick(e, vItem.index, r.n)}
                       onContextMenu={(e) => onRowContextMenu(e, vItem.index, r.n, canExpand)}
                     >
-                      <span
-                        className={"log-mark" + (mk ? " on" : "")}
-                        title={mk ? (mk.note || "Edit bookmark") : "Add bookmark"}
-                        onMouseDown={(e) => e.stopPropagation()}
-                        onClick={(e) => { e.stopPropagation(); onMarkClick(e, r.n); }}
-                      >
-                        {mk ? <MarkerGlyph icon={mk.icon} /> : <Bookmark size={12} />}
-                      </span>
-                      {canExpand && (
+                      {/* sticky left rail: marker + chevron + line number stay
+                          pinned to the left edge while the row scrolls right */}
+                      <span className="log-left">
                         <span
-                          className={"log-exp" + (expanded ? " on" : "")}
-                          title={expanded ? "Collapse fields (Alt+click)" : "Expand parsed fields (Alt+click)"}
+                          className={"log-mark" + (mk ? " on" : "")}
+                          title={mk ? (mk.note || "Edit bookmark") : "Add bookmark"}
                           onMouseDown={(e) => e.stopPropagation()}
-                          onClick={(e) => { e.stopPropagation(); toggleExpand(r.n); }}
+                          onClick={(e) => { e.stopPropagation(); onMarkClick(e, r.n); }}
                         >
-                          {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                          {mk ? <MarkerGlyph icon={mk.icon} /> : <Bookmark size={12} />}
                         </span>
-                      )}
-                      {showLineNumbers && <span className="log-gut">{r.n}</span>}
+                        {canExpand && (
+                          <span
+                            className={"log-exp" + (expanded ? " on" : "")}
+                            title={expanded ? "Collapse fields (Alt+click)" : "Expand parsed fields (Alt+click)"}
+                            onMouseDown={(e) => e.stopPropagation()}
+                            onClick={(e) => { e.stopPropagation(); toggleExpand(r.n); }}
+                          >
+                            {expanded ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                          </span>
+                        )}
+                        {showLineNumbers && <span className="log-gut">{r.n}</span>}
+                      </span>
                       <span className="log-txt">{renderLine(r.text, w, findRe, currentKey, vItem.index)}</span>
                     </div>
                     {expFields && (
@@ -727,8 +770,10 @@ export function LogView({
             <div
               className="match-map"
               style={{ width: mapWidth, flex: `0 0 ${mapWidth}px` }}
-              title="Match map — click to jump"
-              onClick={onMapClick}
+              title="Match map — click or drag to scrub"
+              onPointerDown={onMapPointerDown}
+              onPointerMove={onMapPointerMove}
+              onPointerUp={onMapPointerUp}
             >
               <canvas ref={mapCanvasRef} width={mapWidth} height={viewH} />
             </div>
@@ -750,7 +795,7 @@ export function LogView({
         <div className="menu-pop row-menu" style={{ position: "fixed", left: rowMenu.x, top: rowMenu.y, zIndex: 60 }}>
           {markerMap.has(rowMenu.n) ? (
             <>
-              <div className="menu-item" onClick={() => { setMarkerPop({ x: rowMenu.x, y: rowMenu.y, n: rowMenu.n }); setRowMenu(null); }}>
+              <div className="menu-item" onClick={() => { openMarkerEditor(rowMenu.n, rowMenu.x, rowMenu.y); setRowMenu(null); }}>
                 <span className="mi-ico"><Bookmark size={14} /></span> Edit bookmark…
               </div>
               <div className="menu-item danger" onClick={() => { onRemoveMarker(rowMenu.n); setRowMenu(null); }}>
@@ -758,7 +803,7 @@ export function LogView({
               </div>
             </>
           ) : (
-            <div className="menu-item" onClick={() => { onSetMarker(rowMenu.n, "bookmark", ""); setMarkerPop({ x: rowMenu.x, y: rowMenu.y, n: rowMenu.n }); setRowMenu(null); }}>
+            <div className="menu-item" onClick={() => { openMarkerEditor(rowMenu.n, rowMenu.x, rowMenu.y); setRowMenu(null); }}>
               <span className="mi-ico"><Bookmark size={14} /></span> Add bookmark…
             </div>
           )}
@@ -781,41 +826,45 @@ export function LogView({
         </div>
       )}
 
-      {/* bookmark editor popover */}
-      {markerPop && markerMap.get(markerPop.n) && (() => {
-        const mk = markerMap.get(markerPop.n)!;
-        return (
-          <div className="marker-pop" style={{ position: "fixed", left: markerPop.x, top: markerPop.y, zIndex: 70 }}>
-            <div className="mp-head">Line {markerPop.n}</div>
-            <div className="mp-icons">
-              {MARKER_ICONS.map((opt) => (
-                <button
-                  key={opt.id}
-                  className={"mp-ico" + (mk.icon === opt.id ? " active" : "")}
-                  title={opt.label}
-                  onClick={() => onSetMarker(markerPop.n, opt.id, mk.note)}
-                >
-                  <opt.Icon size={15} color={opt.color} fill={opt.color} fillOpacity={0.18} />
-                </button>
-              ))}
-            </div>
-            <input
-              className="mp-note"
-              placeholder="Add a note…"
-              autoFocus
-              value={mk.note}
-              onChange={(e) => onSetMarker(markerPop.n, mk.icon, e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setMarkerPop(null); }}
-            />
-            <div className="mp-foot">
-              <button className="mp-del" onClick={() => { onRemoveMarker(markerPop.n); setMarkerPop(null); }}>
-                <Trash2 size={13} /> Remove
+      {/* bookmark editor popover — edits are a local draft, committed on Done/Enter */}
+      {markerPop && markerDraft && (
+        <div className="marker-pop" style={{ position: "fixed", left: markerPop.x, top: markerPop.y, zIndex: 70 }}>
+          <div className="mp-head">Line {markerPop.n}</div>
+          <div className="mp-icons">
+            {MARKER_ICONS.map((opt) => (
+              <button
+                key={opt.id}
+                className={"mp-ico" + (markerDraft.icon === opt.id ? " active" : "")}
+                title={opt.label}
+                onClick={() => setMarkerDraft((d) => d && { ...d, icon: opt.id })}
+              >
+                <opt.Icon size={15} color={opt.color} fill={opt.color} fillOpacity={0.18} />
               </button>
-              <button className="mp-done" onClick={() => setMarkerPop(null)}>Done</button>
-            </div>
+            ))}
           </div>
-        );
-      })()}
+          <input
+            className="mp-note"
+            placeholder="Add a note…"
+            autoFocus
+            value={markerDraft.note}
+            onChange={(e) => setMarkerDraft((d) => d && { ...d, note: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); commitMarker(); }
+              else if (e.key === "Escape") closeMarkerEditor();
+            }}
+          />
+          <div className="mp-foot">
+            {markerDraft.isNew ? (
+              <Button size="xs" variant="ghost" onClick={closeMarkerEditor}>Cancel</Button>
+            ) : (
+              <Button size="xs" variant="destructive" onClick={() => { onRemoveMarker(markerPop.n); closeMarkerEditor(); }}>
+                <Trash2 size={13} /> Remove
+              </Button>
+            )}
+            <Button size="xs" onClick={commitMarker}>Done</Button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

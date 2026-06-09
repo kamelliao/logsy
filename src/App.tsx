@@ -129,6 +129,11 @@ export function App() {
   // Bumped whenever a file's lines land in `linesStore`, to re-derive `lines`.
   const [linesVersion, setLinesVersion] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  // When set, the center shows a blank "open a file" drop screen instead of the
+  // active workspace (triggered by the sidebar's Open File button).
+  const [openScreen, setOpenScreen] = useState(false);
+  const openScreenRef = useRef(false);
+  openScreenRef.current = openScreen;
   const [aboutOpen, setAboutOpen] = useState(false);
   const [appVersion, setAppVersion] = useState("0.2.1");
   // Go-to-line dialog + signals pushed to LogView for menu-driven actions.
@@ -262,7 +267,7 @@ export function App() {
   }
 
   // ---------- files ----------
-  const selectFile = (fid: string) => setState((s) => ({ ...s, activeFileId: fid }));
+  const selectFile = (fid: string) => { setOpenScreen(false); setState((s) => ({ ...s, activeFileId: fid })); };
 
   // Closing a log discards its workspace (filters, sets) — confirm first.
   const deleteFile = async (fid: string) => {
@@ -301,8 +306,11 @@ export function App() {
         : [{ id: uid("g"), name: "Filters", filters: [], groups: [], order: [] }];
     for (const path of paths) {
       let text: string;
+      let encoding: string;
       try {
-        text = await invoke<string>("read_text_file", { path });
+        const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
+        text = res.text;
+        encoding = res.encoding;
       } catch (e) {
         lastErr = `${baseName(path)} — ${String(e)}`;
         continue;
@@ -319,6 +327,7 @@ export function App() {
           name: dupes > 0 ? `${baseName(path)} (${dupes + 1})` : baseName(path),
           path,
           lineCount: lns.length,
+          encoding,
           sets: makeSets(),
           activeSetId: null,
         };
@@ -335,6 +344,7 @@ export function App() {
     const sel = await open({ multiple: true });
     if (sel == null) return;
     await loadPaths(Array.isArray(sel) ? sel : [sel]);
+    setOpenScreen(false); // a file is now active — leave the open screen
   }, [loadPaths]);
 
   // Replace the active file's contents in place (same workspace slot, keeping its
@@ -345,7 +355,12 @@ export function App() {
     const active = cur.files.find((f) => f.id === cur.activeFileId) ?? cur.files[0] ?? null;
     if (!active) { await loadPaths([path]); return; }
     let text: string;
-    try { text = await invoke<string>("read_text_file", { path }); }
+    let encoding: string;
+    try {
+      const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
+      text = res.text;
+      encoding = res.encoding;
+    }
     catch (e) { toast.error("Could not open file: " + baseName(path) + " — " + String(e)); return; }
     const lns = splitLines(text);
     linesStore[active.id] = lns;
@@ -355,6 +370,7 @@ export function App() {
       f.path = path;
       f.name = baseName(path);
       f.lineCount = lns.length;
+      f.encoding = encoding;
       s.activeFileId = f.id;
     }, { undoable: false });
     pushRecent("recentFiles", path);
@@ -370,9 +386,10 @@ export function App() {
     let cancelled = false;
     (async () => {
       try {
-        const text = await invoke<string>("read_text_file", { path });
+        const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
         if (cancelled) return;
-        linesStore[id] = splitLines(text);
+        linesStore[id] = splitLines(res.text);
+        patchState((s) => { const f = s.files.find((x) => x.id === id); if (f) f.encoding = res.encoding; }, { undoable: false });
         setLinesVersion((v) => v + 1);
       } catch (e) {
         if (!cancelled) toast.error(`Could not reload ${name}: ${String(e)}`);
@@ -393,12 +410,22 @@ export function App() {
       getCurrentWebview()
         .onDragDropEvent((event) => {
           const p = event.payload;
-          if (p.type === "enter" || p.type === "over") setDragOver(true);
+          // Only show the drop overlay for genuine file drags (which carry
+          // `paths`). In-webview drags — e.g. dragging to select log text — also
+          // emit enter/over events but with no paths, and must be ignored.
+          const hasFiles = "paths" in p && Array.isArray(p.paths) && p.paths.length > 0;
+          if (p.type === "enter" || p.type === "over") { if (hasFiles) setDragOver(true); }
           else if (p.type === "drop") {
             setDragOver(false);
             if (!p.paths.length) return;
             const paths = p.paths;
             void (async () => {
+              // Dropped onto the "open a file" screen: always open as new files.
+              if (openScreenRef.current) {
+                await loadPathsRef.current(paths);
+                setOpenScreen(false);
+                return;
+              }
               // A log is already open: confirm, then load into the current
               // workspace (replace the active file in place, keeping its filters)
               // rather than spawning a new file entry.
@@ -918,9 +945,13 @@ export function App() {
       "$mod+shift+=": (e) => { e.preventDefault(); zoomIn(); },
       "$mod+-": (e) => { e.preventDefault(); zoomOut(); },
       "$mod+0": (e) => { e.preventDefault(); zoomReset(); },
-      "Escape": () => { if (findOpen && !editing) setFindOpen(false); },
+      "Escape": () => {
+        if (findOpen && !editing) setFindOpen(false);
+        // Leave the open screen (back to the active file) if there's one to show.
+        else if (openScreen && state.files.length > 0) setOpenScreen(false);
+      },
     });
-  }, [findOpen, editing, state.viewMode, zoomIn, zoomOut, zoomReset]);
+  }, [findOpen, editing, openScreen, state.files.length, state.viewMode, zoomIn, zoomOut, zoomReset]);
 
   // ---------- menu actions ----------
   const openDocs = () => { invoke("open_url", { url: DOCS_URL }).catch((e) => toast.error("Could not open documentation: " + String(e))); };
@@ -1305,23 +1336,28 @@ export function App() {
           <Sidebar
             state={state}
             collapsed={state.sidebarCollapsed}
+            openScreen={openScreen}
             onToggleCollapse={toggleSidebar}
             onSelectFile={selectFile}
-            onOpenFile={() => void openFiles()}
+            onOpenFile={() => setOpenScreen(true)}
             onDeleteFile={deleteFile}
             onSetPanelPos={(pos) => setState((s) => ({ ...s, panelPos: pos }))}
             onSetMapColorMode={(mode) => setState((s) => ({ ...s, mapColorMode: mode }))}
             onSetMapWidth={(w) => setState((s) => ({ ...s, mapWidth: w }))}
           />
-          {file && set ? (
+          {file && set && !openScreen ? (
             renderWorkspace()
           ) : (
-            <div className="empty-workspace">
+            <div
+              className={"empty-workspace" + (dragOver ? " dragover" : "")}
+              onClick={() => void openFiles()}
+              title="Click to open a log file, or drop one here"
+            >
               <div className="ew-card">
                 <div className="ew-icon"><FolderOpen size={40} /></div>
-                <div className="ew-title">No log open</div>
-                <div className="ew-sub">Open a log file to start filtering, or drag &amp; drop one anywhere in this window.</div>
-                <Button onClick={() => void openFiles()}>
+                <div className="ew-title">{state.files.length ? "Open another log" : "No log open"}</div>
+                <div className="ew-sub">Click here to choose a log file, or drag &amp; drop one into this window.</div>
+                <Button onClick={(e) => { e.stopPropagation(); void openFiles(); }}>
                   <Upload data-icon="inline-start" />Open log file
                 </Button>
                 <div className="ew-hint">Ctrl O</div>

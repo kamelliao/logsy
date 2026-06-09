@@ -141,10 +141,10 @@ export function initialState(): AppState {
     recentFilterFiles: [],
     sidebarCollapsed: true,
     splitRatio: 0.5,
-    panelPos: "bottom",
+    panelPos: "right",
     viewMode: "all",
     mapColorMode: "bg",
-    mapWidth: 14,
+    mapWidth: 16,
     fontSize: 12.5,
     showLineNumbers: true,
     comparePos: "right",
@@ -209,7 +209,7 @@ export function normalizeState(state: AppState): AppState {
   if (!Array.isArray(state.recentFiles)) state.recentFiles = [];
   if (!Array.isArray(state.recentFilterFiles)) state.recentFilterFiles = [];
   if (!state.mapColorMode) state.mapColorMode = "bg";
-  if (!state.mapWidth) state.mapWidth = 14;
+  if (!state.mapWidth) state.mapWidth = 16;
   if (!state.fontSize) state.fontSize = 12.5;
   if (state.showLineNumbers === undefined) state.showLineNumbers = true;
   if (state.comparePos !== "bottom" && state.comparePos !== "right") state.comparePos = "right";

@@ -157,7 +157,7 @@ export function EditModal({ filter, lines, isNew, groups, onSave, onClose, onDel
 
   return (
     <Dialog open onOpenChange={(o) => { if (!o) requestClose(); }}>
-      <DialogContent style={width != null ? { width } : undefined}>
+      <DialogContent style={width != null ? { width } : undefined} initialFocus={patternRef}>
         <div className="modal-resize-handle left" onPointerDown={onResizeDown("left")} onPointerMove={onResizeMove} onPointerUp={onResizeUp} />
         <div className="modal-resize-handle right" onPointerDown={onResizeDown("right")} onPointerMove={onResizeMove} onPointerUp={onResizeUp} />
         <DialogHeader>
