@@ -1233,7 +1233,7 @@ export function App() {
       );
     };
 
-    type PanelDesc = { id: string; node: ReactNode; collapsible?: boolean; collapsed?: boolean; collapsedSize?: string; ref?: React.RefObject<PanelImperativeHandle | null> };
+    type PanelDesc = { id: string; node: ReactNode; collapsible?: boolean; collapsed?: boolean; collapsedSize?: string; minSize?: string; ref?: React.RefObject<PanelImperativeHandle | null> };
     const buildGroup = (orientation: "vertical" | "horizontal", gid: string, panels: PanelDesc[]): ReactNode => {
       const ids = panels.map((p) => p.id);
       // Remount the set when its panel set changes — the library can't have a
@@ -1251,7 +1251,9 @@ export function App() {
                   defaultSize={p.collapsed ? cs : `${dl[p.id]}%`}
                   // A collapsed dock is pinned to the strip height (min == max) so
                   // neither dragging nor a sibling's collapse can grow it back.
-                  minSize={p.collapsed ? cs : (p.collapsible ? "8%" : "15%")}
+                  // A side dock carries a px floor (p.minSize) so it can't be
+                  // dragged into an unusably narrow sliver.
+                  minSize={p.collapsed ? cs : (p.minSize ?? (p.collapsible ? "8%" : "15%"))}
                   maxSize={p.collapsed ? cs : "100%"}
                   panelRef={p.ref}
                 >
@@ -1286,9 +1288,13 @@ export function App() {
       center = buildGroup("vertical", "grp-v", [{ id: "lv", node: logview }, ...bottomDocks.map(dockPanel)]);
     }
     if (rightDocks.length) {
+      // Side docks get a px floor so a drag can't shrink them into an unusable
+      // sliver (the content needs room for a pattern + hit count). When collapsed
+      // they stay pinned to their strip width instead.
+      const RIGHT_DOCK_MIN = "240px";
       return buildGroup("horizontal", "grp-h", [
         { id: bottomDocks.length ? "center" : "lv", node: center },
-        ...rightDocks.map(dockPanel),
+        ...rightDocks.map(dockPanel).map((p) => p.collapsed ? p : { ...p, minSize: RIGHT_DOCK_MIN }),
       ]);
     }
     return center;

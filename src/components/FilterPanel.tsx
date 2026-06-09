@@ -34,7 +34,8 @@ import { CSS } from "@dnd-kit/utilities";
 import type { LogFile, FilterSet, FilterGroup, Filter, FilterLayout } from "../types";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
-import { ScrollArea, ScrollBar } from "./ui/scroll-area";
+import { ScrollArea } from "./ui/scroll-area";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "./ui/hover-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -276,20 +277,27 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
   };
 
   return (
-    <ContextMenu>
-      <ContextMenuTrigger
-        render={
-          <div
-            ref={setNodeRef}
-            style={style}
-            className={"filter-row" + (f.enabled ? "" : " disabled") + (isDragging ? " dragging" : "")}
-            title="Click to edit · right-click for menu · drag to reorder"
-            onClick={onEdit}
-            {...attributes}
-            {...(searching ? {} : listeners)}
-          />
-        }
-      >
+    <HoverCard>
+      <ContextMenu>
+        {/* The row is, at once, the dnd-sortable node, the right-click target and
+            the hover-card trigger — base-ui merges the nested render props onto
+            the single div. */}
+        <HoverCardTrigger
+          render={
+            <ContextMenuTrigger
+              render={
+                <div
+                  ref={setNodeRef}
+                  style={style}
+                  className={"filter-row" + (f.enabled ? "" : " disabled") + (isDragging ? " dragging" : "")}
+                  onClick={onEdit}
+                  {...attributes}
+                  {...(searching ? {} : listeners)}
+                />
+              }
+            />
+          }
+        >
         <span className="fr-handle" title="Drag to reorder">
           <GripVertical size={12} />
         </span>
@@ -314,19 +322,18 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
           onPointerDown={(e) => e.stopPropagation()}
         />
 
-        <div className="fr-pattern" title={f.pattern || "untitled filter"}>
+        {/* no per-cell titles — the row's hover card carries the full detail,
+            so hovering the truncated pattern reveals everything, not just it */}
+        <div className="fr-pattern">
           {f.pattern || <span className="placeholder">untitled filter</span>}
         </div>
 
-        <div className="fr-desc" title={f.description}>
+        <div className="fr-desc">
           {f.description}
         </div>
 
         {f.fields && f.fields.length > 0 && (
-          <div
-            className="fr-flags"
-            title={"Parses: " + f.fields.map((x) => x.name).join(", ")}
-          >
+          <div className="fr-flags">
             {f.fields.slice(0, 4).map((x) => <span key={x.name} className="fr-flag">{x.name}</span>)}
             {f.fields.length > 4 && <span className="fr-flag more">+{f.fields.length - 4}</span>}
           </div>
@@ -334,18 +341,18 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
 
         {flags.length > 0 && (
           <div className="fr-flags">
-            {flags.map((fl, i) => <span key={i} className="fr-flag" title={fl.title}>{fl.t}</span>)}
+            {flags.map((fl, i) => <span key={i} className="fr-flag">{fl.t}</span>)}
           </div>
         )}
 
         {f.exclude && (
-          <span className="fr-flag ex" title="Exclude — hides matching lines">
+          <span className="fr-flag ex">
             <EyeOff size={12} />
           </span>
         )}
 
         <div className={"fr-count" + (f.exclude ? " ex" : "")}>
-          <b>{count.toLocaleString()}</b>{" hits"}
+          <b>{count.toLocaleString()}</b><span className="fr-hits">&nbsp;hits</span>
         </div>
 
         <div className="fr-actions" onClick={(e) => e.stopPropagation()} onPointerDown={(e) => e.stopPropagation()}>
@@ -358,11 +365,46 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} />
-      </ContextMenuContent>
-    </ContextMenu>
+        </HoverCardTrigger>
+        <ContextMenuContent>
+          <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} />
+        </ContextMenuContent>
+      </ContextMenu>
+
+      <HoverCardContent side="left" align="start" sideOffset={8} className="w-72 p-0 overflow-hidden">
+        <div className="fr-card">
+          <div className="fr-card-head">
+            <span className="fr-card-swatch" style={{ background: f.bgColor, borderColor: f.textColor }} />
+            <code className="fr-card-pattern">{f.pattern || <span className="placeholder">untitled filter</span>}</code>
+          </div>
+          <div className="fr-card-body">
+            {f.description && <div className="fr-card-desc">{f.description}</div>}
+
+            <div className="fr-card-stat">
+              <span className={"fr-card-count" + (f.exclude ? " ex" : "")}>{count.toLocaleString()}</span>
+              <span className="fr-card-unit">{f.exclude ? "lines hidden" : "matches"}</span>
+            </div>
+
+            {(f.regex || f.caseSensitive || f.exclude) && (
+              <div className="fr-card-pills">
+                {f.regex && <span className="fr-pill"><span className="fr-pill-g">.*</span>regex</span>}
+                {f.caseSensitive && <span className="fr-pill"><span className="fr-pill-g">Aa</span>case-sensitive</span>}
+                {f.exclude && <span className="fr-pill ex"><EyeOff size={11} />exclude</span>}
+              </div>
+            )}
+
+            {f.fields && f.fields.length > 0 && (
+              <div className="fr-card-fields">
+                <span className="fr-card-flabel">Parses</span>
+                <div className="fr-card-chips">
+                  {f.fields.map((x) => <span key={x.name} className="fr-chip-field">{x.name}</span>)}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </HoverCardContent>
+    </HoverCard>
   );
 }
 
@@ -565,7 +607,7 @@ function FilterRowOverlay({ f, count }: { f: Filter; count: number }) {
       <div className="fr-desc">{f.description}</div>
       {flags.length > 0 && <div className="fr-flags">{flags.map((t, i) => <span key={i} className="fr-flag">{t}</span>)}</div>}
       {f.exclude && <span className="fr-flag ex"><EyeOff size={12} /></span>}
-      <div className={"fr-count" + (f.exclude ? " ex" : "")}><b>{count.toLocaleString()}</b>{" hits"}</div>
+      <div className={"fr-count" + (f.exclude ? " ex" : "")}><b>{count.toLocaleString()}</b><span className="fr-hits">&nbsp;hits</span></div>
     </div>
   );
 }
@@ -887,7 +929,6 @@ export function FilterPanel({
             <div className="gtab-add" title="New filter set" onClick={onAddSet}>
               <Plus size={16} />
             </div>
-            <ScrollBar orientation="horizontal" />
           </ScrollArea>
         </SortableContext>
       </DndContext>
