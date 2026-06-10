@@ -99,7 +99,7 @@ interface LogViewProps {
   /** "exact" adds the text verbatim; "pattern" generalizes it into a regex. */
   onBuildFilter: (pattern: string, mode?: "exact" | "pattern") => void;
   onAddToCompare: (ns: number[]) => void;
-  onRemoveFromCompare: (n: number) => void;
+  onRemoveFromCompare: (ns: number[]) => void;
 }
 
 export function LogView({
@@ -798,40 +798,51 @@ export function LogView({
       )}
 
       {/* logline right-click menu */}
-      {rowMenu && (
-        <div className="menu-pop row-menu" style={{ position: "fixed", left: rowMenu.x, top: rowMenu.y, zIndex: 60 }}>
-          {markerMap.has(rowMenu.n) ? (
-            <>
-              <div className="menu-item" onClick={() => { openMarkerEditor(rowMenu.n, rowMenu.x, rowMenu.y); setRowMenu(null); }}>
-                <span className="mi-ico"><Bookmark size={14} /></span> Edit bookmark…
+      {rowMenu && (() => {
+        // The menu acts on the multi-selection when the clicked row is part of
+        // it, else on the clicked row alone. Lines already in the comparison
+        // and lines not yet there each get their own action, so a mixed
+        // selection shows both.
+        const menu = rowMenu;
+        const sel = selectedLines.has(menu.n) && selectedLines.size > 1 ? [...selectedLines] : [menu.n];
+        const inCmp = sel.filter((n) => compareLines.has(n));
+        const notIn = sel.filter((n) => !compareLines.has(n));
+        return (
+          <div className="menu-pop row-menu" style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 60 }}>
+            {markerMap.has(menu.n) ? (
+              <>
+                <div className="menu-item" onClick={() => { openMarkerEditor(menu.n, menu.x, menu.y); setRowMenu(null); }}>
+                  <span className="mi-ico"><Bookmark size={14} /></span> Edit bookmark…
+                </div>
+                <div className="menu-item danger" onClick={() => { onRemoveMarker(menu.n); setRowMenu(null); }}>
+                  <span className="mi-ico"><Trash2 size={14} /></span> Remove bookmark
+                </div>
+              </>
+            ) : (
+              <div className="menu-item" onClick={() => { openMarkerEditor(menu.n, menu.x, menu.y); setRowMenu(null); }}>
+                <span className="mi-ico"><Bookmark size={14} /></span> Add bookmark…
               </div>
-              <div className="menu-item danger" onClick={() => { onRemoveMarker(rowMenu.n); setRowMenu(null); }}>
-                <span className="mi-ico"><Trash2 size={14} /></span> Remove bookmark
+            )}
+            <div className="menu-sep" />
+            {notIn.length > 0 && (
+              sel.length === 1 && !menu.hasFields ? (
+                <div className="menu-item disabled"><span className="mi-ico"><Columns3 size={14} /></span> No parsed fields</div>
+              ) : (
+                <div className="menu-item" onClick={() => { onAddToCompare(notIn); setRowMenu(null); }}>
+                  <span className="mi-ico"><Columns3 size={14} /></span>
+                  {notIn.length > 1 ? `Add ${notIn.length} lines to compare` : "Add to compare"}
+                </div>
+              )
+            )}
+            {inCmp.length > 0 && (
+              <div className="menu-item" onClick={() => { onRemoveFromCompare(inCmp); setRowMenu(null); }}>
+                <span className="mi-ico"><Columns3 size={14} /></span>
+                {inCmp.length > 1 ? `Remove ${inCmp.length} lines from compare` : "Remove from compare"}
               </div>
-            </>
-          ) : (
-            <div className="menu-item" onClick={() => { openMarkerEditor(rowMenu.n, rowMenu.x, rowMenu.y); setRowMenu(null); }}>
-              <span className="mi-ico"><Bookmark size={14} /></span> Add bookmark…
-            </div>
-          )}
-          <div className="menu-sep" />
-          {compareLines.has(rowMenu.n) ? (
-            <div className="menu-item" onClick={() => { onRemoveFromCompare(rowMenu.n); setRowMenu(null); }}>
-              <span className="mi-ico"><Columns3 size={14} /></span> Remove from compare
-            </div>
-          ) : !rowMenu.hasFields ? (
-            <div className="menu-item disabled"><span className="mi-ico"><Columns3 size={14} /></span> No parsed fields</div>
-          ) : selectedLines.has(rowMenu.n) && selectedLines.size > 1 ? (
-            <div className="menu-item" onClick={() => { onAddToCompare([...selectedLines]); setRowMenu(null); }}>
-              <span className="mi-ico"><Columns3 size={14} /></span> Add {selectedLines.size} lines to compare
-            </div>
-          ) : (
-            <div className="menu-item" onClick={() => { onAddToCompare([rowMenu.n]); setRowMenu(null); }}>
-              <span className="mi-ico"><Columns3 size={14} /></span> Add to compare
-            </div>
-          )}
-        </div>
-      )}
+            )}
+          </div>
+        );
+      })()}
 
       {/* bookmark editor popover — edits are a local draft, committed on Done/Enter */}
       {markerPop && markerDraft && (
