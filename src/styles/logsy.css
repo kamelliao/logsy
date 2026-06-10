@@ -1532,7 +1532,8 @@ button { font-family: inherit; }
   padding: 2px 7px; font-family: var(--mono-font); font-size: 12px;
   background: #fff; cursor: pointer; user-select: none; white-space: pre;
 }
-.gen-chip.fixed {
+/* .lit = literal-text chip (not "fixed": that's a Tailwind position utility) */
+.gen-chip.lit {
   cursor: default; color: var(--text-2);
   background: var(--panel-bg-2); border-color: var(--border);
 }
@@ -1542,7 +1543,7 @@ button { font-family: inherit; }
 .gen-chip.capture {
   background: rgba(80, 161, 79, 0.12); border-color: rgba(80, 161, 79, 0.45); color: #2f7d2e;
 }
-.gen-chip:not(.fixed):hover { filter: brightness(0.96); }
+.gen-chip:not(.lit):hover { filter: brightness(0.96); }
 .gc-name {
   border: none; background: rgba(255, 255, 255, 0.7); border-radius: 4px;
   font: inherit; font-size: 11px; color: inherit; padding: 0 3px; min-width: 2ch;
