@@ -76,7 +76,9 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
   const [fieldTypes, setFieldTypes] = useState<Record<string, FieldType>>(
     () => Object.fromEntries((filter.fields ?? []).map((f) => [f.name, f.type])),
   );
-  const patternRef = useRef<HTMLInputElement>(null);
+  // RegexInput is a textarea, the plain-text branch a regular input; both
+  // support the focus()/select() this ref is used for.
+  const patternRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
 
   // Width resize via the left/right edge handles. The modal is centre-anchored,
   // so width changes by 2×dx to keep the dragged edge under the cursor.
@@ -281,7 +283,7 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
             <Label>{draft.regex ? "Pattern (regular expression)" : "Pattern (plain text)"}</Label>
             {draft.regex ? (
               <RegexInput
-                ref={patternRef}
+                ref={patternRef as React.Ref<HTMLTextAreaElement>}
                 invalid={!compiled.ok}
                 value={draft.pattern}
                 placeholder="e.g.  ERROR|WARN|fail"
@@ -289,7 +291,7 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
               />
             ) : (
               <Input
-                ref={patternRef}
+                ref={patternRef as React.Ref<HTMLInputElement>}
                 className={!compiled.ok ? "invalid" : ""}
                 value={draft.pattern}
                 placeholder="e.g.  wifi"
