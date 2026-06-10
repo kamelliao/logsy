@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { tatColor, filterFromTatAttrs } from "./data";
+import { tatColor, filterFromTatAttrs } from "../data";
 
 // --- tatColor ---------------------------------------------------------------
 

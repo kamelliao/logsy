@@ -158,25 +158,12 @@ export function initialState(): AppState {
 
 export function normalizeState(state: AppState): AppState {
   for (const f of state.files) {
-    // Migrate the pre-rename persisted shape: a file's sets were "groups", a
-    // set's groups were "sections", and Filter.groupId was "sectionId".
-    const fAny = f as any;
-    if (!Array.isArray(fAny.sets) && Array.isArray(fAny.groups)) fAny.sets = fAny.groups;
-    delete fAny.groups;
-    if (fAny.activeSetId == null && fAny.activeGroupId != null) fAny.activeSetId = fAny.activeGroupId;
-    delete fAny.activeGroupId;
     if (!Array.isArray(f.sets)) f.sets = [];
     for (const g of f.sets) {
-      const gAny = g as any;
-      if (!Array.isArray(gAny.groups) && Array.isArray(gAny.sections)) gAny.groups = gAny.sections;
-      delete gAny.sections;
       if (!Array.isArray(g.groups)) g.groups = [];
       const validIds = new Set(g.groups.map((s) => s.id));
       for (const flt of g.filters) {
-        const flAny = flt as any;
-        if (flAny.groupId === undefined && flAny.sectionId !== undefined) flAny.groupId = flAny.sectionId;
-        delete flAny.sectionId;
-        // Backfill older filters and drop references to deleted groups.
+        // Drop references to deleted groups; backfill a missing groupId.
         if (flt.groupId === undefined || (flt.groupId !== null && !validIds.has(flt.groupId))) {
           flt.groupId = null;
         }
