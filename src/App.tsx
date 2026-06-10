@@ -716,7 +716,8 @@ export function App() {
       ? { ...s, compareCollapsed: false }
       : { ...s, activePanelTab: "compare", filterCollapsed: false });
   };
-  const removeFromCompare = (n: number) => setCompareLines((s) => { const x = new Set(s); x.delete(n); return x; });
+  const removeFromCompare = (ns: number[]) =>
+    setCompareLines((s) => { const x = new Set(s); ns.forEach((n) => x.delete(n)); return x; });
   const clearCompare = () => setCompareLines(new Set());
   // Drop comparison lines when switching files (line numbers are file-specific).
   useEffect(() => { setCompareLines(new Set()); }, [state.activeFileId]);
@@ -1111,7 +1112,7 @@ export function App() {
     const compareBody = (
       <CompareTable
         rows={compareRows}
-        onRemove={removeFromCompare}
+        onRemove={(n) => removeFromCompare([n])}
         onExport={exportGroupCsv}
         labelFor={(id) => {
           const f = set!.filters.find((x) => x.id === id);
