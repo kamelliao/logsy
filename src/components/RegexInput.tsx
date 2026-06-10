@@ -1,4 +1,4 @@
-import { forwardRef, useImperativeHandle, useRef, type ReactNode } from "react";
+import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from "react";
 import { tokenizeRegex, type RegexToken } from "../lib/regexHighlight";
 
 interface RegexInputProps {
@@ -57,20 +57,35 @@ function renderTokens(tokens: RegexToken[]): ReactNode[] {
 }
 
 /**
- * Single-line input that paints regex syntax highlighting *behind* a real
- * `<input>`. The input's own text is transparent (caret + selection stay
- * visible); a synced overlay renders the coloured tokens. Box metrics mirror
- * `.pattern-input` so the two layers line up to the pixel.
+ * Pattern editor that paints regex syntax highlighting *behind* a real
+ * `<textarea>`. The textarea's own text is transparent (caret + selection stay
+ * visible); a synced overlay renders the coloured tokens. The textarea soft-
+ * wraps and auto-grows (capped in CSS, then scrolls) so long patterns are
+ * fully visible instead of panning horizontally — but the pattern is still one
+ * logical line: Enter is swallowed and pasted newlines are stripped. Both
+ * layers share identical box metrics and wrapping rules (`pre-wrap` +
+ * `break-all`) so the glyphs line up to the pixel.
  */
-export const RegexInput = forwardRef<HTMLInputElement, RegexInputProps>(
+export const RegexInput = forwardRef<HTMLTextAreaElement, RegexInputProps>(
   function RegexInput({ value, invalid, placeholder, onChange }, ref) {
-    const inputRef = useRef<HTMLInputElement>(null);
+    const inputRef = useRef<HTMLTextAreaElement>(null);
     const hlRef = useRef<HTMLDivElement>(null);
     useImperativeHandle(ref, () => inputRef.current!, []);
 
-    // Keep the highlight layer scrolled in lock-step with the input.
+    // Auto-grow with content; CSS max-height caps it, after which it scrolls.
+    useLayoutEffect(() => {
+      const ta = inputRef.current;
+      if (!ta) return;
+      ta.style.height = "0";
+      ta.style.height = ta.scrollHeight + "px";
+    }, [value]);
+
+    // Keep the highlight layer scrolled in lock-step with the textarea.
     const syncScroll = () => {
-      if (hlRef.current && inputRef.current) hlRef.current.scrollLeft = inputRef.current.scrollLeft;
+      const ta = inputRef.current, hl = hlRef.current;
+      if (!ta || !hl) return;
+      hl.scrollTop = ta.scrollTop;
+      hl.scrollLeft = ta.scrollLeft;
     };
 
     return (
@@ -78,16 +93,21 @@ export const RegexInput = forwardRef<HTMLInputElement, RegexInputProps>(
         <div className="regex-hl" ref={hlRef} aria-hidden="true">
           {renderTokens(tokenizeRegex(value))}
         </div>
-        <input
+        <textarea
           ref={inputRef}
           className="regex-input-el"
+          rows={1}
           value={value}
           placeholder={placeholder}
           spellCheck={false}
           autoComplete="off"
           autoCapitalize="off"
           autoCorrect="off"
-          onChange={(e) => onChange(e.target.value)}
+          // A pattern is one logical line: Enter must never insert a newline.
+          // preventDefault doesn't stop propagation, so Ctrl+Enter still
+          // reaches the modal's save handler.
+          onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+          onChange={(e) => onChange(e.target.value.replace(/[\r\n]+/g, ""))}
           onScroll={syncScroll}
         />
       </div>
