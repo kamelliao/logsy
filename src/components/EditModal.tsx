@@ -240,7 +240,9 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
                     return (
                       <span
                         key={i}
-                        className={"gen-chip " + t.state + (clickable ? "" : " fixed")}
+                        // "lit", not "fixed" — `fixed` is a Tailwind utility
+                        // (position: fixed) and would yank the chip out of flow.
+                        className={"gen-chip " + t.state + (clickable ? "" : " lit")}
                         title={
                           !clickable ? "Literal text"
                             : t.state === "exact" ? `Matches exactly "${t.raw}" — click to generalize`
