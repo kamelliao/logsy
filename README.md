@@ -50,6 +50,41 @@ bun run tauri build
 Installers are written to `src-tauri/target/release/bundle/` — `.msi`/`.exe`
 on Windows, `.dmg` on macOS, `.deb`/`.AppImage` on Linux.
 
+## Performance profiling
+
+The log-processing core in [`src/logic.ts`](src/logic.ts) is what keeps the UI
+smooth on large files. [`scripts/profile.ts`](scripts/profile.ts) benchmarks it
+in isolation (no React, no Tauri) against a synthetic firmware log, reporting
+per-function timings plus `computeView` throughput:
+
+```bash
+bun run scripts/profile.ts                          # defaults: 200k lines, 20 filters
+bun run scripts/profile.ts --lines=500000 --filters=40
+bun run scripts/profile.ts --json                   # machine-readable, for CI / before-after
+```
+
+Flags: `--lines=N` · `--filters=N` · `--runs=N` (odd → median) · `--warmup=N` ·
+`--seed=N` (reproducible logs) · `--json`.
+
+Sample run (200k lines, 20 filters, Apple-class laptop):
+
+```
+benchmark                         min     median       mean    ops/s
+────────────────────────────────────────────────────────────────────
+compileAll                    0.01 ms    0.01 ms    0.01 ms  84745.8
+computeView (full file)     211.38 ms  220.21 ms  219.79 ms      4.5
+fieldsFor × all rows        110.16 ms  113.46 ms  113.73 ms      8.8
+segments × 1000 rows          0.06 ms    0.12 ms    0.14 ms   8628.1
+scanMatches (preview)        10.37 ms   11.32 ms   11.22 ms     88.3
+
+computeView throughput: 0.91 M lines/s · 52 MB/s
+```
+
+`computeView` (every line tested against every filter) dominates and scales with
+`lines × filters` — at 500k lines / 40 filters it's ~1.06 s — so it's the first
+place to look when a large file feels sluggish. `compileAll` and `segments`
+(per-rendered-row highlighting) are effectively free.
+
 ## Keyboard shortcuts
 
 | Shortcut            | Action                          |
@@ -118,6 +153,7 @@ src/                 React frontend
   App.tsx            root state, persistence, file loading, shortcuts
 src-tauri/           Tauri (Rust) backend; window controls + file read/write
 scripts/bump.mjs     version-bump + tag helper
+scripts/profile.ts   benchmarks the logic.ts log-processing hot path
 ```
 
 ## License
