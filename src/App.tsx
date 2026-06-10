@@ -761,6 +761,10 @@ export function App() {
     const f = withFile(s, file.id);
     if (Array.isArray(f.markers)) f.markers = f.markers.filter((m) => m.n !== n);
   }, { undoable: false });
+  const clearMarkers = () => patchState((s) => {
+    if (!file) return;
+    withFile(s, file.id).markers = [];
+  }, { undoable: false });
   // Jump to a bookmark from the Bookmarks tab. Bookmarks only render in "Show
   // all"; if the target line is hidden *because* of matches-only mode (not
   // excluded, just unmatched), switch to all first so the jump lands on it.
@@ -879,8 +883,8 @@ export function App() {
   const MAIN_COLLAPSED = "34px";
   const CMP_COLLAPSED = "26px";
   // Compare opens larger than the filter dock — its tables benefit from the room.
-  const EXPAND_FP = "42%";
-  const EXPAND_CMP = "55%";
+  const EXPAND_FP = "30%";
+  const EXPAND_CMP = "30%";
   const prevFp = useRef(state.filterCollapsed);
   const prevCmp = useRef(state.compareCollapsed);
   useEffect(() => {
@@ -1142,9 +1146,11 @@ export function App() {
     const bookmarksBody = (
       <BookmarksPanel
         markers={markers}
+        lineText={(n) => view.rows[n - 1]?.text ?? ""}
         onJump={jumpToMarker}
         onSetNote={(n, note) => { const m = markers.find((x) => x.n === n); setMarker(n, m?.icon ?? "bookmark", note); }}
         onRemove={removeMarker}
+        onClearAll={clearMarkers}
       />
     );
 

@@ -676,34 +676,112 @@ button { font-family: inherit; }
   color: var(--text-2); text-align: center; gap: 2px; padding: 16px;
   font-size: calc(var(--log-font-size, 12.5px) * 0.96);
 }
+.bm-wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .bm-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px 0; }
+
+/* header: icon filter chips on the left, Clear all on the right */
+.bm-head {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-bottom: 1px solid var(--border, #e6e8eb);
+}
+.bm-chips {
+  flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 4px;
+  overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
+}
+.bm-chips::-webkit-scrollbar { display: none; }
+.bm-chip {
+  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px;
+  border: 1px solid transparent; border-radius: 999px; cursor: pointer;
+  padding: 2px 8px; background: var(--panel-bg-2); color: var(--text-2);
+  font: inherit; font-family: var(--ui-font); font-size: calc(var(--log-font-size, 12.5px) * 0.9);
+}
+.bm-chip:hover { color: var(--text); }
+.bm-chip.on { background: #fff; border-color: var(--mk, #2c6ce6); color: var(--text); }
+.bm-chip-n { font-variant-numeric: tabular-nums; color: var(--text-3); font-weight: 600; }
+.bm-chip.on .bm-chip-n { color: var(--text-2); }
+.bm-clear {
+  flex: 0 0 auto; border: none; background: transparent; cursor: pointer;
+  font: inherit; font-family: var(--ui-font); font-size: calc(var(--log-font-size, 12.5px) * 0.9);
+  color: var(--text-3); padding: 3px 4px; border-radius: 6px;
+}
+.bm-clear:hover { color: var(--error); }
+
+/* Each bookmark is a two-line card: a jump target (icon + line no.) on the
+   left, then a title (the note, or the raw line when there's no note) above a
+   muted preview of the log text. --mk carries the marker's colour. */
 .bm-row {
-  display: flex; align-items: center; gap: 8px; padding: 3px 10px 3px 6px;
+  position: relative;
+  display: flex; align-items: flex-start; gap: 8px;
+  padding: 6px 10px 6px 12px;
 }
 .bm-row:hover { background: var(--row-hover); }
+.bm-strip {
+  position: absolute; left: 0; top: 4px; bottom: 4px; width: 3px;
+  border-radius: 0 2px 2px 0; background: var(--mk, var(--text-3));
+  opacity: 0.55;
+}
+.bm-row:hover .bm-strip { opacity: 1; }
 .bm-jump {
-  /* fixed width (not min-width) so every note input starts at the same x,
+  /* fixed width (not min-width) so every content block starts at the same x,
      regardless of how many digits the line number has */
-  flex: 0 0 78px; width: 78px; overflow: hidden;
+  flex: 0 0 64px; width: 64px; overflow: hidden;
   display: flex; align-items: center; gap: 6px;
   font: inherit; font-family: var(--mono-font); font-size: calc(var(--log-font-size, 12.5px) * 0.96);
   border: none; background: transparent; color: var(--text-2); cursor: pointer;
-  padding: 3px 6px; border-radius: 6px;
+  padding: 2px 4px; border-radius: 6px; margin-top: 1px;
 }
 .bm-jump:hover { background: var(--panel-bg-2); color: var(--text); }
 .bm-ico { display: grid; place-items: center; }
 .bm-line { font-variant-numeric: tabular-nums; }
-.bm-note {
-  flex: 1 1 auto; min-width: 0; font: inherit; font-size: var(--log-font-size, 12.5px); font-family: var(--ui-font);
-  border: 1px solid transparent; border-radius: 6px; padding: 4px 7px;
-  background: transparent; color: var(--text);
+
+.bm-content {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column; gap: 1px;
 }
-.bm-note:hover { background: var(--panel-bg-2); }
-.bm-note:focus { outline: none; background: var(--panel-bg-2); border-color: var(--accent, #2c6ce6); }
+/* the note, shown as a title; click to edit */
+.bm-title {
+  text-align: left; border: none; background: transparent; cursor: text;
+  font: inherit; font-family: var(--ui-font); font-size: var(--log-font-size, 12.5px);
+  font-weight: 550; color: var(--text); line-height: 1.35;
+  padding: 1px 0; border-radius: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bm-title:hover { color: #2c6ce6; }
+/* the raw log line; primary when there's no note, muted when below a title */
+.bm-preview {
+  text-align: left; border: none; background: transparent; cursor: pointer;
+  font: inherit; font-family: var(--mono-font);
+  font-size: calc(var(--log-font-size, 12.5px) * 0.94);
+  color: var(--text); line-height: 1.4;
+  padding: 1px 0; border-radius: 4px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bm-preview.muted { color: var(--text-3); }
+.bm-preview:hover { color: #2c6ce6; }
+.bm-noline { font-style: italic; color: var(--text-3); }
+/* ghost "+ note" affordance, only when the row has no note */
+.bm-addnote {
+  align-self: flex-start; display: inline-flex; align-items: center; gap: 3px;
+  border: none; background: transparent; cursor: pointer;
+  font: inherit; font-family: var(--ui-font); font-size: calc(var(--log-font-size, 12.5px) * 0.9);
+  color: var(--text-3); padding: 2px 0; margin-top: 1px;
+  opacity: 0; transition: opacity 0.12s;
+}
+.bm-row:hover .bm-addnote, .bm-addnote:focus-visible { opacity: 1; }
+.bm-addnote:hover { color: #2c6ce6; }
+.bm-note {
+  width: 100%; min-width: 0; font: inherit; font-family: var(--ui-font);
+  font-size: var(--log-font-size, 12.5px); font-weight: 550;
+  border: 1px solid #2c6ce6; border-radius: 6px; padding: 2px 6px;
+  background: #fff; color: var(--text);
+}
+.bm-note:focus { outline: none; box-shadow: 0 0 0 3px var(--accent-bg); }
 .bm-del {
   flex: 0 0 auto; border: none; background: transparent; color: var(--text-3); cursor: pointer;
-  display: grid; place-items: center; padding: 4px; border-radius: 6px;
+  display: grid; place-items: center; padding: 4px; border-radius: 6px; margin-top: 1px;
+  opacity: 0; transition: opacity 0.12s;
 }
+.bm-row:hover .bm-del, .bm-del:focus-visible { opacity: 1; }
 .bm-del:hover { background: #fdecec; color: var(--error); }
 
 /* Sonner toast overrides */
