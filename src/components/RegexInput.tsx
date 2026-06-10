@@ -14,14 +14,23 @@ interface RegexInputProps {
 // to keep paren matching correct). Only `background` is applied to wrappers: any
 // padding/margin would shift glyphs out of line with the input underneath.
 function renderTokens(tokens: RegexToken[]): ReactNode[] {
-  interface Frame { children: ReactNode[]; capturing: boolean }
+  interface Frame { children: ReactNode[]; capturing: boolean; gi?: number }
   const root: ReactNode[] = [];
   const stack: Frame[] = [];
   let key = 0;
+  // Named groups get the shared --rxg palette (same hues as the match preview
+  // and parsed-fields dots) so pattern ↔ result correspondence is visible.
+  let namedIdx = 0;
   const sink = () => (stack.length ? stack[stack.length - 1].children : root);
   const close = (frame: Frame) =>
     sink().push(
-      <span key={key++} className={"rx-groupwrap" + (frame.capturing ? " cap" : "")}>
+      <span
+        key={key++}
+        className={
+          "rx-groupwrap" + (frame.capturing ? " cap" : "") +
+          (frame.gi !== undefined ? ` g${frame.gi % 6}` : "")
+        }
+      >
         {frame.children}
       </span>,
     );
@@ -30,7 +39,8 @@ function renderTokens(tokens: RegexToken[]): ReactNode[] {
     const isOpen = tk.t === "group" && tk.s[0] === "(";
     const isClose = tk.t === "group" && tk.s === ")";
     if (isOpen) {
-      const frame: Frame = { children: [], capturing: tk.s === "(" || tk.s === "(?<" };
+      const named = tk.s === "(?<";
+      const frame: Frame = { children: [], capturing: tk.s === "(" || named, gi: named ? namedIdx++ : undefined };
       frame.children.push(<span key={key++} className="rx-group">{tk.s}</span>);
       stack.push(frame);
     } else if (isClose && stack.length) {
