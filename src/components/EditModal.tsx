@@ -400,8 +400,8 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
             </div>
           </div>
 
-          {/* parsed fields (named groups) */}
-          {draft.regex && !draft.exclude && fields.length > 0 && (
+          {/* TODO: parsed fields (named groups) (No use now) */}
+          {false && draft.regex && !draft.exclude && fields.length > 0 && (
             <div className="field">
               <Label>
                 Parsed fields{" "}
