@@ -1443,7 +1443,7 @@ button { font-family: inherit; }
 .regex-input.invalid:focus-within { border-color: var(--error); box-shadow: 0 0 0 3px rgba(180,35,24,0.12); }
 .regex-hl, .regex-input-el {
   margin: 0; padding: 10px 12px; border: none;
-  font-family: var(--mono-font); font-size: 14px; line-height: 20px;
+  font-family: var(--mono-font); font-size: 13px; line-height: 19px;
   /* identical soft-wrapping on both layers — a regex has no spaces to break
      at, so break-all is what actually makes long patterns wrap */
   white-space: pre-wrap; word-break: break-all; overflow: hidden;
@@ -1451,8 +1451,8 @@ button { font-family: inherit; }
 .regex-hl { position: absolute; inset: 0; pointer-events: none; color: #383a42; }
 .regex-input-el {
   position: relative; display: block; width: 100%;
-  height: 40px;        /* one line; JS grows it to fit content */
-  max-height: 120px;   /* ~5 lines, then scrolls vertically */
+  height: 39px;        /* one line; JS grows it to fit content */
+  max-height: 115px;   /* ~5 lines, then scrolls vertically */
   overflow-y: auto; resize: none;
   background: transparent; outline: none;
   color: transparent; -webkit-text-fill-color: transparent; caret-color: #383a42;
