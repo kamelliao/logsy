@@ -1,7 +1,8 @@
-import { useState, useMemo, useEffect, useRef } from "react";
-import { Check, ChevronDown, EyeOff, Pipette, Trash2, X } from "lucide-react";
+import { useState, useMemo, useEffect, useRef, useDeferredValue } from "react";
+import { Check, ChevronDown, ChevronRight, EyeOff, Pipette, Trash2, X } from "lucide-react";
 import type { Filter, FilterGroup, FieldType } from "../types";
-import { compile, countMatches, deriveFields } from "../logic";
+import { compile, scanMatches, groupSegments, deriveFields } from "../logic";
+import { tokenize, buildPattern, assignNames, generalPattern, type GenToken, type GenState } from "../lib/generalize";
 import { PALETTE, TEXT_SWATCHES, BG_SWATCHES } from "../data";
 
 const FIELD_TYPES: FieldType[] = ["string", "int", "hex", "float", "time"];
@@ -57,12 +58,19 @@ interface EditModalProps {
   lines: string[];
   isNew: boolean;
   groups: FilterGroup[];
+  /**
+   * Raw text the filter was generalized from ("Filter as pattern…" in the log
+   * view). When present, a token-chips row lets the user cycle each detected
+   * token between exact / generalized / capture; chips rebuild the pattern and
+   * disable once the pattern is edited by hand (one-way sync, no regex parsing).
+   */
+  genSeed?: string;
   onSave: (filter: Filter) => void;
   onClose: () => void;
   onDelete: () => void;
 }
 
-export function EditModal({ filter, lines, isNew, groups, onSave, onClose, onDelete }: EditModalProps) {
+export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClose, onDelete }: EditModalProps) {
   const [draft, setDraft] = useState<Filter>({ ...filter });
   // User-chosen types for named groups, keyed by group name (survives regex edits).
   const [fieldTypes, setFieldTypes] = useState<Record<string, FieldType>>(
@@ -114,10 +122,57 @@ export function EditModal({ filter, lines, isNew, groups, onSave, onClose, onDel
     );
 
   const compiled = useMemo(() => compile(draft), [draft.pattern, draft.regex, draft.caseSensitive]);
-  const matchCount = useMemo(
-    () => (compiled.ok && compiled.re ? countMatches(lines, compiled.re) : 0),
-    [compiled, lines]
+
+  // The full-file scan runs against a deferred snapshot so typing stays
+  // responsive on huge logs; the count/preview lag a beat instead.
+  const deferredCompiled = useDeferredValue(compiled);
+  const scan = useMemo(
+    () =>
+      deferredCompiled.ok && deferredCompiled.re
+        ? scanMatches(lines, deferredCompiled.re)
+        : { count: 0, samples: [] },
+    [deferredCompiled, lines]
   );
+  // Preview-only recompile with the `d` flag: groupSegments needs match
+  // indices to color each named group's span.
+  const previewRe = useMemo(() => {
+    if (!deferredCompiled.ok || !deferredCompiled.re) return null;
+    try { return new RegExp(deferredCompiled.re.source, deferredCompiled.re.flags + "d"); }
+    catch { return null; }
+  }, [deferredCompiled]);
+  const groupOrder = useMemo(
+    () => (deferredCompiled.f.regex ? deriveFields(deferredCompiled.f.pattern).map((f) => f.name) : []),
+    [deferredCompiled]
+  );
+
+  const [previewOpen, setPreviewOpen] = useState(
+    () => localStorage.getItem("logsy.matchPreviewOpen") !== "0"
+  );
+  const togglePreview = () =>
+    setPreviewOpen((o) => { localStorage.setItem("logsy.matchPreviewOpen", o ? "0" : "1"); return !o; });
+
+  // --- token chips ("Filter as pattern…") ---------------------------------
+  const [genTokens, setGenTokens] = useState<GenToken[] | null>(() => (genSeed ? tokenize(genSeed) : null));
+  // The last pattern the chips produced; a mismatch means manual edits.
+  const lastBuiltRef = useRef(genSeed ? filter.pattern : "");
+  const chipsActive = genTokens !== null && draft.pattern === lastBuiltRef.current;
+  const chipNames = useMemo(() => (genTokens ? assignNames(genTokens) : []), [genTokens]);
+
+  const applyTokens = (next: GenToken[]) => {
+    setGenTokens(next);
+    const p = buildPattern(next);
+    lastBuiltRef.current = p;
+    set({ pattern: p });
+  };
+  const cycleChip = (i: number) =>
+    genTokens &&
+    applyTokens(genTokens.map((t, k) => {
+      if (k !== i || t.kind === "text") return t;
+      const order: GenState[] = t.kind === "ws" ? ["general", "exact"] : ["general", "capture", "exact"];
+      return { ...t, state: order[(order.indexOf(t.state) + 1) % order.length] };
+    }));
+  const renameChip = (i: number, name: string) =>
+    genTokens && applyTokens(genTokens.map((t, k) => (k === i ? { ...t, name } : t)));
 
   const valid = compiled.ok && draft.pattern.trim().length > 0;
 
@@ -168,6 +223,57 @@ export function EditModal({ filter, lines, isNew, groups, onSave, onClose, onDel
         </DialogHeader>
 
         <div className="modal-body">
+          {/* token chips (only for filters created via "Filter as pattern…");
+              hidden if the user turns the Regex toggle off, since chips emit regex */}
+          {genTokens && draft.regex && (
+            <div className="field">
+              <Label>
+                Pattern builder{" "}
+                <span style={{ color: "var(--text-3)", fontWeight: 400 }}>
+                  click a token to cycle: exact → pattern → capture
+                </span>
+              </Label>
+              {chipsActive ? (
+                <div className="gen-chips">
+                  {genTokens.map((t, i) => {
+                    const clickable = t.kind !== "text";
+                    return (
+                      <span
+                        key={i}
+                        className={"gen-chip " + t.state + (clickable ? "" : " fixed")}
+                        title={
+                          !clickable ? "Literal text"
+                            : t.state === "exact" ? `Matches exactly "${t.raw}" — click to generalize`
+                            : `Matches ${generalPattern(t)} — click to change`
+                        }
+                        onClick={clickable ? () => cycleChip(i) : undefined}
+                      >
+                        <span className="gc-raw">{t.kind === "ws" ? "␣" : t.raw}</span>
+                        {t.state === "capture" && (
+                          <input
+                            className="gc-name"
+                            value={chipNames[i] ?? ""}
+                            size={Math.max(2, (chipNames[i] ?? "").length)}
+                            title="Field name"
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => renameChip(i, e.target.value.replace(/[^A-Za-z0-9_]/g, ""))}
+                          />
+                        )}
+                      </span>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="gen-chips-off">
+                  Pattern edited manually — chips are disabled.
+                  <Button size="xs" variant="ghost" onClick={() => set({ pattern: lastBuiltRef.current })}>
+                    Restore
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* pattern */}
           <div className="field">
             <Label>{draft.regex ? "Pattern (regular expression)" : "Pattern (plain text)"}</Label>
@@ -190,12 +296,54 @@ export function EditModal({ filter, lines, isNew, groups, onSave, onClose, onDel
             )}
             {!compiled.ok ? (
               <div className="regex-err">Invalid regex: {compiled.err}</div>
+            ) : !draft.pattern.trim() ? (
+              <div className="match-preview">Type a pattern to preview matches.</div>
             ) : (
-              <div className="match-preview">
-                {draft.pattern.trim()
-                  ? <><b>{matchCount.toLocaleString()}</b>{draft.exclude ? " lines will be hidden" : " lines match in this file"}</>
-                  : "Type a pattern to preview matches."}
-              </div>
+              <>
+                <button type="button" className="match-preview mp-toggle" onClick={togglePreview}>
+                  {previewOpen ? <ChevronDown size={13} /> : <ChevronRight size={13} />}
+                  <span>
+                    <b>{scan.count.toLocaleString()}</b>
+                    {draft.exclude ? " lines will be hidden" : " lines match in this file"}
+                  </span>
+                </button>
+                {previewOpen && (
+                  <div className="mp-pane scroll">
+                    {scan.samples.length === 0 ? (
+                      <div className="mp-empty">No matching lines.</div>
+                    ) : (
+                      <>
+                        {scan.samples.map((s) => (
+                          <div className="mp-row" key={s.n}>
+                            <span className="mp-gut">{s.n}</span>
+                            <span className="mp-txt">
+                              {previewRe
+                                ? groupSegments(s.text, previewRe, groupOrder).map((seg, i) =>
+                                    seg.hit ? (
+                                      <mark
+                                        key={i}
+                                        className={"mp-hit" + (seg.group !== undefined ? ` g${seg.group % 6}` : "")}
+                                      >
+                                        {seg.t}
+                                      </mark>
+                                    ) : (
+                                      <span key={i}>{seg.t}</span>
+                                    )
+                                  )
+                                : s.text}
+                            </span>
+                          </div>
+                        ))}
+                        {scan.count > scan.samples.length && (
+                          <div className="mp-more">
+                            Showing the first {scan.samples.length} of {scan.count.toLocaleString()} matching lines
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </>
             )}
           </div>
 
@@ -256,8 +404,10 @@ export function EditModal({ filter, lines, isNew, groups, onSave, onClose, onDel
                 <span style={{ color: "var(--text-3)", fontWeight: 400 }}>from named groups</span>
               </Label>
               <div className="ef-list">
-                {fields.map((f) => (
+                {fields.map((f, k) => (
                   <div key={f.name} className="ef-row">
+                    {/* Same palette index as the group's tint in the pattern + preview. */}
+                    <span className="ef-dot" style={{ background: `var(--rxg-${k % 6})` }} />
                     <span className="ef-name">{f.name}</span>
                     <Select
                       value={f.type}

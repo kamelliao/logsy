@@ -40,6 +40,7 @@ function parseTatFilters(
 
 import { buildGroupFromImport, exportPayload } from "./filterFile";
 import { compileAll, computeView } from "./logic";
+import { tokenize, buildPattern } from "./lib/generalize";
 import { Sidebar } from "./components/Sidebar";
 import { LogView } from "./components/LogView";
 import { FilterPanel } from "./components/FilterPanel";
@@ -86,7 +87,7 @@ function baseName(p: string): string {
 
 export function App() {
   const [state, setState] = useState<AppState>(loadState);
-  const [editing, setEditing] = useState<{ isNew: boolean; filter: Filter } | null>(null);
+  const [editing, setEditing] = useState<{ isNew: boolean; filter: Filter; genSeed?: string } | null>(null);
   const [findOpen, setFindOpen] = useState(false);
   // Lines explicitly added to the comparison panel (kept separate from selection).
   const [compareLines, setCompareLines] = useState<Set<number>>(() => new Set());
@@ -573,9 +574,20 @@ export function App() {
     if (!set) return;
     setEditing({ isNew: true, filter: makeFilter("", { groupId }) });
   };
-  const openFilterFromPattern = (pattern: string) => {
+  const openFilterFromPattern = (text: string, mode: "exact" | "pattern" = "exact") => {
     if (!set) return;
-    setEditing({ isNew: true, filter: makeFilter(pattern) });
+    if (mode === "pattern") {
+      // Filters match single lines; a multi-line selection seeds from its
+      // first non-empty line. genSeed drives the chips UI in EditModal.
+      const seed = text.split(/\r?\n/).find((l) => l.trim())?.trim() ?? text;
+      setEditing({
+        isNew: true,
+        filter: makeFilter(buildPattern(tokenize(seed)), { regex: true }),
+        genSeed: seed,
+      });
+    } else {
+      setEditing({ isNew: true, filter: makeFilter(text) });
+    }
   };
   const openEditFilter = (fid: string) => {
     if (!set) return;
@@ -1351,6 +1363,7 @@ export function App() {
           <EditModal
             filter={editing.filter}
             isNew={editing.isNew}
+            genSeed={editing.genSeed}
             lines={lines}
             groups={set.groups}
             onSave={saveFilter}

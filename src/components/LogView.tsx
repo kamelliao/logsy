@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "react";
-import { ArrowDown, ArrowUp, Bookmark, ChevronDown, ChevronRight, Columns3, Download, Eye, Filter, Search, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bookmark, ChevronDown, ChevronRight, Columns3, Download, Eye, Filter, Search, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { LogFile, ViewResult, CompiledFilter, FieldValue, Marker, MarkerIcon } from "../types";
@@ -96,7 +96,8 @@ interface LogViewProps {
   onToggleViewMode: (m: "all" | "matches") => void;
   onToggleFind: () => void;
   onCloseFind: () => void;
-  onBuildFilter: (pattern: string) => void;
+  /** "exact" adds the text verbatim; "pattern" generalizes it into a regex. */
+  onBuildFilter: (pattern: string, mode?: "exact" | "pattern") => void;
   onAddToCompare: (ns: number[]) => void;
   onRemoveFromCompare: (n: number) => void;
 }
@@ -784,8 +785,14 @@ export function LogView({
       {/* selection popup */}
       {selMenu && (
         <div className="sel-menu" style={{ left: selMenu.x, top: selMenu.y }}>
-          <button onClick={() => { onBuildFilter(selMenu.text); setSelMenu(null); }} title="Add the selected text as a new filter">
-            <Filter size={13} /> Add filter…
+          <button onClick={() => { onBuildFilter(selMenu.text, "exact"); setSelMenu(null); }} title="Add the selected text as a new filter">
+            <Filter size={13} /> Filter exact text…
+          </button>
+          <button
+            onClick={() => { onBuildFilter(selMenu.text, "pattern"); setSelMenu(null); }}
+            title="Generalize the selection into a regex — numbers, hex and timestamps become patterns"
+          >
+            <Sparkles size={13} /> Filter as pattern…
           </button>
         </div>
       )}
