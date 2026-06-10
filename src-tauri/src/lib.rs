@@ -32,19 +32,93 @@ struct ReadResult {
 fn read_text_file(path: String) -> Result<ReadResult, String> {
   let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
 
-  // Honor a BOM when present, else detect from the content.
+  // Pick an encoding. An explicit BOM wins. Otherwise sniff BOM-less UTF-16
+  // ourselves before falling back to chardetng: chardetng never guesses UTF-16
+  // (the Encoding Standard only recognizes it via a BOM), so without this a
+  // BOM-less UTF-16 log decodes as a single-byte encoding — the NUL high bytes
+  // survive and the stray CR/LF low bytes split lines apart, producing the
+  // broken / blank-line output. Finally fall back to chardetng for the legacy
+  // single-byte and multi-byte encodings it does handle.
   let encoding = match encoding_rs::Encoding::for_bom(&bytes) {
     Some((enc, _bom_len)) => enc,
-    None => {
+    None => sniff_bomless_utf16(&bytes).unwrap_or_else(|| {
       let mut detector = chardetng::EncodingDetector::new();
       detector.feed(&bytes, true);
       detector.guess(None, true)
-    }
+    }),
   };
 
   // `decode` re-sniffs any BOM and reports the encoding actually used.
   let (text, used, _had_errors) = encoding.decode(&bytes);
   Ok(ReadResult { text: text.into_owned(), encoding: used.name().to_string() })
+}
+
+/// Detect BOM-less UTF-16 from its tell-tale NUL pattern. Mostly-ASCII text
+/// (log files, kernel dumps) leaves a NUL in every "high" byte: at odd offsets
+/// for little-endian, even offsets for big-endian. Requires a strong, one-sided
+/// signal so ordinary single-byte text and binary blobs don't trip it. Returns
+/// None when the bytes don't look like UTF-16.
+fn sniff_bomless_utf16(bytes: &[u8]) -> Option<&'static encoding_rs::Encoding> {
+  // A bounded prefix is plenty to judge the pattern.
+  let sample = &bytes[..bytes.len().min(4096)];
+  if sample.len() < 16 {
+    return None;
+  }
+  let pairs = sample.len() / 2;
+  let (mut even_nul, mut odd_nul) = (0usize, 0usize);
+  for (i, &b) in sample.iter().enumerate() {
+    if b == 0 {
+      if i % 2 == 0 {
+        even_nul += 1;
+      } else {
+        odd_nul += 1;
+      }
+    }
+  }
+  let strong = pairs * 8 / 10; // >= ~80% of the "high" bytes are NUL
+  let weak = pairs / 10; //       < ~10% NUL on the "text" side
+  if odd_nul >= strong && even_nul <= weak {
+    Some(encoding_rs::UTF_16LE)
+  } else if even_nul >= strong && odd_nul <= weak {
+    Some(encoding_rs::UTF_16BE)
+  } else {
+    None
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::sniff_bomless_utf16;
+
+  fn utf16le(s: &str) -> Vec<u8> {
+    s.encode_utf16().flat_map(|u| u.to_le_bytes()).collect()
+  }
+  fn utf16be(s: &str) -> Vec<u8> {
+    s.encode_utf16().flat_map(|u| u.to_be_bytes()).collect()
+  }
+
+  const KLOG: &str = "[    0.000000] Linux version 6.8.0-generic\n[    0.000001] Command line: ro quiet splash\n";
+
+  #[test]
+  fn detects_bomless_utf16le() {
+    assert_eq!(sniff_bomless_utf16(&utf16le(KLOG)), Some(encoding_rs::UTF_16LE));
+  }
+
+  #[test]
+  fn detects_bomless_utf16be() {
+    assert_eq!(sniff_bomless_utf16(&utf16be(KLOG)), Some(encoding_rs::UTF_16BE));
+  }
+
+  #[test]
+  fn ignores_plain_ascii_and_utf8() {
+    assert_eq!(sniff_bomless_utf16(KLOG.as_bytes()), None);
+    assert_eq!(sniff_bomless_utf16("日本語のログ行 plus ascii padding for length".as_bytes()), None);
+  }
+
+  #[test]
+  fn ignores_short_input() {
+    assert_eq!(sniff_bomless_utf16(&utf16le("hi")), None);
+  }
 }
 
 #[tauri::command]
