@@ -114,7 +114,7 @@ export function LogView({
   const [query, setQuery] = useState("");
   const [current, setCurrent] = useState(0);
   const [selMenu, setSelMenu] = useState<{ x: number; y: number; text: string } | null>(null);
-  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; n: number; hasFields: boolean } | null>(null);
+  const [rowMenu, setRowMenu] = useState<{ x: number; y: number; n: number } | null>(null);
   const [selectedLines, setSelectedLines] = useState<Set<number>>(() => new Set());
   const [anchorRi, setAnchorRi] = useState<number | null>(null);
   const [expandedLines, setExpandedLines] = useState<Set<number>>(() => new Set());
@@ -559,13 +559,13 @@ export function LogView({
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
 
-  function onRowContextMenu(e: React.MouseEvent, ri: number, n: number, hasFields: boolean) {
+  function onRowContextMenu(e: React.MouseEvent, ri: number, n: number) {
     e.preventDefault();
     setSelMenu(null);
     // Right-clicking highlights the row — unless it's already part of a
     // multi-selection, which we keep (so "Add N lines to compare" still works).
     if (!selectedLines.has(n)) { setSelectedLines(new Set([n])); setAnchorRi(ri); }
-    setRowMenu({ x: e.clientX, y: e.clientY, n, hasFields });
+    setRowMenu({ x: e.clientX, y: e.clientY, n });
   }
 
   useEffect(() => {
@@ -730,7 +730,7 @@ export function LogView({
                       onMouseDown={(e) => handleRowMouseDown(e, vItem.index)}
                       onMouseEnter={() => handleRowMouseEnter(vItem.index)}
                       onClick={(e) => onRowClick(e, vItem.index, r.n)}
-                      onContextMenu={(e) => onRowContextMenu(e, vItem.index, r.n, canExpand)}
+                      onContextMenu={(e) => onRowContextMenu(e, vItem.index, r.n)}
                     >
                       {/* sticky left rail: marker + chevron + line number stay
                           pinned to the left edge while the row scrolls right */}
@@ -805,8 +805,11 @@ export function LogView({
         // selection shows both.
         const menu = rowMenu;
         const sel = selectedLines.has(menu.n) && selectedLines.size > 1 ? [...selectedLines] : [menu.n];
-        const inCmp = sel.filter((n) => compareLines.has(n));
-        const notIn = sel.filter((n) => !compareLines.has(n));
+        // Only parsed lines (those with extracted fields) can join the
+        // comparison, so the add/remove counts must exclude raw lines.
+        const parsed = sel.filter((n) => view.rows[n - 1]?.fieldsFromId !== undefined);
+        const inCmp = parsed.filter((n) => compareLines.has(n));
+        const notIn = parsed.filter((n) => !compareLines.has(n));
         return (
           <div className="menu-pop row-menu" style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 60 }}>
             {markerMap.has(menu.n) ? (
@@ -824,10 +827,10 @@ export function LogView({
               </div>
             )}
             <div className="menu-sep" />
-            {notIn.length > 0 && (
-              sel.length === 1 && !menu.hasFields ? (
-                <div className="menu-item disabled"><span className="mi-ico"><Columns3 size={14} /></span> No parsed fields</div>
-              ) : (
+            {parsed.length === 0 ? (
+              <div className="menu-item disabled"><span className="mi-ico"><Columns3 size={14} /></span> No parsed fields</div>
+            ) : (
+              notIn.length > 0 && (
                 <div className="menu-item" onClick={() => { onAddToCompare(notIn); setRowMenu(null); }}>
                   <span className="mi-ico"><Columns3 size={14} /></span>
                   {notIn.length > 1 ? `Add ${notIn.length} lines to compare` : "Add to compare"}
