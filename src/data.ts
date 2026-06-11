@@ -146,6 +146,7 @@ export function initialState(): AppState {
     mapColorMode: "bg",
     mapWidth: 16,
     fontSize: 12.5,
+    fontWeight: 400,
     showLineNumbers: true,
     comparePos: "right",
     filterCollapsed: false,
@@ -198,6 +199,7 @@ export function normalizeState(state: AppState): AppState {
   if (!state.mapColorMode) state.mapColorMode = "bg";
   if (!state.mapWidth) state.mapWidth = 16;
   if (!state.fontSize) state.fontSize = 12.5;
+  if (!state.fontWeight) state.fontWeight = 400;
   if (state.showLineNumbers === undefined) state.showLineNumbers = true;
   if (state.comparePos !== "bottom" && state.comparePos !== "right") state.comparePos = "right";
   if (state.filterCollapsed === undefined) state.filterCollapsed = false;
