@@ -1398,7 +1398,9 @@ button { font-family: inherit; }
 .modal-head .mh-title { font-size: 15.5px; font-weight: 600; }
 .modal-head .mh-x { margin-left: auto; }
 /* body scrolls; header and footer stay pinned */
-.modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 20px 8px; }
+/* overflow-x: hidden — overflow-y:auto alone makes overflow-x compute to auto,
+   so any unbreakable content would surface a horizontal scrollbar here */
+.modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 4px 20px 8px; }
 .field { margin-bottom: 16px; }
 .field > label {
   display: block; font-size: 12px; font-weight: 600;
@@ -1449,6 +1451,14 @@ button { font-family: inherit; }
   /* identical soft-wrapping on both layers — a regex has no spaces to break
      at, so break-all is what actually makes long patterns wrap */
   white-space: pre-wrap; word-break: break-all; overflow: hidden;
+  /* Reserve scrollbar width on BOTH layers, always. Once a long pattern grows
+     past the height cap the textarea shows a vertical scrollbar; with a classic
+     (space-consuming) scrollbar — the Windows/WebView2 default — that would
+     shrink only the textarea's text width, so it would wrap a column or two
+     earlier than the always-full-width highlight overlay. The two layers then
+     drift apart and the caret/selection no longer sit under the coloured
+     glyphs. A stable gutter on both keeps their content widths identical. */
+  scrollbar-gutter: stable;
 }
 .regex-hl { position: absolute; inset: 0; pointer-events: none; color: #383a42; }
 .regex-input-el {
@@ -1499,7 +1509,9 @@ button { font-family: inherit; }
 .rx-groupwrap.g4 { background: var(--rxg-4); box-shadow: 0 0 0 1px var(--rxg-4); }
 .rx-groupwrap.g5 { background: var(--rxg-5); box-shadow: 0 0 0 1px var(--rxg-5); }
 
-.regex-err { color: var(--error); font-size: 11.5px; margin-top: 6px; }
+/* the message embeds the raw pattern, which can be one long unbreakable
+   token — without anywhere-wrapping it widens .modal-body into an h-scroll */
+.regex-err { color: var(--error); font-size: 11.5px; margin-top: 6px; overflow-wrap: anywhere; }
 .match-preview { color: var(--text-3); font-size: 11.5px; margin-top: 7px; font-variant-numeric: tabular-nums; }
 .match-preview b { color: var(--text-2); }
 
@@ -1544,7 +1556,10 @@ button { font-family: inherit; }
   display: inline-flex; align-items: center; gap: 4px;
   border: 1px solid var(--border-strong); border-radius: 6px;
   padding: 2px 7px; font-family: var(--mono-font); font-size: 12px;
-  background: #fff; cursor: pointer; user-select: none; white-space: pre;
+  background: #fff; cursor: pointer; user-select: none;
+  /* pre-wrap + break-all: keep literal spaces visible, but let a single long
+     token wrap instead of widening the modal into a horizontal scroll */
+  white-space: pre-wrap; word-break: break-all; max-width: 100%;
 }
 /* .lit = literal-text chip (not "fixed": that's a Tailwind position utility) */
 .gen-chip.lit {
