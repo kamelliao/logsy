@@ -49,12 +49,14 @@ import { CompareTable } from "./components/CompareTable";
 import { BookmarksPanel } from "./components/BookmarksPanel";
 import { MenuPopup, type MenuItem } from "./components/MenuPopup";
 import { AboutModal } from "./components/AboutModal";
+import { ShortcutsModal } from "./components/ShortcutsModal";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
 import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./components/ui/resizable";
 
 const STATE_KEY = "logsy.state.v6";
+const MENUS = ["File", "Edit", "View", "Filters", "Help"] as const;
 const DOCS_URL = "https://github.com/kamelliao/logsy#readme";
 const FONT_DEFAULT = 12.5;
 const FONT_STEP = 1;
@@ -85,6 +87,12 @@ function baseName(p: string): string {
   return parts[parts.length - 1] || p;
 }
 
+// Yield a paint so a just-set loading overlay actually renders before a heavy
+// synchronous step (splitting a large file into lines) blocks the main thread.
+function nextPaint(): Promise<void> {
+  return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+}
+
 export function App() {
   const [state, setState] = useState<AppState>(loadState);
   const [editing, setEditing] = useState<{ isNew: boolean; filter: Filter; genSeed?: string } | null>(null);
@@ -103,6 +111,9 @@ export function App() {
   const openScreenRef = useRef(false);
   openScreenRef.current = openScreen;
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // When set, a log file is being read from disk — drives the loading overlay.
+  const [busy, setBusy] = useState<{ name: string } | null>(null);
   const [appVersion, setAppVersion] = useState("0.2.1");
   // Go-to-line dialog + signals pushed to LogView for menu-driven actions.
   const [gotoOpen, setGotoOpen] = useState(false);
@@ -272,9 +283,12 @@ export function App() {
       inherited
         ? [{ ...(JSON.parse(JSON.stringify(inherited)) as FilterSet), id: uid("g") }]
         : [{ id: uid("g"), name: "Filters", filters: [], groups: [], order: [] }];
+    try {
     for (const path of paths) {
       let text: string;
       let encoding: string;
+      setBusy({ name: baseName(path) });
+      await nextPaint();   // let the overlay paint before the read/split blocks
       try {
         const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
         text = res.text;
@@ -304,6 +318,9 @@ export function App() {
         s.activeFileId = f.id;
       }, { undoable: false });
     }
+    } finally {
+      setBusy(null);
+    }
     setLinesVersion((v) => v + 1);
     if (lastErr) toast.error("Could not open file: " + lastErr);
   }, [patchState, pushRecent]);
@@ -324,12 +341,14 @@ export function App() {
     if (!active) { await loadPaths([path]); return; }
     let text: string;
     let encoding: string;
+    setBusy({ name: baseName(path) });
+    await nextPaint();   // let the overlay paint before the read/split blocks
     try {
       const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
       text = res.text;
       encoding = res.encoding;
     }
-    catch (e) { toast.error("Could not open file: " + baseName(path) + " — " + String(e)); return; }
+    catch (e) { setBusy(null); toast.error("Could not open file: " + baseName(path) + " — " + String(e)); return; }
     const lns = splitLines(text);
     linesStore[active.id] = lns;
     patchState((s) => {
@@ -344,6 +363,7 @@ export function App() {
     pushRecent("recentFiles", path);
     setCompareLines(new Set());      // line numbers are file-specific
     setLinesVersion((v) => v + 1);
+    setBusy(null);
   }, [loadPaths, patchState, pushRecent]);
 
   // On restart the persisted file list has paths but no cached lines; reload the
@@ -912,8 +932,21 @@ export function App() {
   useEffect(() => {
     if (!openMenu) return;
     const close = () => setOpenMenu(null);
+    // While a menu is open, Left/Right move to the adjacent top-level menu and
+    // Esc closes it (matches native menubar keyboard navigation).
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { setOpenMenu(null); return; }
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const i = MENUS.indexOf(openMenu.name as typeof MENUS[number]);
+      if (i < 0) return;
+      const ni = (i + (e.key === "ArrowRight" ? 1 : -1) + MENUS.length) % MENUS.length;
+      const el = document.querySelector(`[data-menu="${MENUS[ni]}"]`);
+      if (el) { const r = el.getBoundingClientRect(); setOpenMenu({ name: MENUS[ni], x: r.left, y: r.bottom }); }
+    };
     document.addEventListener("mousedown", close);
-    return () => document.removeEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", onKey); };
   }, [openMenu]);
 
   useEffect(() => {
@@ -928,12 +961,14 @@ export function App() {
       "$mod+-": (e) => { e.preventDefault(); zoomOut(); },
       "$mod+0": (e) => { e.preventDefault(); zoomReset(); },
       "Escape": () => {
-        if (findOpen && !editing) setFindOpen(false);
+        if (shortcutsOpen) setShortcutsOpen(false);
+        else if (aboutOpen) setAboutOpen(false);
+        else if (findOpen && !editing) setFindOpen(false);
         // Leave the open screen (back to the active file) if there's one to show.
         else if (openScreen && state.files.length > 0) setOpenScreen(false);
       },
     });
-  }, [findOpen, editing, openScreen, state.files.length, state.viewMode, zoomIn, zoomOut, zoomReset]);
+  }, [findOpen, editing, openScreen, state.files.length, state.viewMode, zoomIn, zoomOut, zoomReset, shortcutsOpen, aboutOpen]);
 
   // ---------- menu actions ----------
   const openDocs = () => { invoke("open_url", { url: DOCS_URL }).catch((e) => toast.error("Could not open documentation: " + String(e))); };
@@ -1046,6 +1081,7 @@ export function App() {
       { label: "Remove all filters", disabled: !set, action: () => bulk("clear") },
     ],
     Help: [
+      { label: "Keyboard shortcuts", action: () => setShortcutsOpen(true) },
       { label: "Documentation", action: openDocs },
       { label: "About", action: () => setAboutOpen(true) },
     ],
@@ -1289,7 +1325,7 @@ export function App() {
   }
 
   return (
-    <TooltipProvider delay={600}>
+    <TooltipProvider delay={350}>
       <div className="app" style={{ "--log-font-size": `${fontSize}px`, "--log-row-h": `${rowH}px`, "--filter-row-h": `${filterRowH}px` } as CSSProperties}>
         {/* titlebar */}
         <div className="titlebar" data-tauri-drag-region>
@@ -1297,14 +1333,22 @@ export function App() {
             Logsy
           </div>
           <div className="menubar">
-            {(["File", "Edit", "View", "Filters", "Help"] as const).map((m) => (
+            {MENUS.map((m) => (
               <div
                 key={m}
+                data-menu={m}
                 className={"menu" + (openMenu?.name === m ? " active" : "")}
                 onMouseDown={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   const rect = e.currentTarget.getBoundingClientRect();
                   setOpenMenu(openMenu?.name === m ? null : { name: m, x: rect.left, y: rect.bottom });
+                }}
+                // Once any menu is open, hovering a sibling switches to it
+                // (standard menubar behaviour — no extra click needed).
+                onMouseEnter={(e) => {
+                  if (!openMenu || openMenu.name === m) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  setOpenMenu({ name: m, x: rect.left, y: rect.bottom });
                 }}
               >
                 {m}
@@ -1373,6 +1417,16 @@ export function App() {
           />
         )}
 
+        {/* loading overlay — shown while a log file is read from disk */}
+        {busy && (
+          <div className="busy-overlay">
+            <div className="busy-card">
+              <div className="busy-spinner" />
+              <div className="busy-text">Opening {busy.name}…</div>
+            </div>
+          </div>
+        )}
+
         {/* drag-and-drop overlay */}
         {dragOver && (
           <div className="drop-overlay">
@@ -1385,6 +1439,7 @@ export function App() {
 
         {openMenu && (
           <MenuPopup
+            key={openMenu.name}
             items={menuDefs[openMenu.name]}
             x={openMenu.x}
             y={openMenu.y + 2}
@@ -1420,6 +1475,9 @@ export function App() {
 
         {/* about dialog */}
         {aboutOpen && <AboutModal version={appVersion} onClose={() => setAboutOpen(false)} />}
+
+        {/* keyboard shortcuts dialog */}
+        {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
 
         <Toaster />
       </div>
