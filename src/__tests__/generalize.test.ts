@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { tokenize, buildPattern, assignNames, type GenToken } from "../lib/generalize";
+import { tokenize, buildPattern, assignNames, mergeTokens, splitToken, type GenToken } from "../lib/generalize";
 
 const kinds = (s: string) => tokenize(s).map((t) => `${t.kind}:${t.raw}`);
 
@@ -82,6 +82,37 @@ test("capture state emits a working named group", () => {
 test("timestamp keeps separators, generalizes digits", () => {
   const toks = tokenize("12:30:01.442");
   expect(buildPattern(toks)).toBe("\\d+:\\d+:\\d+\\.\\d+");
+});
+
+// --- mergeTokens / splitToken ----------------------------------------------------
+
+test("merge folds a range into one exact chip; split restores it", () => {
+  const toks = tokenize("boot: jump to app @ 0x08004000");
+  const merged = mergeTokens(toks, 0, toks.length - 2); // everything before the hex
+  expect(merged.length).toBe(2);
+  expect(merged[0].kind).toBe("merged");
+  expect(merged[0].raw).toBe("boot: jump to app @ ");
+  expect(merged[0].state).toBe("exact");
+  // exact merge keeps matching the sample literally
+  expect(new RegExp(buildPattern(merged)).test("boot: jump to app @ 0x08004000")).toBe(true);
+  expect(splitToken(merged, 0)).toEqual(toks);
+});
+
+test("merge accepts a reversed range and rejects no-op/invalid ranges", () => {
+  const toks = tokenize("a 1");
+  expect(mergeTokens(toks, 2, 0)[0].raw).toBe("a 1");
+  expect(mergeTokens(toks, 1, 1)).toBe(toks); // single chip → unchanged
+  expect(mergeTokens(toks, 1, 9)).toBe(toks); // out of range → unchanged
+});
+
+test("merged chip generalizes to .+ and captures as a named group", () => {
+  const raw = tokenize("wifi connect failed after 3 retries");
+  const toks = mergeTokens(raw, 2, raw.length - 1); // everything after "wifi "
+  toks[2].state = "capture";
+  const pattern = buildPattern(toks);
+  expect(pattern).toBe("wifi\\s+(?<msg>.+)");
+  const m = new RegExp(pattern).exec("wifi gave up entirely");
+  expect(m?.groups?.msg).toBe("gave up entirely");
 });
 
 // --- assignNames ----------------------------------------------------------------

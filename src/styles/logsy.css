@@ -1346,6 +1346,12 @@ button { font-family: inherit; }
 .menu-item.danger:hover { background: #fdecec; }
 .menu-item .mi-ico { color: var(--text-3); display: grid; place-items: center; width: 15px; }
 .menu-item.danger .mi-ico { color: var(--error); }
+/* regex fragment preview on the right of a menu row (chip state menu) */
+.menu-item .mi-frag {
+  margin-left: auto; padding-left: 16px;
+  font-family: var(--mono-font); font-size: 11px; color: var(--text-3);
+  max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
 .menu-sep { height: 1px; background: var(--border); margin: 3px 4px; }
 .menu-item .mi-key { margin-left: auto; font-size: 11px; color: var(--text-3); }
 /* left check column for toggle items (View ▸ Show …). A lit (checked) toggle
@@ -1544,6 +1550,36 @@ button { font-family: inherit; }
   color: var(--text-3); padding: 2px 9px;
   font-family: var(--ui-font); font-size: 11px;
 }
+/* per-row wand: re-seed the pattern builder from this line (shows on hover;
+   opacity keeps the gutter alignment stable) */
+.mp-seed {
+  flex: none; align-self: center;
+  display: grid; place-items: center; width: 16px; height: 16px;
+  border: none; background: none; padding: 0;
+  color: var(--text-3); cursor: pointer; opacity: 0;
+}
+.mp-row:hover .mp-seed { opacity: 1; }
+.mp-seed:hover { color: var(--accent); }
+
+/* confirm box shown before re-seeding the builder from a preview line
+   replaces the pattern */
+.rebuild-confirm {
+  margin-top: 8px; padding: 9px 11px;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel-bg);
+  display: flex; flex-direction: column; gap: 5px;
+}
+.rebuild-confirm .rc-title { font-size: 12px; font-weight: 600; color: var(--text-2); }
+.rebuild-confirm .rc-row { display: flex; gap: 8px; align-items: baseline; }
+.rebuild-confirm .rc-tag {
+  flex: none; min-width: 70px; text-align: right;
+  color: var(--text-3); font-size: 11px;
+}
+.rebuild-confirm code {
+  font-family: var(--mono-font); font-size: 11.5px; color: var(--text-2);
+  overflow-wrap: anywhere;
+}
+.rebuild-confirm .rc-actions { display: flex; gap: 6px; justify-content: flex-end; margin-top: 3px; }
 
 /* ---- token chips ("Filter as pattern…") ---- */
 .pb-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
@@ -1573,6 +1609,11 @@ button { font-family: inherit; }
   background: rgba(80, 161, 79, 0.12); border-color: rgba(80, 161, 79, 0.45); color: #2f7d2e;
 }
 .gen-chip:not(.lit):hover { filter: brightness(0.96); }
+/* chips inside the current drag-to-merge selection */
+.gen-chip.sel {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-bg);
+}
 /* paused = pattern edited by hand; chips stay visible but inert */
 .gen-chips.paused { opacity: 0.55; }
 .gen-chips.paused .gen-chip { cursor: default; }

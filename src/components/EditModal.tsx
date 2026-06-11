@@ -1,8 +1,11 @@
 import { useState, useMemo, useEffect, useRef, useDeferredValue } from "react";
-import { Asterisk, Check, ChevronDown, ChevronRight, EyeOff, Parentheses, Pipette, Trash2, X } from "lucide-react";
+import { Asterisk, Check, ChevronDown, ChevronRight, EyeOff, Parentheses, Pipette, Trash2, Wand2, X } from "lucide-react";
 import type { Filter, FilterGroup, FieldType } from "../types";
-import { compile, scanMatches, groupSegments, deriveFields } from "../logic";
-import { tokenize, buildPattern, assignNames, generalPattern, type GenToken, type GenState } from "../lib/generalize";
+import { compile, scanMatches, groupSegments, deriveFields, escapeRegex } from "../logic";
+import {
+  tokenize, buildPattern, assignNames, generalPattern, mergeTokens, splitToken,
+  type GenToken, type GenState,
+} from "../lib/generalize";
 import { PALETTE, TEXT_SWATCHES, BG_SWATCHES } from "../data";
 
 const FIELD_TYPES: FieldType[] = ["string", "int", "hex", "float", "time"];
@@ -26,6 +29,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
@@ -82,7 +86,11 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
 
   // Width resize via the left/right edge handles. The modal is centre-anchored,
   // so width changes by 2×dx to keep the dragged edge under the cursor.
-  const [width, setWidth] = useState<number | null>(null);
+  // The chosen width persists across sessions (clamped to the current window).
+  const [width, setWidth] = useState<number | null>(() => {
+    const w = Number(localStorage.getItem("logsy.editModalWidth"));
+    return Number.isFinite(w) && w >= 440 ? Math.min(w, window.innerWidth - 40) : null;
+  });
   const resizeRef = useRef<{ startX: number; startW: number; side: "left" | "right" } | null>(null);
   const onResizeDown = (side: "left" | "right") => (e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault(); e.stopPropagation();
@@ -100,6 +108,7 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
     if (!resizeRef.current) return;
     resizeRef.current = null;
     e.currentTarget.releasePointerCapture(e.pointerId);
+    if (width != null) localStorage.setItem("logsy.editModalWidth", String(Math.round(width)));
   };
 
   useEffect(() => { patternRef.current?.focus(); patternRef.current?.select(); }, []);
@@ -175,6 +184,45 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
     }));
   const renameChip = (i: number, name: string) =>
     genTokens && applyTokens(genTokens.map((t, k) => (k === i ? { ...t, name } : t)));
+  const setChipState = (i: number, state: GenState) =>
+    genTokens && applyTokens(genTokens.map((t, k) => (k === i ? { ...t, state } : t)));
+
+  // Drag across chips to select a contiguous run; releasing merges it into one
+  // chip. A press-and-release on a single chip leaves a===b, so the regular
+  // click-to-cycle still fires (click needs down+up on the same element).
+  const [dragSel, setDragSel] = useState<{ a: number; b: number } | null>(null);
+  useEffect(() => {
+    if (!dragSel) return;
+    const up = () => {
+      setDragSel(null);
+      if (genTokens && dragSel.a !== dragSel.b) applyTokens(mergeTokens(genTokens, dragSel.a, dragSel.b));
+    };
+    document.addEventListener("pointerup", up);
+    return () => document.removeEventListener("pointerup", up);
+  });
+  const inDragSel = (i: number) =>
+    dragSel !== null && dragSel.a !== dragSel.b &&
+    i >= Math.min(dragSel.a, dragSel.b) && i <= Math.max(dragSel.a, dragSel.b);
+
+  // Right-click menu on a chip: pick the state directly (each option shows the
+  // regex it emits) and split a merged chip back into its original tokens.
+  const [chipMenu, setChipMenu] = useState<{ i: number; anchor: HTMLElement } | null>(null);
+
+  // Wand on a preview row: re-seed the builder from that line. Held here until
+  // the user confirms, because applying replaces the current pattern.
+  const [pendingSeed, setPendingSeed] = useState<{ line: number; tokens: GenToken[]; pattern: string } | null>(null);
+  const seedFromLine = (line: number, text: string) => {
+    const tokens = tokenize(text.trim());
+    setPendingSeed({ line, tokens, pattern: buildPattern(tokens) });
+  };
+  const applyPendingSeed = () => {
+    if (!pendingSeed) return;
+    setGenTokens(pendingSeed.tokens);
+    lastBuiltRef.current = pendingSeed.pattern;
+    // Chips emit regex, so seeding implies regex mode.
+    set({ pattern: pendingSeed.pattern, regex: true });
+    setPendingSeed(null);
+  };
   // Bulk-set every non-literal token at once; text tokens have no general form.
   const setAllChips = (state: "general" | "capture") =>
     genTokens &&
@@ -266,7 +314,9 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
                   </div>
                 )}
               </div>
-              <div className="pb-hint">click a token to cycle: exact → pattern → capture</div>
+              <div className="pb-hint">
+                click a token to cycle: exact → pattern → capture · right-click for options · drag across tokens to merge
+              </div>
               {/* Manual edits pause the chips rather than hiding them, so the
                   builder stays in place; "Rebuild" overwrites the manual edits. */}
               {!chipsActive && (
@@ -286,14 +336,30 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
                       key={i}
                       // "lit", not "fixed" — `fixed` is a Tailwind utility
                       // (position: fixed) and would yank the chip out of flow.
-                      className={"gen-chip " + t.state + (isText ? " lit" : "")}
+                      className={"gen-chip " + t.state + (isText ? " lit" : "") + (inDragSel(i) ? " sel" : "")}
                       title={
                         !chipsActive ? "Builder paused — rebuild from chips to edit"
-                          : isText ? "Literal text"
+                          : isText ? "Literal text — drag across tokens to merge"
                           : t.state === "exact" ? `Matches exactly "${t.raw}" — click to generalize`
                           : `Matches ${generalPattern(t)} — click to change`
                       }
                       onClick={clickable ? () => cycleChip(i) : undefined}
+                      onPointerDown={
+                        chipsActive
+                          ? (e) => {
+                              if (e.button === 0 && !(e.target as HTMLElement).closest("input"))
+                                setDragSel({ a: i, b: i });
+                            }
+                          : undefined
+                      }
+                      onPointerEnter={(e) => {
+                        if (dragSel && e.buttons & 1) setDragSel((s) => (s ? { ...s, b: i } : s));
+                      }}
+                      onContextMenu={
+                        chipsActive && (!isText || t.parts)
+                          ? (e) => { e.preventDefault(); setChipMenu({ i, anchor: e.currentTarget }); }
+                          : undefined
+                      }
                     >
                       <span className="gc-raw">{t.kind === "ws" ? "␣" : t.raw}</span>
                       {t.state === "capture" && (
@@ -315,6 +381,40 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
                   );
                 })}
               </div>
+              {chipMenu && genTokens && chipMenu.i < genTokens.length && (() => {
+                const t = genTokens[chipMenu.i];
+                // Resolve the name a capture WOULD get, so the menu can preview
+                // the named-group regex even while the chip isn't a capture yet.
+                const capName =
+                  assignNames(genTokens.map((x, k) => (k === chipMenu.i ? { ...x, state: "capture" as GenState } : x)))[chipMenu.i] ?? "name";
+                const trunc = (s: string) => (s.length > 30 ? s.slice(0, 29) + "…" : s);
+                const stateItem = (s: GenState, label: string, frag: string) => (
+                  <DropdownMenuItem onClick={() => setChipState(chipMenu.i, s)}>
+                    <span className="mi-ico">{t.state === s ? <Check size={15} /> : null}</span>
+                    {label}
+                    <code className="mi-frag">{trunc(frag)}</code>
+                  </DropdownMenuItem>
+                );
+                return (
+                  <DropdownMenu open onOpenChange={(o) => { if (!o) setChipMenu(null); }}>
+                    <DropdownMenuContent anchor={chipMenu.anchor} side="bottom" align="start" zIndex={1000}>
+                      {stateItem("exact", "Exact text", escapeRegex(t.raw))}
+                      {t.kind !== "text" && stateItem("general", "Pattern", generalPattern(t))}
+                      {t.kind !== "text" && t.kind !== "ws" &&
+                        stateItem("capture", "Capture field", `(?<${capName}>${generalPattern(t)})`)}
+                      {t.parts && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={() => applyTokens(splitToken(genTokens, chipMenu.i))}>
+                            <span className="mi-ico" />
+                            Split into {t.parts.length} tokens
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                );
+              })()}
             </div>
           )}
 
@@ -359,6 +459,14 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
                       <>
                         {scan.samples.map((s) => (
                           <div className="mp-row" key={s.n}>
+                            <button
+                              type="button"
+                              className="mp-seed"
+                              title="Build pattern chips from this line"
+                              onClick={() => seedFromLine(s.n, s.text)}
+                            >
+                              <Wand2 size={12} />
+                            </button>
                             <span className="mp-gut">{s.n}</span>
                             <span className="mp-txt">
                               {previewRe
@@ -388,6 +496,17 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
                   </div>
                 )}
               </>
+            )}
+            {pendingSeed && (
+              <div className="rebuild-confirm">
+                <div className="rc-title">Rebuild the pattern builder from line {pendingSeed.line}?</div>
+                <div className="rc-row"><span className="rc-tag">current</span><code>{draft.pattern}</code></div>
+                <div className="rc-row"><span className="rc-tag">new</span><code>{pendingSeed.pattern}</code></div>
+                <div className="rc-actions">
+                  <Button size="xs" variant="ghost" onClick={() => setPendingSeed(null)}>Cancel</Button>
+                  <Button size="xs" onClick={applyPendingSeed}>Replace &amp; edit chips</Button>
+                </div>
+              </div>
             )}
           </div>
 
