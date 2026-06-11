@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useDeferredValue } from "react";
-import { Check, ChevronDown, ChevronRight, EyeOff, Pipette, Trash2, X } from "lucide-react";
+import { Asterisk, Check, ChevronDown, ChevronRight, EyeOff, Parentheses, Pipette, Trash2, X } from "lucide-react";
 import type { Filter, FilterGroup, FieldType } from "../types";
 import { compile, scanMatches, groupSegments, deriveFields } from "../logic";
 import { tokenize, buildPattern, assignNames, generalPattern, type GenToken, type GenState } from "../lib/generalize";
@@ -175,6 +175,20 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
     }));
   const renameChip = (i: number, name: string) =>
     genTokens && applyTokens(genTokens.map((t, k) => (k === i ? { ...t, name } : t)));
+  // Bulk-set every non-literal token at once; text tokens have no general form.
+  const setAllChips = (state: "general" | "capture") =>
+    genTokens &&
+    applyTokens(genTokens.map((t) => {
+      if (t.kind === "text") return t;
+      // Whitespace can't be a named group — generalize it instead of capturing.
+      if (state === "capture" && t.kind === "ws") return { ...t, state: "general" };
+      return { ...t, state };
+    }));
+  // Toolbar disabled state: grey out the button whose target state already holds.
+  const generalizable = genTokens?.filter((t) => t.kind !== "text") ?? [];
+  const hasCapturable = generalizable.some((t) => t.kind !== "ws");
+  const allGeneral = generalizable.every((t) => t.state === "general");
+  const allCapture = generalizable.every((t) => (t.kind === "ws" ? t.state === "general" : t.state === "capture"));
 
   const valid = compiled.ok && draft.pattern.trim().length > 0;
 
@@ -229,12 +243,30 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
               hidden if the user turns the Regex toggle off, since chips emit regex */}
           {genTokens && draft.regex && (
             <div className="field">
-              <Label>
-                Pattern builder{" "}
-                <span style={{ color: "var(--text-3)", fontWeight: 400 }}>
-                  click a token to cycle: exact → pattern → capture
-                </span>
-              </Label>
+              <div className="pb-head">
+                <Label>Pattern builder</Label>
+                {chipsActive && generalizable.length > 0 && (
+                  <div className="pb-actions">
+                    <Button
+                      size="icon-xs" variant="ghost"
+                      disabled={allCapture || !hasCapturable}
+                      title="Capture every field as a named group"
+                      onClick={() => setAllChips("capture")}
+                    >
+                      <Parentheses size={13} />
+                    </Button>
+                    <Button
+                      size="icon-xs" variant="ghost"
+                      disabled={allGeneral}
+                      title="Generalize every token"
+                      onClick={() => setAllChips("general")}
+                    >
+                      <Asterisk size={13} />
+                    </Button>
+                  </div>
+                )}
+              </div>
+              <div className="pb-hint">click a token to cycle: exact → pattern → capture</div>
               {/* Manual edits pause the chips rather than hiding them, so the
                   builder stays in place; "Rebuild" overwrites the manual edits. */}
               {!chipsActive && (
