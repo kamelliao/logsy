@@ -1534,6 +1534,11 @@ button { font-family: inherit; }
 }
 
 /* ---- token chips ("Filter as pattern…") ---- */
+.pb-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 24px; }
+/* Label nested in .pb-head misses the .field > label rule — restore it here. */
+.pb-head > label { font-size: 12px; font-weight: 600; color: var(--text-2); margin: 0; }
+.pb-actions { display: flex; gap: 2px; flex: none; }
+.pb-hint { margin: 3px 0 8px; color: var(--text-3); font-size: 12px; }
 .gen-chips { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
 .gen-chip {
   display: inline-flex; align-items: center; gap: 4px;
