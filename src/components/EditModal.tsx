@@ -235,46 +235,54 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
                   click a token to cycle: exact → pattern → capture
                 </span>
               </Label>
-              {chipsActive ? (
-                <div className="gen-chips">
-                  {genTokens.map((t, i) => {
-                    const clickable = t.kind !== "text";
-                    return (
-                      <span
-                        key={i}
-                        // "lit", not "fixed" — `fixed` is a Tailwind utility
-                        // (position: fixed) and would yank the chip out of flow.
-                        className={"gen-chip " + t.state + (clickable ? "" : " lit")}
-                        title={
-                          !clickable ? "Literal text"
-                            : t.state === "exact" ? `Matches exactly "${t.raw}" — click to generalize`
-                            : `Matches ${generalPattern(t)} — click to change`
-                        }
-                        onClick={clickable ? () => cycleChip(i) : undefined}
-                      >
-                        <span className="gc-raw">{t.kind === "ws" ? "␣" : t.raw}</span>
-                        {t.state === "capture" && (
-                          <input
-                            className="gc-name"
-                            value={chipNames[i] ?? ""}
-                            size={Math.max(2, (chipNames[i] ?? "").length)}
-                            title="Field name"
-                            onClick={(e) => e.stopPropagation()}
-                            onChange={(e) => renameChip(i, e.target.value.replace(/[^A-Za-z0-9_]/g, ""))}
-                          />
-                        )}
-                      </span>
-                    );
-                  })}
-                </div>
-              ) : (
+              {/* Manual edits pause the chips rather than hiding them, so the
+                  builder stays in place; "Rebuild" overwrites the manual edits. */}
+              {!chipsActive && (
                 <div className="gen-chips-off">
-                  Pattern edited manually — chips are disabled.
+                  Pattern was edited by hand — the builder is paused.
                   <Button size="xs" variant="ghost" onClick={() => set({ pattern: lastBuiltRef.current })}>
-                    Restore
+                    Rebuild from chips
                   </Button>
                 </div>
               )}
+              <div className={"gen-chips" + (chipsActive ? "" : " paused")}>
+                {genTokens.map((t, i) => {
+                  const isText = t.kind === "text";
+                  const clickable = chipsActive && !isText;
+                  return (
+                    <span
+                      key={i}
+                      // "lit", not "fixed" — `fixed` is a Tailwind utility
+                      // (position: fixed) and would yank the chip out of flow.
+                      className={"gen-chip " + t.state + (isText ? " lit" : "")}
+                      title={
+                        !chipsActive ? "Builder paused — rebuild from chips to edit"
+                          : isText ? "Literal text"
+                          : t.state === "exact" ? `Matches exactly "${t.raw}" — click to generalize`
+                          : `Matches ${generalPattern(t)} — click to change`
+                      }
+                      onClick={clickable ? () => cycleChip(i) : undefined}
+                    >
+                      <span className="gc-raw">{t.kind === "ws" ? "␣" : t.raw}</span>
+                      {t.state === "capture" && (
+                        <input
+                          className="gc-name"
+                          // Bind to the raw user text, not the resolved name, so
+                          // the field can be cleared and retyped; the auto name
+                          // shows as a placeholder and only lands at build time.
+                          value={t.name ?? ""}
+                          size={Math.max(2, (t.name || chipNames[i] || "").length)}
+                          placeholder={chipNames[i] ?? ""}
+                          title="Field name"
+                          disabled={!chipsActive}
+                          onClick={(e) => e.stopPropagation()}
+                          onChange={(e) => renameChip(i, e.target.value.replace(/[^A-Za-z0-9_]/g, ""))}
+                        />
+                      )}
+                    </span>
+                  );
+                })}
+              </div>
             </div>
           )}
 
