@@ -14,7 +14,12 @@ export function compile(f: Filter): CompiledFilter {
     const flags = f.caseSensitive ? "g" : "gi";
     return { f, re: new RegExp(src, flags), ok: true };
   } catch (e) {
-    return { f, re: null, ok: false, err: (e as Error).message };
+    // Keep only the engine's reason — the pattern is already on screen. V8
+    // says "Invalid regular expression: /…/gi: reason" (echoing the whole
+    // source); JSC (bun tests) says "Invalid regular expression: reason".
+    const msg = (e as Error).message;
+    const m = /^Invalid regular expression: (?:\/[\s\S]*\/[a-z]*: )?([\s\S]+)$/.exec(msg);
+    return { f, re: null, ok: false, err: m ? m[1] : msg };
   }
 }
 

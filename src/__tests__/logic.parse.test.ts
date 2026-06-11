@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { deriveFields, coerceValue, compileAll, computeView } from "../logic";
+import { compile, deriveFields, coerceValue, compileAll, computeView } from "../logic";
 import type { Filter, FieldDef } from "../types";
 
 function filter(id: string, pattern: string, over: Partial<Filter> = {}): Filter {
@@ -23,6 +23,18 @@ test("deriveFields lists named groups once and guesses time for ts/time names", 
 
 test("deriveFields de-duplicates repeated group names", () => {
   expect(deriveFields("(?<a>x)(?<a>y)(?<b>z)").map((f) => f.name)).toEqual(["a", "b"]);
+});
+
+// --- compile ------------------------------------------------------------------
+
+test("compile error keeps only the engine reason, not the echoed pattern", () => {
+  const c = compile(filter("x", "boot: jump to app @ (?<.+)"));
+  expect(c.ok).toBe(false);
+  // Engine wording differs (V8 vs JSC) — just require the boilerplate prefix
+  // and the echoed pattern to be gone, leaving a non-empty reason.
+  expect(c.err).not.toContain("Invalid regular expression");
+  expect(c.err).not.toContain("boot: jump");
+  expect(c.err?.length).toBeGreaterThan(0);
 });
 
 // --- coerceValue ------------------------------------------------------------
