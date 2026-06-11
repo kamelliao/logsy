@@ -105,7 +105,7 @@ interface LogViewProps {
 export function LogView({
   file, view, viewMode, soloPattern, onExitSolo, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, compareLines, style,
   selectAllNonce, gotoSignal, onExportView, markers, markerJump, onSetMarker, onRemoveMarker,
-  onCloseFind, onBuildFilter, onAddToCompare, onRemoveFromCompare,
+  onToggleViewMode, onToggleFind, onCloseFind, onBuildFilter, onAddToCompare, onRemoveFromCompare,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -622,26 +622,41 @@ export function LogView({
           {view.hasHighlights && <span>{"  ·  "}<b>{matchedCount.toLocaleString()}</b>{" matched"}</span>}
           {hiddenByExclude > 0 && <span style={{ color: "var(--error)" }}>{"  ·  " + hiddenByExclude.toLocaleString() + " excluded"}</span>}
         </div>
-        {/* <div className="seg" style={{ marginLeft: 6 }}>
-          <button className={viewMode === "all" ? "on" : ""} onClick={() => onToggleViewMode("all")} title="Show every line; unmatched dimmed  (Ctrl+H)">Show all</button>
-          <button className={viewMode === "matches" ? "on" : ""} onClick={() => onToggleViewMode("matches")} title="Only lines matching a filter  (Ctrl+H)">Matches only</button>
-        </div> */}
-        <Tooltip>
-          <TooltipTrigger render={
-            <Button variant="ghost" size="icon-sm" onClick={exportView} style={{ marginLeft: 2 }} />
-          }>
-            <Download />
-          </TooltipTrigger>
-          <TooltipContent>Export filtered view</TooltipContent>
-        </Tooltip>
-        {/* <Tooltip>
-          <TooltipTrigger render={
-            <Button size="icon" onClick={onToggleFind} style={{ marginLeft: 2 }} />
-          }>
-            <Search size={16} />
-          </TooltipTrigger>
-          <TooltipContent>Find  (Ctrl+F)</TooltipContent>
-        </Tooltip> */}
+        <div className="lv-actions">
+          <Tooltip>
+            <TooltipTrigger render={
+              <button
+                className={"dock-btn lv-toggle" + (viewMode === "matches" ? " active" : "")}
+                disabled={!view.hasHighlights}
+                onClick={() => onToggleViewMode(viewMode === "matches" ? "all" : "matches")}
+              />
+            }>
+              <Filter size={14} />
+            </TooltipTrigger>
+            <TooltipContent>
+              {!view.hasHighlights ? "No filters to match" : viewMode === "matches" ? "Showing matched lines only  (Ctrl+H)" : "Show only matched lines  (Ctrl+H)"}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger render={
+              <button
+                className={"dock-btn lv-toggle" + (findOpen ? " active" : "")}
+                onClick={onToggleFind}
+              />
+            }>
+              <Search size={14} />
+            </TooltipTrigger>
+            <TooltipContent>Find  (Ctrl+F)</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger render={
+              <button className="dock-btn" onClick={exportView} />
+            }>
+              <Download size={14} />
+            </TooltipTrigger>
+            <TooltipContent>Export filtered view</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       {/* find bar */}

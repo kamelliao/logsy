@@ -324,6 +324,21 @@ button { font-family: inherit; }
 .lv-title { flex: 0 1 auto; min-width: 0; overflow: hidden; }
 .lv-stat b { color: var(--text-2); font-weight: 600; }
 
+/* Header action cluster — small, tightly packed icon buttons that sit flush
+   with the compact stat/encoding chips on the left. */
+.lv-actions { display: flex; align-items: center; gap: 4px; flex: 0 0 auto; margin-left: 2px; }
+/* The header buttons reuse .dock-btn verbatim (size, radius, grey→hover) so
+   they match the panel dock buttons; only disabled + toggled-on states layer on. */
+.lv-actions .dock-btn:disabled { opacity: 0.4; cursor: default; }
+.lv-actions .dock-btn:disabled:hover { background: none; color: var(--text-3); }
+
+/* Toggled-on state for the header's icon toggles (matches-only, find). */
+.logview-bar .lv-toggle.active {
+  background: var(--accent-bg);
+  color: #2c6ce6;
+}
+.logview-bar .lv-toggle.active:hover { background: var(--accent-bg-strong); }
+
 /* Small pill showing the file's detected text encoding, next to its name.
    Shares the view-only pill's height so the header chips align as a row. */
 .enc-badge {
@@ -1951,3 +1966,61 @@ button { font-family: inherit; }
 .about-link:hover { text-decoration: underline; }
 .about-copy-container { padding-top: 10px; }
 .about-copy { font-size: 11.5px; color: var(--text-3); }
+
+/* ============================================================
+   Loading overlay (reading a log from disk)
+   ============================================================ */
+.busy-overlay {
+  position: fixed; inset: 0; z-index: 650;
+  display: grid; place-items: center;
+  background: rgba(15, 18, 22, 0.32);
+  backdrop-filter: blur(1.5px);
+  animation: fade 0.12s ease;
+}
+.busy-card {
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 28px 44px; border-radius: 14px;
+  background: var(--panel-bg); box-shadow: var(--shadow-modal);
+}
+.busy-spinner {
+  width: 30px; height: 30px; border-radius: 50%;
+  border: 3px solid var(--border-strong); border-top-color: #2c6ce6;
+  animation: spin 0.7s linear infinite;
+}
+.busy-text {
+  font-size: 13px; font-weight: 600; color: var(--text);
+  max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   Keyboard shortcuts modal
+   ============================================================ */
+.shortcuts-box {
+  position: relative;
+  width: 620px; max-width: calc(100vw - 40px);
+  max-height: calc(100vh - 64px); overflow: auto;
+  background: #fff; border-radius: 14px; box-shadow: var(--shadow-modal);
+  padding: 22px 24px; animation: pop 0.13s ease;
+}
+.shortcuts-title {
+  font-size: 16px; font-weight: 700; color: var(--text);
+  letter-spacing: -0.01em; margin-bottom: 16px;
+}
+.shortcuts-grid {
+  display: grid; grid-template-columns: 1fr 1fr;
+  gap: 8px 32px;
+}
+.shortcuts-section { break-inside: avoid; margin-bottom: 8px; }
+.shortcuts-section-title {
+  font-size: 11px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.04em; color: var(--text-3);
+  padding-bottom: 5px; margin-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+.shortcuts-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 14px; padding: 3px 0; min-height: 24px;
+}
+.shortcuts-label { font-size: 12.5px; color: var(--text); }
+.shortcuts-keys { display: inline-flex; gap: 4px; flex: 0 0 auto; }
