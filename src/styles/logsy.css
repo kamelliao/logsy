@@ -1553,6 +1553,10 @@ button { font-family: inherit; }
   background: rgba(80, 161, 79, 0.12); border-color: rgba(80, 161, 79, 0.45); color: #2f7d2e;
 }
 .gen-chip:not(.lit):hover { filter: brightness(0.96); }
+/* paused = pattern edited by hand; chips stay visible but inert */
+.gen-chips.paused { opacity: 0.55; }
+.gen-chips.paused .gen-chip { cursor: default; }
+.gen-chips.paused .gen-chip:hover { filter: none; }
 .gc-name {
   border: none; background: rgba(255, 255, 255, 0.7); border-radius: 4px;
   font: inherit; font-size: 11px; color: inherit; padding: 0 3px; min-width: 2ch;
