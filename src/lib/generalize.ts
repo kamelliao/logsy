@@ -5,7 +5,7 @@
 
 import { escapeRegex } from "../logic";
 
-export type GenKind = "text" | "ws" | "int" | "float" | "hex" | "time";
+export type GenKind = "text" | "ws" | "int" | "float" | "hex" | "time" | "merged";
 
 /** exact = escaped literal · general = type pattern · capture = named group. */
 export type GenState = "exact" | "general" | "capture";
@@ -16,6 +16,8 @@ export interface GenToken {
   state: GenState;
   /** Capture-group name; when unset a default is assigned at build time. */
   name?: string;
+  /** The tokens a "merged" chip was built from; splitting restores them. */
+  parts?: GenToken[];
 }
 
 // Detection rules, tried in order at each position. Longer/more-specific
@@ -71,12 +73,14 @@ export function generalPattern(t: GenToken): string {
     case "float": return "\\d+\\.\\d+";
     case "int": return "\\d+";
     case "ws": return "\\s+";
+    // A merged run mixes kinds, so the only honest generalization is "anything".
+    case "merged": return ".+";
     default: return escapeRegex(t.raw);
   }
 }
 
 const DEFAULT_NAMES: Record<GenKind, string> = {
-  time: "ts", hex: "hex", int: "num", float: "val", text: "txt", ws: "ws",
+  time: "ts", hex: "hex", int: "num", float: "val", text: "txt", ws: "ws", merged: "msg",
 };
 
 const VALID_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -95,6 +99,31 @@ export function assignNames(tokens: GenToken[]): (string | undefined)[] {
     used.add(name);
     return name;
   });
+}
+
+/**
+ * Merge tokens[from..to] (inclusive, either order) into one "merged" chip.
+ * Starts exact so the rebuilt pattern still matches the sample literally;
+ * the originals ride along in `parts` so splitToken can restore them.
+ */
+export function mergeTokens(tokens: GenToken[], from: number, to: number): GenToken[] {
+  const [a, b] = from <= to ? [from, to] : [to, from];
+  if (b - a < 1 || a < 0 || b >= tokens.length) return tokens;
+  const parts = tokens.slice(a, b + 1);
+  const merged: GenToken = {
+    raw: parts.map((t) => t.raw).join(""),
+    kind: "merged",
+    state: "exact",
+    parts,
+  };
+  return [...tokens.slice(0, a), merged, ...tokens.slice(b + 1)];
+}
+
+/** Undo a merge: replace tokens[i] with the parts it was built from. */
+export function splitToken(tokens: GenToken[], i: number): GenToken[] {
+  const t = tokens[i];
+  if (!t?.parts) return tokens;
+  return [...tokens.slice(0, i), ...t.parts, ...tokens.slice(i + 1)];
 }
 
 /** Compose the regex source the current chip states describe. */
