@@ -2,7 +2,6 @@ import { useEffect, useState } from "react";
 import { FilePlus, FileText, PanelLeft, Settings, X } from "lucide-react";
 import type { AppState, LogFile } from "../types";
 import { Button } from "./ui/button";
-import { Kbd } from "./ui/kbd";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 
@@ -82,12 +81,13 @@ interface SidebarProps {
   onSetPanelPos: (pos: "bottom" | "right") => void;
   onSetMapColorMode: (mode: "bg" | "text") => void;
   onSetMapWidth: (w: number) => void;
+  onSetFontWeight: (w: number) => void;
 }
 
 export function Sidebar({
   state, collapsed, openScreen, onToggleCollapse, onSelectFile,
   onOpenFile, onDeleteFile,
-  onSetPanelPos, onSetMapColorMode, onSetMapWidth,
+  onSetPanelPos, onSetMapColorMode, onSetMapWidth, onSetFontWeight,
 }: SidebarProps) {
   return (
     <div className={"sidebar" + (collapsed ? " collapsed" : "")}>
@@ -156,12 +156,12 @@ export function Sidebar({
               </div>
             </div>
             <div className="sp-row">
-              <span>Find in view</span>
-              <Kbd>Ctrl F</Kbd>
-            </div>
-            <div className="sp-row">
-              <span>Toggle matches only</span>
-              <Kbd>Ctrl H</Kbd>
+              Log font weight
+              <div className="seg" style={{ marginLeft: 8 }}>
+                {[{ label: "Light", value: 300 }, { label: "Regular", value: 400 }, { label: "Medium", value: 500 }].map(({ label, value }) => (
+                  <button key={label} className={(state.fontWeight ?? 400) === value ? "on" : ""} onClick={() => onSetFontWeight(value)}>{label}</button>
+                ))}
+              </div>
             </div>
           </PopoverContent>
         </Popover>

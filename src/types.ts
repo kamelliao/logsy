@@ -99,6 +99,8 @@ export interface AppState {
   mapColorMode: "bg" | "text";
   mapWidth: number;
   fontSize: number;
+  /** Font weight of the log text (400 / 500 / 600). */
+  fontWeight: number;
   /** Show the line-number gutter in the log view (and include numbers when copying). */
   showLineNumbers: boolean;
   /** Where the comparison panel docks *when popped out* of the tabbed panel. */

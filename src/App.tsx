@@ -924,6 +924,7 @@ export function App() {
   }, []);
 
   const fontSize = state.fontSize ?? FONT_DEFAULT;
+  const fontWeight = state.fontWeight ?? 400;
   const showLineNumbers = state.showLineNumbers ?? true;
   const rowH = Math.round(fontSize * 1.5);
   const filterRowH = Math.round(fontSize * 1.58);
@@ -1326,7 +1327,7 @@ export function App() {
 
   return (
     <TooltipProvider delay={350}>
-      <div className="app" style={{ "--log-font-size": `${fontSize}px`, "--log-row-h": `${rowH}px`, "--filter-row-h": `${filterRowH}px` } as CSSProperties}>
+      <div className="app" style={{ "--log-font-size": `${fontSize}px`, "--log-font-weight": fontWeight, "--log-row-h": `${rowH}px`, "--filter-row-h": `${filterRowH}px` } as CSSProperties}>
         {/* titlebar */}
         <div className="titlebar" data-tauri-drag-region>
           <div className="brand">
@@ -1381,6 +1382,7 @@ export function App() {
             onSetPanelPos={(pos) => setState((s) => ({ ...s, panelPos: pos }))}
             onSetMapColorMode={(mode) => setState((s) => ({ ...s, mapColorMode: mode }))}
             onSetMapWidth={(w) => setState((s) => ({ ...s, mapWidth: w }))}
+            onSetFontWeight={(w) => setState((s) => ({ ...s, fontWeight: w }))}
           />
           {file && set && !openScreen ? (
             renderWorkspace()

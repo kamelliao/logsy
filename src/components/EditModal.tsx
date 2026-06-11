@@ -140,7 +140,7 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
   const scan = useMemo(
     () =>
       deferredCompiled.ok && deferredCompiled.re
-        ? scanMatches(lines, deferredCompiled.re)
+        ? scanMatches(lines, deferredCompiled.re, 100)
         : { count: 0, samples: [] },
     [deferredCompiled, lines]
   );
