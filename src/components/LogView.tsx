@@ -151,6 +151,9 @@ export function LogView({
   const isDragSelectingRef = useRef(false);
   const dragStartRiRef = useRef<number | null>(null);
   const dragBaseSetRef = useRef<Set<number>>(new Set());
+  // Paint direction for the active ctrl+drag, fixed at mousedown from the start
+  // row's state: "add" selects rows the drag covers, "remove" deselects them.
+  const dragModeRef = useRef<"add" | "remove">("add");
   // Auto-scroll state during ctrl+drag (mouse position + pending RAF id).
   const dragMouseYRef = useRef<number | null>(null);
   const dragScrollRAFRef = useRef<number | null>(null);
@@ -478,15 +481,21 @@ export function LogView({
   }
 
   function onRowClick(e: React.MouseEvent, ri: number, n: number) {
-    const s = window.getSelection();
-    if (s && !s.isCollapsed) return;
     if (e.altKey) { toggleExpand(n); return; } // Alt+click toggles the field table
+    // Shift+click selects the inclusive range from the anchor. Handled before the
+    // text-selection guard below: the browser extends a *text* selection on
+    // shift+click, so clear it and range-select rows instead.
     if (e.shiftKey && anchorRi != null) {
+      window.getSelection()?.removeAllRanges();
       const a = Math.min(anchorRi, ri), b = Math.max(anchorRi, ri);
       const set = new Set(e.ctrlKey || e.metaKey ? selectedLines : []);
       for (let i = a; i <= b && i < visible.length; i++) set.add(visible[i].n);
       setSelectedLines(set);
-    } else if (e.ctrlKey || e.metaKey) {
+      return;
+    }
+    const s = window.getSelection();
+    if (s && !s.isCollapsed) return; // a genuine text drag-selection — leave it be
+    if (e.ctrlKey || e.metaKey) {
       const set = new Set(selectedLines);
       if (set.has(n)) set.delete(n); else set.add(n);
       setSelectedLines(set);
@@ -499,10 +508,17 @@ export function LogView({
 
   function handleRowMouseDown(e: React.MouseEvent, ri: number) {
     if (e.altKey) { e.preventDefault(); return; } // don't start a text selection on Alt+click
+    if (e.shiftKey) { e.preventDefault(); return; } // shift+click range-selects rows, not text
     if (!(e.ctrlKey || e.metaKey)) return;
     e.preventDefault(); // prevent text selection during ctrl+drag
     dragStartRiRef.current = ri;
     isDragSelectingRef.current = false;
+    // Begin on a selected row → the drag deselects rows it covers; begin on an
+    // unselected row → it selects them. Fixing the direction here (rather than
+    // always adding) makes back-dragging symmetric and lets a drag clear lines a
+    // previous drag selected, by starting it on one of them.
+    const startN = visible[ri]?.n;
+    dragModeRef.current = startN != null && selectedLines.has(startN) ? "remove" : "add";
   }
 
   function handleRowMouseEnter(ri: number) {
@@ -514,10 +530,14 @@ export function LogView({
       dragBaseSetRef.current = new Set(selectedLines);
       setAnchorRi(start);
     }
-    // rebuild selection each move so dragging back over rows deselects them
+    // Rebuild from the pre-drag base each move so dragging back reverts rows to
+    // their original state; the paint direction decides add vs. remove.
     const a = Math.min(start, ri), b = Math.max(start, ri);
     const next = new Set(dragBaseSetRef.current);
-    for (let i = a; i <= b && i < visible.length; i++) next.add(visible[i].n);
+    for (let i = a; i <= b && i < visible.length; i++) {
+      if (dragModeRef.current === "remove") next.delete(visible[i].n);
+      else next.add(visible[i].n);
+    }
     setSelectedLines(next);
   }
 
@@ -569,7 +589,10 @@ export function LogView({
       }
       const lo = Math.min(start, ri), hi = Math.max(start, ri);
       const next = new Set(dragBaseSetRef.current);
-      for (let i = lo; i <= hi && i < vis.length; i++) next.add(vis[i].n);
+      for (let i = lo; i <= hi && i < vis.length; i++) {
+        if (dragModeRef.current === "remove") next.delete(vis[i].n);
+        else next.add(vis[i].n);
+      }
       setSelectedLines(next);
 
       dragScrollRAFRef.current = requestAnimationFrame(tick);
