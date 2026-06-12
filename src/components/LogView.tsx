@@ -191,7 +191,7 @@ export function LogView({
     overscan: 12,
   });
 
-  const findRe = useMemo(() => buildFindRe(query), [query]);
+  const findRe = useMemo(() => (findOpen ? buildFindRe(query) : null), [query, findOpen]);
 
   const hits = useMemo(() => {
     if (!findRe) return [];
