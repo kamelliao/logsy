@@ -717,6 +717,7 @@ export function FilterPanel({
       if (e.deltaY === 0) return;
       const target = e.target as HTMLElement;
       if (target.closest(".filter-list")) return; // already handled by its own overflow
+      if (target.closest(".group-tabs")) return; // tabs translate the wheel into horizontal scroll
       const list = panel!.querySelector<HTMLElement>(".filter-list");
       if (!list) return;
       const atTop = e.deltaY < 0 && list.scrollTop <= 0;
