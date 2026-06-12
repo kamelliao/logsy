@@ -128,8 +128,14 @@ export function App() {
 
   useEffect(() => { getVersion().then(setAppVersion).catch(() => { /* not under Tauri */ }); }, []);
 
+  // Persist on a short debounce — serializing the whole state synchronously on
+  // every edit added a fixed cost to each action on large filter sets. The
+  // unload flush (below, after stateRef) covers the trailing edits.
   useEffect(() => {
-    try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+    const t = setTimeout(() => {
+      try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+    }, 300);
+    return () => clearTimeout(t);
   }, [state]);
 
   const file = state.files.find((f) => f.id === state.activeFileId) ?? state.files[0] ?? null;
@@ -169,6 +175,20 @@ export function App() {
   // patchState / undo without stale closures.
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  // Flush the debounced persist when the window goes away (reload / close), so
+  // edits made within the debounce window aren't lost.
+  useEffect(() => {
+    const flush = () => {
+      try { localStorage.setItem(STATE_KEY, JSON.stringify(stateRef.current)); } catch { /* ignore */ }
+    };
+    window.addEventListener("beforeunload", flush);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      window.removeEventListener("beforeunload", flush);
+      window.removeEventListener("pagehide", flush);
+    };
+  }, []);
 
   // ---------- undo / redo ----------
   // Whole-AppState snapshots. Snapshots are immutable (patchState clones before

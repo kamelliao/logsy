@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, CSSProperties, ReactNode } from "react";
+import { memo, useState, useMemo, useRef, useEffect, useCallback, CSSProperties, ReactNode } from "react";
 import {
   ChevronDown, ChevronRight, Copy, Eye, EyeOff,
   Filter as FilterIcon, FileDown, FolderPlus, GripVertical,
@@ -16,7 +16,6 @@ import {
   useSensor,
   useSensors,
   useDroppable,
-  MeasuringStrategy,
   DragStartEvent,
   DragOverEvent,
   DragEndEvent,
@@ -31,7 +30,7 @@ import {
   horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { LogFile, FilterSet, FilterGroup, Filter, FilterLayout } from "../types";
+import type { LogFile, FilterSet, FilterGroup, Filter, FilterLayout, FieldDef } from "../types";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { ScrollArea } from "./ui/scroll-area";
@@ -247,18 +246,46 @@ function SetTab({ set, active, dot, canDelete, onSelect, onRename, onDelete, onD
 
 // ---- filter row ----
 
+/** Row actions, id-based and identity-stable so memoized rows never re-render
+ *  just because the panel did. */
+interface RowApi {
+  update: (id: string, patch: Partial<Filter>) => void;
+  edit: (id: string) => void;
+  remove: (id: string) => void;
+  duplicate: (id: string) => void;
+  viewOnly: (id: string) => void;
+}
+
 interface FilterRowProps {
   f: Filter;
   count: number;
   searching: boolean;
-  onUpdate: (patch: Partial<Filter>) => void;
-  onEdit: () => void;
-  onDelete: () => void;
-  onDuplicate: () => void;
-  onViewOnly: () => void;
+  api: RowApi;
 }
 
-function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicate, onViewOnly }: FilterRowProps) {
+function sameFields(a?: FieldDef[], b?: FieldDef[]): boolean {
+  if (a === b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i].name !== b[i].name || a[i].type !== b[i].type) return false;
+  return true;
+}
+// patchState structured-clones the whole state, so every filter object has a
+// fresh identity after any edit — rows must compare by value to skip renders.
+function sameFilter(a: Filter, b: Filter): boolean {
+  return a.id === b.id && a.pattern === b.pattern && a.description === b.description
+    && a.enabled === b.enabled && a.caseSensitive === b.caseSensitive && a.regex === b.regex
+    && a.exclude === b.exclude && a.textColor === b.textColor && a.bgColor === b.bgColor
+    && a.groupId === b.groupId && sameFields(a.fields, b.fields);
+}
+
+// Memoized: each row carries three floating-ui wrappers (hover card, context
+// menu, dropdown), so re-rendering all 100+ of them on every unrelated state
+// change is what made the panel feel sluggish on large sets.
+const FilterRow = memo(function FilterRow({ f, count, searching, api }: FilterRowProps) {
+  const onEdit = () => api.edit(f.id);
+  const onDelete = () => api.remove(f.id);
+  const onDuplicate = () => api.duplicate(f.id);
+  const onViewOnly = () => api.viewOnly(f.id);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: f.id,
     disabled: searching,
@@ -310,7 +337,7 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
         >
           <Checkbox
             checked={f.enabled}
-            onCheckedChange={(checked) => onUpdate({ enabled: !!checked })}
+            onCheckedChange={(checked) => api.update(f.id, { enabled: !!checked })}
             title={f.enabled ? "Enabled — click to disable" : "Disabled — click to enable"}
           />
         </span>
@@ -406,7 +433,9 @@ function FilterRow({ f, count, searching, onUpdate, onEdit, onDelete, onDuplicat
       </HoverCardContent>
     </HoverCard>
   );
-}
+}, (prev, next) =>
+  sameFilter(prev.f, next.f) && prev.count === next.count
+  && prev.searching === next.searching && prev.api === next.api);
 
 // ---- group ----
 
@@ -709,20 +738,20 @@ export function FilterPanel({
       ({ kind: "group"; group: FilterGroup } | { kind: "filter"; filter: Filter })[];
   const topIds = layout.top.map((e) => e.id);
 
+  // One identity-stable api object for every row; the latest handlers are read
+  // through a ref so the rows' memo never breaks when App re-renders.
+  const rowCbRef = useRef({ onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly });
+  rowCbRef.current = { onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly };
+  const rowApi = useMemo<RowApi>(() => ({
+    update: (id, patch) => rowCbRef.current.onUpdateFilter(id, patch),
+    edit: (id) => rowCbRef.current.onEditFilter(id),
+    remove: (id) => rowCbRef.current.onDeleteFilter(id),
+    duplicate: (id) => rowCbRef.current.onDuplicateFilter(id),
+    viewOnly: (id) => rowCbRef.current.onViewFilterOnly(id),
+  }), []);
+
   function renderRow(f: Filter) {
-    return (
-      <FilterRow
-        key={f.id}
-        f={f}
-        count={counts[f.id] ?? 0}
-        searching={searching}
-        onUpdate={(patch) => onUpdateFilter(f.id, patch)}
-        onEdit={() => onEditFilter(f.id)}
-        onDelete={() => onDeleteFilter(f.id)}
-        onDuplicate={() => onDuplicateFilter(f.id)}
-        onViewOnly={() => onViewFilterOnly(f.id)}
-      />
-    );
+    return <FilterRow key={f.id} f={f} count={counts[f.id] ?? 0} searching={searching} api={rowApi} />;
   }
 
   // ---- drag-and-drop (dnd-kit "multiple lists") ----
@@ -756,9 +785,19 @@ export function FilterPanel({
   // a loose row BEFORE the group (so it can become the top-most free filter); a
   // body appends into its group (or the top level); a row or group block uses
   // its live position in the model.
+  //
+  // `slot` records which index semantics the target carries — it decides the
+  // removal compensation at drop time:
+  //  - slot: true  → "insert before this position" (header upper half, body
+  //    append, bottomslot). Removing the dragged row from earlier in the same
+  //    container shifts the slot down by one, so the index must be decremented.
+  //  - slot: false → an index measured *over an item* (locate). dnd-kit reports
+  //    it against the rects captured at drag start, which is exactly
+  //    arrayMove's `to`: remove-then-insert at that index as-is. Decrementing
+  //    here made every downward same-container drop land one row short.
   const resolveDrop = (
     over: DragEndEvent["over"], m: FilterLayout, pointerY?: number,
-  ): { container: string; index: number } | null => {
+  ): { container: string; index: number; slot: boolean } | null => {
     if (!over) return null;
     const d = over.data.current as { type?: string; groupId?: string | null } | undefined;
     if (d?.type === "header") {
@@ -766,18 +805,19 @@ export function FilterPanel({
       const r = over.rect;
       if (pointerY != null && r && pointerY < r.top + r.height / 2) {
         const idx = m.top.findIndex((e) => e.id === gid);
-        return { container: "__top__", index: idx < 0 ? m.top.length : idx };
+        return { container: "__top__", index: idx < 0 ? m.top.length : idx, slot: true };
       }
-      return { container: gid, index: (m.inGroup[gid] ?? []).length };
+      return { container: gid, index: (m.inGroup[gid] ?? []).length, slot: true };
     }
     if (d?.type === "body") {
       const gid = (d.groupId ?? null) as string | null;
       return gid === null
-        ? { container: "__top__", index: m.top.length }
-        : { container: gid, index: (m.inGroup[gid] ?? []).length };
+        ? { container: "__top__", index: m.top.length, slot: true }
+        : { container: gid, index: (m.inGroup[gid] ?? []).length, slot: true };
     }
-    if (d?.type === "bottomslot") return { container: "__top__", index: m.top.length };
-    return locate(String(over.id), m);
+    if (d?.type === "bottomslot") return { container: "__top__", index: m.top.length, slot: true };
+    const loc = locate(String(over.id), m);
+    return loc ? { ...loc, slot: false } : null;
   };
 
   const cloneModel = (m: FilterLayout): FilterLayout => ({
@@ -846,12 +886,11 @@ export function FilterPanel({
         if (cur.type === "group") {
           next.top = arrayMove(next.top, src.index, target.index);
         } else {
-          // Filter: remove then insert at the resolved slot, compensating for the
-          // gap the removal leaves when the source precedes the target in the same
-          // container. Unifies same- and cross-container drops (incl. popping a
-          // filter out to a loose row before a group).
+          // Filter: remove then insert at the resolved index. Only slot-semantics
+          // targets need the removal-gap compensation (see resolveDrop) — item
+          // targets already carry arrayMove semantics.
           let idx = target.index;
-          if (src.container === target.container && src.index < idx) idx -= 1;
+          if (target.slot && src.container === target.container && src.index < idx) idx -= 1;
           removeFromModel(next, activeId);
           insertIntoModel(next, target.container, activeId, idx);
         }
@@ -993,7 +1032,10 @@ export function FilterPanel({
         <DndContext
           sensors={sensors}
           collisionDetection={collisionDetection}
-          measuring={{ droppable: { strategy: MeasuringStrategy.Always } }}
+          // Default measuring (WhileDragging) is enough: SortableContext queues a
+          // re-measure itself when its items change mid-drag, and Always would
+          // also re-measure every droppable (100+ rows) outside drags — e.g. on
+          // each search keystroke as rows mount/unmount.
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
