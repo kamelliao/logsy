@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useCallback, useReducer, useRef, Fragment, CSSProperties, ReactNode } from "react";
+import { useState, useMemo, useEffect, useCallback, useReducer, useRef, useTransition, Fragment, CSSProperties, ReactNode } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderOpen, Minus, PanelBottom, PanelBottomClose, PanelRightClose, PanelLeftOpen, PanelRight, PanelTopOpen, Square, Upload, X } from "lucide-react";
 import { tinykeys } from "tinykeys";
@@ -107,6 +107,9 @@ export function App() {
   // Bumped whenever a file's lines land in `linesStore`, to re-derive `lines`.
   const [linesVersion, setLinesVersion] = useState(0);
   const [dragOver, setDragOver] = useState(false);
+  // Marks a non-urgent file switch so React can show an overlay while computing
+  // the new view rather than silently freezing for large files.
+  const [isSwitchingFile, startFileSwitchTransition] = useTransition();
   // When set, the center shows a blank "open a file" drop screen instead of the
   // active workspace (triggered by the sidebar's Open File button).
   const [openScreen, setOpenScreen] = useState(false);
@@ -268,7 +271,10 @@ export function App() {
   }
 
   // ---------- files ----------
-  const selectFile = (fid: string) => { setOpenScreen(false); setState((s) => ({ ...s, activeFileId: fid })); };
+  const selectFile = (fid: string) => {
+    setOpenScreen(false);
+    startFileSwitchTransition(() => setState((s) => ({ ...s, activeFileId: fid })));
+  };
 
   // Closing a log discards its workspace (filters, sets) — confirm first.
   const deleteFile = async (fid: string) => {
@@ -320,6 +326,7 @@ export function App() {
         continue;
       }
       pushRecent("recentFiles", path);
+      await nextPaint();   // yield again so the overlay stays visible before the synchronous line-split
       const lns = splitLines(text);
       const id = uid("file");
       linesStore[id] = lns;
@@ -1476,6 +1483,16 @@ export function App() {
             <div className="busy-card">
               <div className="busy-spinner" />
               <div className="busy-text">Opening {busy.name}…</div>
+            </div>
+          </div>
+        )}
+
+        {/* file-switch overlay — shown while React computes the view for a large file */}
+        {isSwitchingFile && !busy && (
+          <div className="busy-overlay">
+            <div className="busy-card">
+              <div className="busy-spinner" />
+              <div className="busy-text">Loading…</div>
             </div>
           </div>
         )}
