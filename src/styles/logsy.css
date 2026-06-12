@@ -481,8 +481,6 @@ button { font-family: inherit; }
 }
 .fp-vals td { color: var(--text); }
 .fp-vals td.num { text-align: right; font-variant-numeric: tabular-nums; }
-/* Highlights sit one weight step above the log body (which is user-adjustable). */
-.log-hit { font-weight: calc(var(--log-font-weight, 400) + 100); border-radius: 2px; padding: 0 0.5px; }
 .find-hit { background: #ffe178; box-shadow: inset 0 0 0 1px #e0b020; border-radius: 2px; }
 .find-hit.current { background: #ff9d3d; box-shadow: inset 0 0 0 1.5px #d9701a; }
 
