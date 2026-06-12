@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FilePlus, FileText, PanelLeft, Settings, X } from "lucide-react";
+import { ChevronRight, FilePlus, FileText, PanelLeft, Settings, X } from "lucide-react";
 import type { AppState, LogFile } from "../types";
 import { Button } from "./ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
@@ -82,12 +82,14 @@ interface SidebarProps {
   onSetMapColorMode: (mode: "bg" | "text") => void;
   onSetMapWidth: (w: number) => void;
   onSetFontWeight: (w: number) => void;
+  onManagePalette: () => void;
 }
 
 export function Sidebar({
   state, collapsed, openScreen, onToggleCollapse, onSelectFile,
   onOpenFile, onDeleteFile,
   onSetPanelPos, onSetMapColorMode, onSetMapWidth, onSetFontWeight,
+  onManagePalette,
 }: SidebarProps) {
   return (
     <div className={"sidebar" + (collapsed ? " collapsed" : "")}>
@@ -162,6 +164,12 @@ export function Sidebar({
                   <button key={label} className={(state.fontWeight ?? 400) === value ? "on" : ""} onClick={() => onSetFontWeight(value)}>{label}</button>
                 ))}
               </div>
+            </div>
+            <div className="sp-sep" />
+            <div className="sp-row sp-row-link" onClick={onManagePalette} role="button" tabIndex={0}
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onManagePalette(); }}>
+              Color palette
+              <ChevronRight size={14} style={{ color: "var(--text-3)" }} />
             </div>
           </PopoverContent>
         </Popover>

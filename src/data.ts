@@ -1,5 +1,20 @@
 import type { AppState, Filter, PaletteEntry } from "./types";
 
+export const DEFAULT_PALETTE: PaletteEntry[] = [
+  { name: "default", text: "#1c1f23", bg: "#ffffff" },
+  { name: "red",    text: "#b42318", bg: "#fce4e4" },
+  { name: "orange", text: "#b54708", bg: "#fcebd9" },
+  { name: "amber",  text: "#854d0e", bg: "#fef7c3" },
+  { name: "green",  text: "#166534", bg: "#dcfce7" },
+  { name: "teal",   text: "#115e59", bg: "#ccfbf1" },
+  { name: "blue",   text: "#1e40af", bg: "#dbeafe" },
+  { name: "indigo", text: "#3730a3", bg: "#e0e7ff" },
+  { name: "violet", text: "#6b21a8", bg: "#f3e8ff" },
+  { name: "pink",   text: "#9d174d", bg: "#fce7f3" },
+  { name: "slate",  text: "#334155", bg: "#e7ebf0" },
+];
+
+/** @deprecated Use DEFAULT_PALETTE */
 export const PALETTE: PaletteEntry[] = [
   { name: "default", text: "#1c1f23", bg: "#ffffff" },
   { name: "red",    text: "#b42318", bg: "#fce4e4" },
@@ -26,6 +41,7 @@ export interface ColorOption {
 // apart, so the options need to actually look different.
 export const TEXT_SWATCHES: ColorOption[] = [
   { name: "ink",     color: "#1c1f23" },
+  { name: "white",   color: "#ffffff" },
   { name: "red",     color: "#dc2626" },
   { name: "orange",  color: "#ea580c" },
   { name: "amber",   color: "#d97706" },
