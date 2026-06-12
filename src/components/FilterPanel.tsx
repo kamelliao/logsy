@@ -707,6 +707,28 @@ export function FilterPanel({
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
+  // When the dock is narrow, wheel events over the toolbar / tabs have no scrollable
+  // ancestor — forward them to the filter list so the list still scrolls.
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel) return;
+    function onWheel(e: WheelEvent) {
+      if (e.deltaY === 0) return;
+      const target = e.target as HTMLElement;
+      if (target.closest(".filter-list")) return; // already handled by its own overflow
+      const list = panel!.querySelector<HTMLElement>(".filter-list");
+      if (!list) return;
+      const atTop = e.deltaY < 0 && list.scrollTop <= 0;
+      const atBottom = e.deltaY > 0 && list.scrollTop >= list.scrollHeight - list.clientHeight;
+      if (atTop || atBottom) return;
+      e.preventDefault();
+      list.scrollTop += e.deltaY;
+    }
+    panel.addEventListener("wheel", onWheel, { passive: false });
+    return () => panel.removeEventListener("wheel", onWheel);
+  }, []);
+
   const q = search.trim().toLowerCase();
   const filters = set.filters;
   const groups = set.groups;
@@ -949,7 +971,7 @@ export function FilterPanel({
   }
 
   return (
-    <div className="filter-panel" style={style}>
+    <div className="filter-panel" style={style} ref={panelRef}>
       {/* group tabs */}
       <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleSetDragEnd}>
         <SortableContext items={file.sets.map((g) => g.id)} strategy={horizontalListSortingStrategy}>

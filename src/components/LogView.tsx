@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "react";
-import { ArrowDown, ArrowUp, Bookmark, ChevronDown, ChevronRight, Columns3, Download, Eye, Filter, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bookmark, ChevronDown, ChevronRight, Columns3, Copy, Download, Eye, Filter, Search, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { LogFile, ViewResult, CompiledFilter, FieldValue, Marker, MarkerIcon } from "../types";
@@ -154,6 +154,9 @@ export function LogView({
   const isDragSelectingRef = useRef(false);
   const dragStartRiRef = useRef<number | null>(null);
   const dragBaseSetRef = useRef<Set<number>>(new Set());
+  // Auto-scroll state during ctrl+drag (mouse position + pending RAF id).
+  const dragMouseYRef = useRef<number | null>(null);
+  const dragScrollRAFRef = useRef<number | null>(null);
 
   const visible = useMemo(() => {
     const rows = view.rows.filter((r) => !r.excluded);
@@ -175,6 +178,14 @@ export function LogView({
     return Math.ceil(digits * charWidth(fontSize)) + 35 + 12; // marker + chevron lanes + right padding
   }, [file.lineCount, fontSize]);
   const minW = (showLineNumbers ? gutterW : 0) + 12 + Math.ceil(maxLen * charWidth(fontSize)) + 28;
+
+  // Stable mirrors of render-time values for use inside stable RAF/effect closures.
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  const rowHRef = useRef(rowH);
+  rowHRef.current = rowH;
+  const selectedLinesRef = useRef(selectedLines);
+  selectedLinesRef.current = selectedLines;
 
   const rowVirtualizer = useVirtualizer({
     count: visible.length,
@@ -517,9 +528,66 @@ export function LogView({
     function onUp() {
       isDragSelectingRef.current = false;
       dragStartRiRef.current = null;
+      dragMouseYRef.current = null;
+      if (dragScrollRAFRef.current !== null) {
+        cancelAnimationFrame(dragScrollRAFRef.current);
+        dragScrollRAFRef.current = null;
+      }
     }
     window.addEventListener("mouseup", onUp);
     return () => window.removeEventListener("mouseup", onUp);
+  }, []);
+
+  // Auto-scroll during ctrl+drag: when the cursor goes above or below the scroll
+  // container's edges, scroll and extend the selection to the row now at that edge.
+  useEffect(() => {
+    function tick() {
+      dragScrollRAFRef.current = null;
+      const el = scrollRef.current;
+      const mouseY = dragMouseYRef.current;
+      const start = dragStartRiRef.current;
+      if (!el || start === null || mouseY === null) return;
+
+      const rect = el.getBoundingClientRect();
+      const EDGE = 60;
+      const MAX_SPEED = 12;
+      let delta = 0;
+      if (mouseY < rect.top + EDGE) delta = -MAX_SPEED * Math.min(1, (rect.top + EDGE - mouseY) / EDGE);
+      else if (mouseY > rect.bottom - EDGE) delta = MAX_SPEED * Math.min(1, (mouseY - (rect.bottom - EDGE)) / EDGE);
+
+      if (Math.abs(delta) < 0.5) return; // cursor not near edge — let normal mouseenter handle selection
+
+      el.scrollTop = Math.max(0, Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + delta));
+
+      // Find which row is now at the clamped cursor position and extend selection.
+      const clampedY = Math.max(rect.top, Math.min(rect.bottom - 1, mouseY));
+      const vis = visibleRef.current;
+      const rh = rowHRef.current;
+      const ri = Math.max(0, Math.min(vis.length - 1, Math.floor((el.scrollTop + (clampedY - rect.top)) / rh)));
+
+      if (!isDragSelectingRef.current) {
+        isDragSelectingRef.current = true;
+        dragBaseSetRef.current = new Set(selectedLinesRef.current);
+        setAnchorRi(start);
+      }
+      const lo = Math.min(start, ri), hi = Math.max(start, ri);
+      const next = new Set(dragBaseSetRef.current);
+      for (let i = lo; i <= hi && i < vis.length; i++) next.add(vis[i].n);
+      setSelectedLines(next);
+
+      dragScrollRAFRef.current = requestAnimationFrame(tick);
+    }
+
+    function onMove(e: MouseEvent) {
+      if (dragStartRiRef.current === null) return;
+      dragMouseYRef.current = e.clientY;
+      if (dragScrollRAFRef.current === null) {
+        dragScrollRAFRef.current = requestAnimationFrame(tick);
+      }
+    }
+
+    window.addEventListener("mousemove", onMove);
+    return () => window.removeEventListener("mousemove", onMove);
   }, []);
 
   function handleMouseUp() {
@@ -861,6 +929,11 @@ export function LogView({
         const notIn = parsed.filter((n) => !compareLines.has(n));
         return (
           <div className="menu-pop row-menu" style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 60 }}>
+            <div className="menu-item" onClick={() => { copySelectedLines(); setRowMenu(null); }}>
+              <span className="mi-ico"><Copy size={14} /></span>
+              {selectedLines.size > 1 && selectedLines.has(menu.n) ? `Copy ${selectedLines.size} lines` : "Copy line"}
+            </div>
+            <div className="menu-sep" />
             {markerMap.has(menu.n) ? (
               <>
                 <div className="menu-item" onClick={() => { openMarkerEditor(menu.n, menu.x, menu.y); setRowMenu(null); }}>
