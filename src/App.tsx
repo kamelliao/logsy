@@ -9,8 +9,9 @@ import { save, open, confirm } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import type { AppState, LogFile, FilterSet, FilterGroup, Filter, FilterLayout, MarkerIcon } from "./types";
 import {
-  uid, makeFilter, filterFromTatAttrs, initialState, normalizeState,
+  uid, makeFilter, filterFromTatAttrs, initialState, normalizeState, DEFAULT_PALETTE,
 } from "./data";
+import type { PaletteEntry } from "./types";
 
 // Open accepts native Logsy JSON plus TextAnalysisTool.NET (.tat/.xml) for import;
 // Save always writes Logsy JSON, so it only offers .json.
@@ -45,6 +46,7 @@ import { Sidebar } from "./components/Sidebar";
 import { LogView } from "./components/LogView";
 import { FilterPanel } from "./components/FilterPanel";
 import { EditModal } from "./components/EditModal";
+import { PaletteModal } from "./components/PaletteModal";
 import { CompareTable } from "./components/CompareTable";
 import { BookmarksPanel } from "./components/BookmarksPanel";
 import { MenuPopup, type MenuItem } from "./components/MenuPopup";
@@ -523,7 +525,14 @@ export function App() {
   const addGroup = () => patchState((s) => {
     if (!file || !set) return;
     const g = withSet(s, file.id, set.id);
-    const grp = { id: uid("grp"), name: "New group", collapsed: false };
+    const names = new Set(g.groups.map((x) => x.name));
+    let name = "New group";
+    if (names.has(name)) {
+      let n = 1;
+      while (names.has(`New group ${n}`)) n++;
+      name = `New group ${n}`;
+    }
+    const grp = { id: uid("grp"), name, collapsed: false };
     g.groups.push(grp);
     g.order.push(grp.id);
   });
@@ -577,6 +586,13 @@ export function App() {
     if (!file || !set) return;
     withSet(s, file.id, set.id).filters.forEach((f) => { if (f.groupId === gid) f.enabled = enabled; });
   });
+
+  // ---------- palette ----------
+  const effectivePalette: PaletteEntry[] = state.customPalette ?? DEFAULT_PALETTE;
+  const [paletteModalOpen, setPaletteModalOpen] = useState(false);
+
+  const applyPalette = (palette: PaletteEntry[]) =>
+    setState((s) => ({ ...s, customPalette: palette }));
 
   // ---------- filters ----------
   const updateFilter = (fid: string, patch: Partial<Filter>) => patchState((s) => {
@@ -1220,14 +1236,14 @@ export function App() {
               <button className={"ptab" + (activePanelTab === "filters" ? " active" : "")} onClick={() => selectPanelTab("filters")}>
                 Filters
               </button>
+              <button className={"ptab" + (activePanelTab === "bookmarks" ? " active" : "")} onClick={() => selectPanelTab("bookmarks")}>
+                Bookmarks{markers.length > 0 && <span className="ptab-badge">{markers.length}</span>}
+              </button>
               {compareTabAvailable && (
                 <button className={"ptab" + (activePanelTab === "compare" ? " active" : "")} onClick={() => selectPanelTab("compare")}>
                   Compare<span className="ptab-badge">{compareRows.length}</span>
                 </button>
               )}
-              <button className={"ptab" + (activePanelTab === "bookmarks" ? " active" : "")} onClick={() => selectPanelTab("bookmarks")}>
-                Bookmarks{markers.length > 0 && <span className="ptab-badge">{markers.length}</span>}
-              </button>
             </div>
             <div className="dock-spacer" />
             {activePanelTab === "compare" && (
@@ -1403,6 +1419,7 @@ export function App() {
             onSetMapColorMode={(mode) => setState((s) => ({ ...s, mapColorMode: mode }))}
             onSetMapWidth={(w) => setState((s) => ({ ...s, mapWidth: w }))}
             onSetFontWeight={(w) => setState((s) => ({ ...s, fontWeight: w }))}
+            onManagePalette={() => setPaletteModalOpen(true)}
           />
           {file && set && !openScreen ? (
             renderWorkspace()
@@ -1432,10 +1449,24 @@ export function App() {
             isNew={editing.isNew}
             genSeed={editing.genSeed}
             lines={lines}
-            groups={set.groups}
+            groups={set.order
+              .map((id) => set.groups.find((g) => g.id === id))
+              .filter((g): g is FilterGroup => !!g)
+              .concat(set.groups.filter((g) => !set.order.includes(g.id)))
+            }
+            palette={effectivePalette}
             onSave={saveFilter}
             onClose={() => setEditing(null)}
             onDelete={() => deleteFilter(editing.filter.id)}
+          />
+        )}
+
+        {/* palette management modal */}
+        {paletteModalOpen && (
+          <PaletteModal
+            palette={effectivePalette}
+            onChange={applyPalette}
+            onClose={() => setPaletteModalOpen(false)}
           />
         )}
 

@@ -119,6 +119,9 @@ export interface AppState {
    * group signature, inner key is the panel id.
    */
   panelSizes: Record<string, Record<string, number>>;
+  /** User-customised quick-access colour palette (swatches row in Edit filter).
+   *  undefined = use the built-in defaults. */
+  customPalette?: PaletteEntry[];
 }
 
 export interface PaletteEntry {

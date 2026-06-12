@@ -1,12 +1,13 @@
 import { useState, useMemo, useEffect, useRef, useDeferredValue } from "react";
 import { Asterisk, Check, ChevronDown, ChevronRight, EyeOff, Parentheses, Pipette, Trash2, Wand2, X } from "lucide-react";
-import type { Filter, FilterGroup, FieldType } from "../types";
+import type { Filter, FilterGroup, FieldType, PaletteEntry } from "../types";
 import { compile, scanMatches, groupSegments, deriveFields, escapeRegex } from "../logic";
 import {
   tokenize, buildPattern, assignNames, generalPattern, mergeTokens, splitToken,
   type GenToken, type GenState,
 } from "../lib/generalize";
-import { PALETTE, TEXT_SWATCHES, BG_SWATCHES } from "../data";
+import { TEXT_SWATCHES, BG_SWATCHES } from "../data";
+
 
 const FIELD_TYPES: FieldType[] = ["string", "int", "hex", "float", "time"];
 
@@ -62,6 +63,7 @@ interface EditModalProps {
   lines: string[];
   isNew: boolean;
   groups: FilterGroup[];
+  palette: PaletteEntry[];
   /**
    * Raw text the filter was generalized from ("Filter as pattern…" in the log
    * view). When present, a token-chips row lets the user cycle each detected
@@ -74,7 +76,7 @@ interface EditModalProps {
   onDelete: () => void;
 }
 
-export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClose, onDelete }: EditModalProps) {
+export function EditModal({ filter, lines, isNew, groups, palette, genSeed, onSave, onClose, onDelete }: EditModalProps) {
   const [draft, setDraft] = useState<Filter>({ ...filter });
   // User-chosen types for named groups, keyed by group name (survives regex edits).
   const [fieldTypes, setFieldTypes] = useState<Record<string, FieldType>>(
@@ -270,7 +272,7 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
     else onClose();
   }
 
-  const selectedPal = PALETTE.find(
+  const selectedPal = palette.find(
     (p) => p.text.toLowerCase() === draft.textColor.toLowerCase() && p.bg.toLowerCase() === draft.bgColor.toLowerCase()
   );
 
@@ -592,15 +594,14 @@ export function EditModal({ filter, lines, isNew, groups, genSeed, onSave, onClo
             <div className="field">
               <Label>Color</Label>
               <div className="swatches">
-                {PALETTE.map((p) => (
+                {palette.map((p, i) => (
                   <button
-                    key={p.name}
-                    className={"swatch" + (selectedPal?.name === p.name ? " sel" : "")}
+                    key={i}
+                    className={"swatch" + (selectedPal === p ? " sel" : "")}
                     style={{ background: p.bg, color: p.text }}
                     title={"Preset: " + p.name}
                     onClick={() => set({ textColor: p.text, bgColor: p.bg })}
                   >
-                    {/* "A" previews the text colour over the background; selection shows as the ring. */}
                     <span className="sw-a">A</span>
                   </button>
                 ))}
