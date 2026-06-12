@@ -2,8 +2,8 @@ import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "
 import { ArrowDown, ArrowUp, Bookmark, ChevronDown, ChevronRight, Columns3, Copy, Download, Eye, Filter, Search, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { LogFile, ViewResult, CompiledFilter, FieldValue, Marker, MarkerIcon } from "../types";
-import { escapeRegex, segments } from "../logic";
+import type { LogFile, ViewResult, FieldValue, Marker, MarkerIcon } from "../types";
+import { escapeRegex } from "../logic";
 import { MARKER_ICONS, MarkerGlyph, markerColor } from "./markers";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -24,30 +24,27 @@ function buildFindRe(q: string): RegExp | null {
   try { return new RegExp(escapeRegex(q), "gi"); } catch { return null; }
 }
 
-function renderLine(text: string, winner: CompiledFilter | null, findRe: RegExp | null, currentKey: string | null, ri: number) {
-  if (findRe) {
-    findRe.lastIndex = 0;
-    const out: (string | ReactNode)[] = [];
-    let last = 0, k = 0, guard = 0;
-    let m: RegExpExecArray | null;
-    while ((m = findRe.exec(text)) !== null) {
-      if (m.index > last) out.push(text.slice(last, m.index));
-      const key = `${ri}:${m.index}`;
-      out.push(<span key={"h" + k} className={"find-hit" + (key === currentKey ? " current" : "")}>{m[0]}</span>);
-      last = m.index + m[0].length;
-      if (m[0].length === 0) findRe.lastIndex++;
-      k++;
-      if (++guard > 4000) break;
-    }
-    if (last < text.length) out.push(text.slice(last));
-    return out.length ? out : text;
+// Highlights find hits only. Filter matches used to get their matched text
+// wrapped in .log-hit spans here, but that re-ran every winner's regex on every
+// visible row each scroll frame — dropped for scroll smoothness, the row's
+// background color already marks the match.
+function renderLine(text: string, findRe: RegExp | null, currentKey: string | null, ri: number) {
+  if (!findRe) return text;
+  findRe.lastIndex = 0;
+  const out: (string | ReactNode)[] = [];
+  let last = 0, k = 0, guard = 0;
+  let m: RegExpExecArray | null;
+  while ((m = findRe.exec(text)) !== null) {
+    if (m.index > last) out.push(text.slice(last, m.index));
+    const key = `${ri}:${m.index}`;
+    out.push(<span key={"h" + k} className={"find-hit" + (key === currentKey ? " current" : "")}>{m[0]}</span>);
+    last = m.index + m[0].length;
+    if (m[0].length === 0) findRe.lastIndex++;
+    k++;
+    if (++guard > 4000) break;
   }
-  if (winner?.re) {
-    const segs = segments(text, winner.re);
-    if (segs.length === 1 && !segs[0].hit) return text;
-    return segs.map((s, i) => s.hit ? <span key={i} className="log-hit">{s.t}</span> : s.t);
-  }
-  return text;
+  if (last < text.length) out.push(text.slice(last));
+  return out.length ? out : text;
 }
 
 /** Compact 2-row table for one line's parsed fields: names on top, values below. */
@@ -872,7 +869,7 @@ export function LogView({
                         )}
                         {showLineNumbers && <span className="log-gut">{r.n}</span>}
                       </span>
-                      <span className="log-txt">{renderLine(r.text, w, findRe, currentKey, vItem.index)}</span>
+                      <span className="log-txt">{renderLine(r.text, findRe, currentKey, vItem.index)}</span>
                     </div>
                     {expFields && (
                       <div className="log-fieldpanel">
