@@ -222,10 +222,6 @@ export function LogView({
   const keepLineRef = useRef<number | null>(null);
   const keepOffsetRef = useRef(0);
   const shiftAnchorLineRef = useRef<number | null>(null);
-  // The selected line nearest the viewport centre, tracked across the *whole*
-  // view (not just on-screen rows): switching to "Show all" recentres it even
-  // when it was scrolled out of sight.
-  const selKeepLineRef = useRef<number | null>(null);
 
   // Opening a different file resets scroll, selection and expansion entirely.
   useEffect(() => {
@@ -292,21 +288,6 @@ export function LogView({
     keepLineRef.current = visible[idx].n;
     keepOffsetRef.current = idx * rowH - scrollTop; // pixel offset of the line's top within the viewport
     shiftAnchorLineRef.current = anchorRi != null ? visible[anchorRi]?.n ?? null : null;
-
-    // Separately remember the selected line nearest the centre across the whole
-    // view (off-screen rows included), so a "Show all" switch can recentre it.
-    if (selectedLines.size) {
-      let best = -1, bestDist = Infinity;
-      for (let i = 0; i < visible.length; i++) {
-        if (selectedLines.has(visible[i].n)) {
-          const d = Math.abs(i - centerIdx);
-          if (d < bestDist) { bestDist = d; best = i; }
-        }
-      }
-      selKeepLineRef.current = best >= 0 ? visible[best].n : null;
-    } else {
-      selKeepLineRef.current = null;
-    }
   }, [scrollTop, viewH, visible, viewMode, rowH, anchorRi, selectedLines]);
 
   // Switching between "all" and "matches" keeps the "keep" line pinned at the same
@@ -320,9 +301,17 @@ export function LogView({
       setAnchorRi(al == null ? null : (() => { const i = visible.findIndex((r) => r.n === al); return i >= 0 ? i : null; })());
     };
     // Switching to "Show all": if a line is selected, recentre it — even one
-    // scrolled off-screen — so the selection is always brought back into view.
-    if (viewMode === "all" && selKeepLineRef.current != null && visible.length) {
-      const idx = visible.findIndex((r) => r.n === selKeepLineRef.current);
+    // scrolled out of sight — so the selection is always brought back into view.
+    // The selected line nearest the keep line is found here, at switch time,
+    // rather than rescanning the whole view on every scroll step.
+    if (viewMode === "all" && selectedLines.size && visible.length) {
+      const keep = keepLineRef.current;
+      let selLine: number | null = null, bestDist = Infinity;
+      for (const sn of selectedLines) {
+        const d = keep == null ? 0 : Math.abs(sn - keep);
+        if (d < bestDist) { bestDist = d; selLine = sn; }
+      }
+      const idx = selLine == null ? -1 : visible.findIndex((r) => r.n === selLine);
       if (idx >= 0) {
         rowVirtualizer.scrollToIndex(idx, { align: "center" });
         remapAnchor();
@@ -353,6 +342,61 @@ export function LogView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [markerJump?.nonce]);
 
+  // The match map repaints on every scroll step (the viewport indicator moves),
+  // but the marks themselves only change with the view. So the marks render
+  // into an offscreen canvas when *they* change, and the per-scroll repaint is
+  // a single drawImage plus the indicator — instead of one fillRect per matched
+  // line per frame, which froze scrolling once many filters matched many lines.
+  const mapMarksRef = useRef<HTMLCanvasElement | null>(null);
+  // Bookmark notch positions, precomputed with the marks and drawn in the
+  // composite pass so they keep sitting above the viewport indicator.
+  const mapNotchesRef = useRef<{ y: number; h: number; color: string }[]>([]);
+  useEffect(() => {
+    const canvas = mapCanvasRef.current;
+    if (!canvas) return;
+    const { width: w, height: h } = canvas;
+    const marks = mapMarksRef.current ?? (mapMarksRef.current = document.createElement("canvas"));
+    marks.width = w;   // resizing also clears the layer
+    marks.height = h;
+    mapNotchesRef.current = [];
+    if (!visible.length || !w || !h) return;
+    const ctx = marks.getContext("2d")!;
+    const total = visible.length;
+    const markH = Math.max(1, Math.round(h / total));
+    // The map is only `h` pixels tall, so paint per pixel bucket (the last row
+    // landing on a pixel wins, same as drawing rows in order) — O(rows + h)
+    // instead of a fillRect per matched row.
+    const bucket: (string | null)[] = new Array(h).fill(null);
+    for (let ri = 0; ri < total; ri++) {
+      const r = visible[ri];
+      if (!r.winner) continue;
+      const color = mapColorMode === "text" ? r.winner.f.textColor : r.winner.f.bgColor;
+      const y = Math.round((ri / total) * h);
+      for (let yy = y, end = Math.min(h, y + markH); yy < end; yy++) bucket[yy] = color;
+    }
+    for (let y = 0; y < h; ) {
+      const color = bucket[y];
+      if (color === null) { y++; continue; }
+      let end = y + 1;
+      while (end < h && bucket[end] === color) end++;
+      ctx.fillStyle = color;
+      ctx.fillRect(0, y, w, end - y);
+      y = end;
+    }
+    if (markerMap.size) {
+      for (let ri = 0; ri < total; ri++) {
+        const mk = markerMap.get(visible[ri].n);
+        if (!mk) continue;
+        const y = Math.round((ri / total) * h);
+        mapNotchesRef.current.push({ y: Math.max(0, y - 1), h: Math.max(2, markH), color: markerColor(mk.icon) });
+      }
+    }
+  }, [visible, viewH, mapColorMode, mapWidth, markerMap]);
+
+  // Composite pass: marks layer + viewport indicator + bookmark notches. Runs
+  // per scroll step but does O(1) work (plus one rect per bookmark). Declared
+  // after the marks effect so a marks redraw (same render) lands before
+  // compositing; its deps must therefore be a superset of the marks effect's.
   useEffect(() => {
     const canvas = mapCanvasRef.current;
     if (!canvas) return;
@@ -360,16 +404,9 @@ export function LogView({
     const { width: w, height: h } = canvas;
     ctx.clearRect(0, 0, w, h);
     if (!visible.length) return;
-    const total = visible.length;
-    const markH = Math.max(1, Math.round(h / total));
-    for (let ri = 0; ri < visible.length; ri++) {
-      const r = visible[ri];
-      if (!r.winner) continue;
-      const y = Math.round((ri / total) * h);
-      ctx.fillStyle = mapColorMode === "text" ? r.winner.f.textColor : r.winner.f.bgColor;
-      ctx.fillRect(0, y, w, markH);
-    }
-    const contentH = total * rowH;
+    const marks = mapMarksRef.current;
+    if (marks && marks.width === w && marks.height === h) ctx.drawImage(marks, 0, 0);
+    const contentH = visible.length * rowH;
     const vpTop = Math.round((scrollTop / Math.max(1, contentH)) * h);
     const vpH = Math.max(6, Math.round((viewH / Math.max(1, contentH)) * h));
     ctx.fillStyle = "rgba(0,0,0,0.07)";
@@ -377,18 +414,13 @@ export function LogView({
     ctx.strokeStyle = "rgba(0,0,0,0.22)";
     ctx.lineWidth = 1;
     ctx.strokeRect(0.5, vpTop + 0.5, w - 1, Math.max(5, vpH - 1));
-    // Bookmark notches on the left edge, drawn last so they sit above matches.
-    if (markerMap.size) {
-      const notchW = Math.min(4, w);
-      for (let ri = 0; ri < visible.length; ri++) {
-        const mk = markerMap.get(visible[ri].n);
-        if (!mk) continue;
-        const y = Math.round((ri / total) * h);
-        ctx.fillStyle = markerColor(mk.icon);
-        ctx.fillRect(0, Math.max(0, y - 1), notchW, Math.max(2, markH));
-      }
+    // Bookmark notches on the left edge, drawn last so they sit above everything.
+    const notchW = Math.min(4, w);
+    for (const nt of mapNotchesRef.current) {
+      ctx.fillStyle = nt.color;
+      ctx.fillRect(0, nt.y, notchW, nt.h);
     }
-  }, [view, visible, viewH, scrollTop, mapColorMode, mapWidth, markerMap]);
+  }, [visible, viewH, scrollTop, rowH, mapColorMode, mapWidth, markerMap]);
 
   function nav(dir: number) { if (!hits.length) return; setCurrent((c) => (c + dir + hits.length) % hits.length); }
   const currentKey = hits.length ? hits[Math.min(current, hits.length - 1)].key : null;
@@ -553,8 +585,10 @@ export function LogView({
     onExportView?.(base + ".filtered.log", text);
   }
 
-  const matchedCount = view.hasHighlights ? view.rows.filter((r) => !r.excluded && r.winner).length : 0;
-  const hiddenByExclude = view.rows.filter((r) => r.excluded).length;
+  // Counted once in computeView — scanning view.rows here would run on every
+  // render, i.e. on every scroll step.
+  const matchedCount = view.matchedCount;
+  const hiddenByExclude = view.excludedCount;
 
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();

@@ -167,6 +167,10 @@ export interface ViewResult {
   counts: Record<string, number>;
   hasHighlights: boolean;
   hasExcludes: boolean;
+  /** Lines that are not excluded and have a colour winner. */
+  matchedCount: number;
+  /** Lines hidden by enabled exclude filters. */
+  excludedCount: number;
   /**
    * Lazily extract a row's parsed fields by line number. Fields are no longer
    * computed for every line up front — only the rows that actually need them
