@@ -278,48 +278,37 @@ function sameFilter(a: Filter, b: Filter): boolean {
     && a.groupId === b.groupId && sameFields(a.fields, b.fields);
 }
 
-// Memoized: each row carries three floating-ui wrappers (hover card, context
-// menu, dropdown), so re-rendering all 100+ of them on every unrelated state
-// change is what made the panel feel sluggish on large sets.
-const FilterRow = memo(function FilterRow({ f, count, searching, api }: FilterRowProps) {
+// The heavy half of a row: three floating-ui wrappers (hover card, context
+// menu, dropdown) plus every cell. Memoized so the dnd context churn during a
+// drag — dnd-kit re-renders every sortable subscriber on drag start and again
+// each time the pointer crosses a row — only re-runs the thin shell below,
+// not 100+ of these trees per step.
+const FilterRowCells = memo(function FilterRowCells({ f, count, api, dragging }: {
+  f: Filter; count: number; api: RowApi; dragging: boolean;
+}) {
   const onEdit = () => api.edit(f.id);
   const onDelete = () => api.remove(f.id);
   const onDuplicate = () => api.duplicate(f.id);
   const onViewOnly = () => api.viewOnly(f.id);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
-    id: f.id,
-    disabled: searching,
-    data: { type: "filter", groupId: f.groupId },
-  });
 
   const flags: { t: string; title: string }[] = [];
   if (f.caseSensitive) flags.push({ t: "Aa", title: "Case sensitive" });
   if (f.regex) flags.push({ t: ".*", title: "Regex" });
 
-  const style: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.4 : 1,
-    alignItems: "center",
-  };
-
   return (
     <HoverCard>
       <ContextMenu>
-        {/* The row is, at once, the dnd-sortable node, the right-click target and
-            the hover-card trigger — base-ui merges the nested render props onto
-            the single div. */}
+        {/* The row div is, at once, the right-click target and the hover-card
+            trigger — base-ui merges the nested render props onto the single
+            div. (The dnd-sortable node is the shell wrapping this.) */}
         <HoverCardTrigger
           render={
             <ContextMenuTrigger
               render={
                 <div
-                  ref={setNodeRef}
-                  style={style}
-                  className={"filter-row" + (f.enabled ? "" : " disabled") + (isDragging ? " dragging" : "")}
+                  style={{ alignItems: "center" }}
+                  className={"filter-row" + (f.enabled ? "" : " disabled") + (dragging ? " dragging" : "")}
                   onClick={onEdit}
-                  {...attributes}
-                  {...(searching ? {} : listeners)}
                 />
               }
             />
@@ -432,6 +421,30 @@ const FilterRow = memo(function FilterRow({ f, count, searching, api }: FilterRo
         </div>
       </HoverCardContent>
     </HoverCard>
+  );
+}, (prev, next) =>
+  sameFilter(prev.f, next.f) && prev.count === next.count
+  && prev.dragging === next.dragging && prev.api === next.api);
+
+// Thin sortable shell: just the dnd hook and a wrapper div carrying the drag
+// transform/listeners. This is all that re-renders when dnd-kit's contexts
+// change mid-drag; the memoized cells above are skipped while their props are
+// stable. (memo on the shell itself covers parent-driven re-renders; context
+// updates from inside useSortable bypass it by design.)
+const FilterRow = memo(function FilterRow({ f, count, searching, api }: FilterRowProps) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: f.id,
+    disabled: searching,
+    data: { type: "filter", groupId: f.groupId },
+  });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+  };
+  return (
+    <div ref={setNodeRef} style={style} {...attributes} {...(searching ? {} : listeners)}>
+      <FilterRowCells f={f} count={count} api={api} dragging={isDragging} />
+    </div>
   );
 }, (prev, next) =>
   sameFilter(prev.f, next.f) && prev.count === next.count
@@ -906,16 +919,17 @@ export function FilterPanel({
   // a pointer-first strategy that ignores group *blocks* (a filter targets a
   // group via its header/body/rows, never the block itself), with a stable
   // fallback so the hovered container doesn't flicker mid-jump.
+  // The id sets are hoisted — this callback runs on every pointermove.
+  const topIdSet = useMemo(() => new Set(layout.top.map((e) => e.id)), [layout.top]);
+  const groupIdSet = useMemo(() => new Set(groups.map((s) => s.id)), [groups]);
   const collisionDetection: CollisionDetection = useCallback((args) => {
     if (drag?.type === "group") {
-      const topSet = new Set(layout.top.map((e) => e.id));
       return closestCenter({
         ...args,
         droppableContainers: args.droppableContainers.filter(
-          (c) => topSet.has(String(c.id)) || String(c.id) === "body:__null__"),
+          (c) => topIdSet.has(String(c.id)) || String(c.id) === "body:__null__"),
       });
     }
-    const groupIdSet = new Set(groups.map((s) => s.id));
     const containers = args.droppableContainers.filter((c) => !groupIdSet.has(String(c.id)));
     const pointer = pointerWithin({ ...args, droppableContainers: containers });
     const intersections = pointer.length ? pointer : rectIntersection({ ...args, droppableContainers: containers });
@@ -924,7 +938,7 @@ export function FilterPanel({
     if (recentlyMovedToNewContainer.current) lastOverId.current = drag?.activeId ?? null;
     return lastOverId.current ? [{ id: lastOverId.current }] : [];
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [drag, layout.top, groups]);
+  }, [drag, topIdSet, groupIdSet]);
 
   function handleSetDragEnd(event: DragEndEvent) {
     const { active, over } = event;
