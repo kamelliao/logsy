@@ -599,6 +599,19 @@ button { font-family: inherit; }
   border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
   background: #fff; box-shadow: 0 1px 2px rgba(20,22,26,0.04);
 }
+/* The Table's own container scrolls horizontally; give its native scrollbar the
+   exact look of the compare panel's vertical scrollbar (.scroll) so they match.
+   Native scrollbars reserve their own space, so the bar sits below the last row
+   rather than overlapping it. */
+.cmp-card [data-slot="table-container"]::-webkit-scrollbar { width: 12px; height: 12px; }
+.cmp-card [data-slot="table-container"]::-webkit-scrollbar-thumb {
+  background: #cdd1d6;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+.cmp-card [data-slot="table-container"]::-webkit-scrollbar-thumb:hover { background: #b4b9c0; background-clip: padding-box; }
+.cmp-card [data-slot="table-container"]::-webkit-scrollbar-track { background: transparent; }
 /* compare text matches the log line's font + size */
 .cmp-shadcn {
   width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0;
@@ -621,6 +634,16 @@ button { font-family: inherit; }
   color: var(--text-3); text-align: left; font-variant-numeric: tabular-nums;
   -webkit-user-select: none; user-select: none;
 }
+/* the body line cell is just the jump button — drop cell padding so the button
+   (which carries the 0 13px padding) aligns with the "line" header */
+.cmp-shadcn td.cmp-ln { padding: 0; }
+.cmp-shadcn .cmp-ln-btn {
+  display: block; width: 100%; height: var(--log-row-h, 21px); padding: 0 13px;
+  border: none; background: none; cursor: pointer; text-align: left;
+  font: inherit; color: inherit; font-variant-numeric: tabular-nums;
+  transition: color 0.12s;
+}
+.cmp-shadcn .cmp-ln-btn:hover { color: #2c6ce6; text-decoration: underline; }
 .cmp-shadcn .num { text-align: left; font-variant-numeric: tabular-nums; }
 /* greedy trailing column: absorbs leftover width so data columns size to their
    content (no big gaps / right-drift from min-width:100% stretching) */
