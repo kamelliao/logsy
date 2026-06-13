@@ -892,6 +892,11 @@ button { font-family: inherit; }
   height: 100%; min-height: 0; background: var(--panel-bg);
   border-top: 1px solid var(--border);
   overflow-x: hidden;
+  /* Own stacking context, so the compositor stops re-relating this subtree to
+     the highlighted log view on every log-scroll relayerization (the Layerize
+     cost). isolation (not contain/transform/will-change) avoids becoming a
+     containing block for the fixed-positioned dnd DragOverlay. */
+  isolation: isolate;
 }
 
 /* ---- group tabs (shadcn ScrollArea, horizontal) ---- */
