@@ -110,6 +110,11 @@ export function App() {
   // Marks a non-urgent file switch so React can show an overlay while computing
   // the new view rather than silently freezing for large files.
   const [isSwitchingFile, startFileSwitchTransition] = useTransition();
+  // Same idea for switching the dock tab to Filters or switching filter sets:
+  // mounting/rendering a large filter list is a long task that would block the
+  // click's paint (high INP). Deferring it keeps the interaction responsive;
+  // isPanelPending dims the panel body as feedback while it renders.
+  const [isPanelPending, startPanelTransition] = useTransition();
   // When set, the center shows a blank "open a file" drop screen instead of the
   // active workspace (triggered by the sidebar's Open File button).
   const [openScreen, setOpenScreen] = useState(false);
@@ -470,7 +475,7 @@ export function App() {
   }, []);
 
   // ---------- groups ----------
-  const switchSet = (gid: string) => patchState((s) => { if (!file) return; withFile(s, file.id).activeSetId = gid; }, { undoable: false });
+  const switchSet = (gid: string) => startPanelTransition(() => patchState((s) => { if (!file) return; withFile(s, file.id).activeSetId = gid; }, { undoable: false }));
   const addSet = () => patchState((s) => {
     if (!file) return;
     const f = withFile(s, file.id);
@@ -866,7 +871,7 @@ export function App() {
   const toggleCompareCollapsed = () => setState((s) => ({ ...s, compareCollapsed: !s.compareCollapsed }));
   // Select a tab in the main panel (always expands it if it was collapsed).
   const selectPanelTab = (tab: "filters" | "compare" | "bookmarks") =>
-    setState((s) => ({ ...s, activePanelTab: tab, filterCollapsed: false }));
+    startPanelTransition(() => setState((s) => ({ ...s, activePanelTab: tab, filterCollapsed: false })));
   // Pop Compare out to its own dock (so it can sit beside Filters); Filters takes
   // over the main tab area.
   const popCompareOut = () => setState((s) => ({
@@ -1269,7 +1274,7 @@ export function App() {
             <button className="dock-btn" title={(collapsed ? "Expand" : "Collapse") + "  (Ctrl+B)"} onClick={toggleFilterCollapsed}>{chevron}</button>
           </div>
           {!collapsed && (
-            <div className="dock-body">{activePanelTab === "filters" ? filterBody : activePanelTab === "compare" ? compareBody : bookmarksBody}</div>
+            <div className={"dock-body" + (isPanelPending ? " pending" : "")}>{activePanelTab === "filters" ? filterBody : activePanelTab === "compare" ? compareBody : bookmarksBody}</div>
           )}
         </div>
       );

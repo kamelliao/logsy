@@ -516,6 +516,9 @@ button { font-family: inherit; }
 }
 .dock-btn:hover { background: rgba(0,0,0,0.07); color: var(--text); }
 .dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+/* While a deferred tab/set switch renders the (possibly large) filter list, dim
+   the body and ignore input so the click stays responsive (lower INP). */
+.dock-body.pending { opacity: 0.55; pointer-events: none; transition: opacity 120ms ease; }
 .dock-right.collapsed .dock-head { writing-mode: vertical-rl; height: 100%; flex: 1 1 auto; padding: 7px 0; gap: 8px; justify-content: flex-start; }
 
 /* ---- main panel: VSCode-style tab bar (Filters / Compare) ---- */
