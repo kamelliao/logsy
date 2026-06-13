@@ -1195,6 +1195,7 @@ export function App() {
         rows={compareRows}
         onRemove={(n) => removeFromCompare([n])}
         onExport={exportGroupCsv}
+        onJump={jumpToMarker}
         labelFor={(id) => {
           const f = set!.filters.find((x) => x.id === id);
           return (f?.description?.trim() || f?.pattern) ?? "Fields";

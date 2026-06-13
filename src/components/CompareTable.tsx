@@ -14,6 +14,8 @@ interface CompareTableProps {
   colorFor: (fieldsFromId: string | undefined) => string;
   /** Export a single pattern-group's rows as CSV (opens a save dialog). */
   onExport: (fieldsFromId: string | undefined, label: string) => void;
+  /** Scroll the log view to a compared line (clicking its line number). */
+  onJump: (n: number) => void;
 }
 
 function colsOf(rows: ViewRow[]): string[] {
@@ -26,7 +28,7 @@ function colsOf(rows: ViewRow[]): string[] {
 }
 
 /** Compares parsed fields of selected lines, one table per matching pattern. */
-export function CompareTable({ rows, onRemove, labelFor, colorFor, onExport }: CompareTableProps) {
+export function CompareTable({ rows, onRemove, labelFor, colorFor, onExport, onJump }: CompareTableProps) {
   // Group compared rows by the filter that parsed them (one table per pattern).
   const groups = useMemo(() => {
     const map = new Map<string, ViewRow[]>();
@@ -91,7 +93,15 @@ export function CompareTable({ rows, onRemove, labelFor, colorFor, onExport }: C
                           <TooltipContent side="top">Remove from compare</TooltipContent>
                         </Tooltip>
                       </TableCell>
-                      <TableCell className="cmp-ln">{r.n}</TableCell>
+                      <TableCell className="cmp-ln">
+                        <button
+                          className="cmp-ln-btn"
+                          title={`Jump to line ${r.n}`}
+                          onClick={() => onJump(r.n)}
+                        >
+                          {r.n}
+                        </button>
+                      </TableCell>
                       {cols.map((c) => {
                         const fv = r.fields?.[c];
                         return (
