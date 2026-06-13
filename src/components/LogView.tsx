@@ -234,18 +234,12 @@ export function LogView({
   const keepOffsetRef = useRef(0);
   const shiftAnchorLineRef = useRef<number | null>(null);
 
-  // Opening a different file resets scroll, selection and expansion entirely.
-  useEffect(() => {
-    rowVirtualizer.scrollToIndex(0);
-    setSelectedLines(new Set());
-    setAnchorRi(null);
-    setExpandedLines(new Set());
-    setMarkerPop(null);
-    setMarkerDraft(null);
-    keepLineRef.current = null;
-    shiftAnchorLineRef.current = null;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file.id]);
+  // Switching files remounts this component (keyed by file.id in App), which
+  // resets the virtualizer — including its internal scrollOffset cache, which
+  // a same-instance reset can't reach: it only updates via scroll events, so
+  // when the browser had already clamped scrollTop to 0 after the content
+  // shrank, scrollToIndex(0) was a no-op and the stale offset rendered the
+  // view's tail rows below a blank gap until a reload.
 
   useEffect(() => { setSelectedLines(new Set()); setAnchorRi(null); }, [view]);
 
