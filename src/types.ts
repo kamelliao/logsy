@@ -89,6 +89,10 @@ export interface LogFile {
   activeSetId: string | null;
   /** User bookmarks pinned to line numbers (persisted with the file). */
   markers?: Marker[];
+  /** Per-document log-view header state: "show only matched lines" toggle. */
+  viewMode?: "all" | "matches";
+  /** Per-document log-view header state: whether the find bar is open. */
+  findOpen?: boolean;
 }
 
 export interface AppState {
@@ -101,7 +105,6 @@ export interface AppState {
   sidebarCollapsed: boolean;
   splitRatio: number;
   panelPos: "bottom" | "right";
-  viewMode: "all" | "matches";
   mapColorMode: "bg" | "text";
   mapWidth: number;
   fontSize: number;

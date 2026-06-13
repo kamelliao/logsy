@@ -158,7 +158,6 @@ export function initialState(): AppState {
     sidebarCollapsed: true,
     splitRatio: 0.5,
     panelPos: "right",
-    viewMode: "all",
     mapColorMode: "bg",
     mapWidth: 16,
     fontSize: 12.5,
@@ -174,6 +173,11 @@ export function initialState(): AppState {
 }
 
 export function normalizeState(state: AppState): AppState {
+  // Migrate the old app-level viewMode onto each file once (per-document now).
+  const legacyViewMode = (state as Partial<Record<"viewMode", "all" | "matches">>).viewMode;
+  for (const f of state.files) {
+    if (f.viewMode === undefined && legacyViewMode) f.viewMode = legacyViewMode;
+  }
   for (const f of state.files) {
     if (!Array.isArray(f.sets)) f.sets = [];
     for (const g of f.sets) {
@@ -206,6 +210,9 @@ export function normalizeState(state: AppState): AppState {
       ? f.markers.filter((m) => m && typeof m.n === "number" && typeof m.icon === "string")
           .map((m) => ({ n: m.n, icon: m.icon, note: typeof m.note === "string" ? m.note : "" }))
       : [];
+    // Per-document log-view header state (migrated from the old app-level viewMode).
+    if (f.viewMode !== "matches") f.viewMode = "all";
+    if (typeof f.findOpen !== "boolean") f.findOpen = false;
   }
   if (!state.activeFileId || !state.files.find((f) => f.id === state.activeFileId)) {
     state.activeFileId = state.files[0]?.id ?? null;
@@ -232,5 +239,7 @@ export function normalizeState(state: AppState): AppState {
   delete (state as Partial<Record<"profiles" | "activeProfileId" | "structuredView", unknown>>).profiles;
   delete (state as Partial<Record<"profiles" | "activeProfileId" | "structuredView", unknown>>).activeProfileId;
   delete (state as Partial<Record<"profiles" | "activeProfileId" | "structuredView", unknown>>).structuredView;
+  // viewMode moved onto each LogFile; drop the stale app-level field.
+  delete (state as Partial<Record<"viewMode", unknown>>).viewMode;
   return state;
 }
