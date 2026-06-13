@@ -1136,6 +1136,7 @@ export function App() {
   function renderWorkspace(): ReactNode {
     const logview = (
       <LogView
+        key={file!.id}
         file={file!}
         view={logView}
         viewMode={effectiveViewMode}
