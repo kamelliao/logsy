@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { ChevronRight, FilePlus, FileText, PanelLeft, Settings, X } from "lucide-react";
-import type { AppState, LogFile } from "../types";
+import { ChevronRight, FilePlus, PanelLeft, Settings, X } from "lucide-react";
+import type { AppState, FileIcon, LogFile } from "../types";
+import { FILE_ICONS, FileGlyph } from "./fileIcons";
 import { Button } from "./ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
@@ -12,9 +13,10 @@ interface FileItemProps {
   collapsed: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onSetIcon: (icon: FileIcon) => void;
 }
 
-function FileItem({ file, active, canDelete, collapsed, onSelect, onDelete }: FileItemProps) {
+function FileItem({ file, active, canDelete, collapsed, onSelect, onDelete, onSetIcon }: FileItemProps) {
   // Right-click context menu, anchored at the cursor.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -39,7 +41,7 @@ function FileItem({ file, active, canDelete, collapsed, onSelect, onDelete }: Fi
             onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
           />
         }>
-          <span className="file-ico"><FileText size={16} /></span>
+          <span className="file-ico"><FileGlyph icon={file.icon} size={16} /></span>
           <span className="file-name">{file.name}</span>
           <span className="file-lines">{file.lineCount.toLocaleString()}</span>
           {canDelete && (
@@ -57,6 +59,20 @@ function FileItem({ file, active, canDelete, collapsed, onSelect, onDelete }: Fi
 
       {menu && (
         <div className="menu-pop file-menu" style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 200 }}>
+          <div className="menu-section">Icon</div>
+          <div className="file-icon-grid">
+            {FILE_ICONS.map(({ id, label, Icon }) => (
+              <button
+                key={id}
+                className={"fi-pick" + ((file.icon ?? "file") === id ? " on" : "")}
+                title={label}
+                onClick={() => { setMenu(null); onSetIcon(id); }}
+              >
+                <Icon size={15} />
+              </button>
+            ))}
+          </div>
+          <div className="menu-sep" />
           <div
             className="menu-item danger"
             onClick={() => { setMenu(null); onDelete(); }}
@@ -78,6 +94,7 @@ interface SidebarProps {
   onSelectFile: (id: string) => void;
   onOpenFile: () => void;
   onDeleteFile: (id: string) => void;
+  onSetFileIcon: (id: string, icon: FileIcon) => void;
   onSetPanelPos: (pos: "bottom" | "right") => void;
   onSetMapColorMode: (mode: "bg" | "text") => void;
   onSetMapWidth: (w: number) => void;
@@ -87,7 +104,7 @@ interface SidebarProps {
 
 export function Sidebar({
   state, collapsed, openScreen, onToggleCollapse, onSelectFile,
-  onOpenFile, onDeleteFile,
+  onOpenFile, onDeleteFile, onSetFileIcon,
   onSetPanelPos, onSetMapColorMode, onSetMapWidth, onSetFontWeight,
   onManagePalette,
 }: SidebarProps) {
@@ -113,6 +130,7 @@ export function Sidebar({
             collapsed={collapsed}
             onSelect={() => onSelectFile(f.id)}
             onDelete={() => onDeleteFile(f.id)}
+            onSetIcon={(icon) => onSetFileIcon(f.id, icon)}
           />
         ))}
         <div className="new-tab" onClick={onOpenFile} title="Open a log file (Ctrl O)">
