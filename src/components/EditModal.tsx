@@ -31,12 +31,12 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
 import { RegexInput } from "./RegexInput";
 import { Label } from "./ui/label";
 import { ColorCombobox } from "./ui/color-combobox";
+import { GroupCombobox } from "./ui/group-combobox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
 function ToggleCard({ on, ex, glyph, name, desc, onClick }: {
@@ -528,26 +528,11 @@ export function EditModal({ filter, lines, isNew, groups, palette, genSeed, onSa
           {groups.length > 0 && (
             <div className="field">
               <Label>Group</Label>
-              <DropdownMenu>
-                <DropdownMenuTrigger render={<button type="button" className="section-select" />}>
-                  <span className={"ss-label" + (draft.groupId === null ? " placeholder" : "")}>
-                    {groups.find((s) => s.id === draft.groupId)?.name ?? "No group (ungrouped)"}
-                  </span>
-                  <ChevronDown size={15} className="ss-chev" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="bottom" align="start" zIndex={1000} className="section-select-pop">
-                  <DropdownMenuItem onClick={() => set({ groupId: null })}>
-                    <span className="mi-ico">{draft.groupId === null ? <Check size={15} /> : null}</span>
-                    No group (ungrouped)
-                  </DropdownMenuItem>
-                  {groups.map((s) => (
-                    <DropdownMenuItem key={s.id} onClick={() => set({ groupId: s.id })}>
-                      <span className="mi-ico">{draft.groupId === s.id ? <Check size={15} /> : null}</span>
-                      {s.name}
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+              <GroupCombobox
+                value={draft.groupId}
+                groups={groups}
+                onChange={(groupId) => set({ groupId })}
+              />
             </div>
           )}
 

@@ -730,6 +730,17 @@ export function FilterPanel({
     return () => panel.removeEventListener("wheel", onWheel);
   }, []);
 
+  // "New group" appends at the end of the list, which can be below the fold;
+  // scroll the freshly added group into view once it has rendered.
+  const scrollToBottomNext = useRef(false);
+  const handleAddGroup = () => { scrollToBottomNext.current = true; onAddGroup(); };
+  useEffect(() => {
+    if (!scrollToBottomNext.current) return;
+    scrollToBottomNext.current = false;
+    const list = panelRef.current?.querySelector<HTMLElement>(".filter-list");
+    if (list) list.scrollTop = list.scrollHeight;
+  }, [set.groups.length]);
+
   const q = search.trim().toLowerCase();
   const filters = set.filters;
   const groups = set.groups;
@@ -1035,14 +1046,14 @@ export function FilterPanel({
             <MoreHorizontal />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="end">
-            <PanelMenuItems onAddFilter={() => onAddFilter()} onAddGroup={onAddGroup} onBulk={onBulk} />
+            <PanelMenuItems onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk} />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
       {/* filter list */}
       {filters.length === 0 ? (
-        <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={onAddGroup} onBulk={onBulk}>
+        <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk}>
           <div className="filter-empty">
             <FilterIcon size={26} style={{ color: "var(--text-3)" }} />
             <div className="fe-title">No filters yet</div>
@@ -1051,7 +1062,7 @@ export function FilterPanel({
         </PanelListZone>
       ) : searching ? (
         <DndContext sensors={sensors} collisionDetection={closestCenter}>
-          <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={onAddGroup} onBulk={onBulk}>
+          <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk}>
             {filtered.length === 0 ? (
               <div className="filter-empty">
                 <FilterIcon size={26} style={{ color: "var(--text-3)" }} />
@@ -1078,7 +1089,7 @@ export function FilterPanel({
           onDragEnd={handleDragEnd}
           onDragCancel={() => { setDrag(null); resetDnd(); }}
         >
-          <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={onAddGroup} onBulk={onBulk}>
+          <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk}>
             <TopDropZone>
               <SortableContext items={topIds} strategy={verticalListSortingStrategy}>
                 {topItems.map((it) =>
@@ -1102,7 +1113,7 @@ export function FilterPanel({
               <BottomSlot active={drag?.type === "filter"} />
             </TopDropZone>
 
-            <button className="fsection-add" onClick={onAddGroup}>
+            <button className="fsection-add" onClick={handleAddGroup}>
               <FolderPlus size={14} /> New group
             </button>
           </PanelListZone>
