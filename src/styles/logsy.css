@@ -989,7 +989,7 @@ button { font-family: inherit; }
    filter-row pad (4), so the toolbar "⋮" lines up with each row's "⋮" below */
 .filter-toolbar {
   display: flex; align-items: center; gap: 6px;
-  padding: 5px 22px 5px 8px; flex: 0 0 auto;
+  padding: 5px 18px 5px 8px; flex: 0 0 auto;
   container-type: inline-size;
 }
 
@@ -1324,7 +1324,7 @@ button { font-family: inherit; }
 }
 .fsection-add {
   display: flex; align-items: center; justify-content: center; gap: 5px;
-  width: calc(100% - 4px); margin: 5px 2px 2px; padding: 4px 8px;
+  width: calc(100%); margin-top: 5px; padding: 4px 8px;
   background: none; border: 1px dashed var(--border-strong); border-radius: 5px;
   color: var(--text-3); cursor: pointer;
   font-family: var(--ui-font); font-size: calc(var(--log-font-size, 12.5px) * 0.82); font-weight: 500;
@@ -1439,7 +1439,10 @@ button { font-family: inherit; }
 }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 .modal-drag-wrap {
-  position: fixed; top: 50%; left: 50%; z-index: 101;
+  /* Center within the area *below* the 32px titlebar, not the whole window —
+    otherwise the modal sits half a titlebar too high and leaves a visible
+    margin at the bottom. */
+  position: fixed; top: calc(50% + 16px); left: 50%; z-index: 101;
 }
 .modal {
   position: relative;
@@ -1787,6 +1790,43 @@ button { font-family: inherit; }
 .cc-item-name { font-size: 13px; text-transform: capitalize; }
 .cc-item-hex { font-family: var(--mono-font); font-size: 11px; color: var(--text-3); }
 .cc-check { margin-left: auto; color: var(--accent); display: inline-flex; }
+
+/* group combobox popup — its own clean styling (the color picker's cc-* chrome
+   read as a heavy grey "container"); this matches the app's plain menus: a flat
+   white card, a seamless search row, and compact rows. */
+/* prefix is grpc- (group combobox); gc- is taken by the gen-chip namespace
+   above (.gc-name there has its own translucent background) */
+.grpc-popup {
+  width: var(--anchor-width); min-width: 240px; max-width: 440px;
+  background: #fff; border: 1px solid var(--border-strong);
+  border-radius: 9px; box-shadow: var(--shadow-pop);
+  padding: 3px; overflow: hidden;
+}
+.grpc-search {
+  display: flex; align-items: center; gap: 7px;
+  padding: 5px 7px 7px; margin-bottom: 2px;
+  border-bottom: 1px solid var(--border); color: var(--text-3);
+}
+.grpc-input {
+  flex: 1; min-width: 0; border: none; outline: none; background: none;
+  font: inherit; font-size: 13px; color: var(--text);
+}
+.grpc-input::placeholder { color: var(--text-3); }
+.grpc-list { max-height: 280px; overflow-y: auto; }
+.grpc-empty { font-size: 12.5px; color: var(--text-3); text-align: center; }
+.grpc-empty:not(:empty) { padding: 12px; }
+/* Match the app's plain menu rows (.menu-item): a light, tight highlight band
+   rather than a big rounded pill that reads as a separate "container". */
+.grpc-item {
+  display: flex; align-items: center; gap: 8px; padding: 5px 8px;
+  border-radius: 5px; cursor: pointer; user-select: none; outline: none;
+}
+.grpc-item[data-highlighted] { background: var(--row-hover); }
+/* no forced capitalize (group names are user-typed); ellipsis so long names
+   don't blow out the popup width */
+.grpc-name { flex: 1; min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.grpc-name.placeholder { color: var(--text-3); }
+.grpc-check { margin-left: auto; color: var(--accent); display: inline-flex; }
 
 .color-preview {
   margin-top: 14px; border: 1px solid var(--border); border-radius: 9px;
