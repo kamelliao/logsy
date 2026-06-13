@@ -1424,6 +1424,7 @@ export function App() {
             onSelectFile={selectFile}
             onOpenFile={() => setOpenScreen(true)}
             onDeleteFile={deleteFile}
+            onSetFileIcon={(id, icon) => patchState((s) => { const f = s.files.find((x) => x.id === id); if (f) f.icon = icon; }, { undoable: false })}
             onSetPanelPos={(pos) => setState((s) => ({ ...s, panelPos: pos }))}
             onSetMapColorMode={(mode) => setState((s) => ({ ...s, mapColorMode: mode }))}
             onSetMapWidth={(w) => setState((s) => ({ ...s, mapWidth: w }))}

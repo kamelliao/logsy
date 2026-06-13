@@ -1391,6 +1391,25 @@ button { font-family: inherit; }
   max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .menu-sep { height: 1px; background: var(--border); margin: 3px 4px; }
+/* small uppercase section label inside a menu-pop */
+.menu-section {
+  padding: 3px 8px 4px; font-family: var(--ui-font);
+  font-size: 10px; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;
+  color: var(--text-3);
+}
+/* per-file icon picker (file context menu) */
+.file-icon-grid {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 2px; padding: 0 2px 2px;
+}
+.fi-pick {
+  display: grid; place-items: center; width: 26px; height: 26px;
+  border: 1px solid transparent; border-radius: 6px; background: none;
+  color: var(--text-2); cursor: pointer; transition: background 0.12s, border-color 0.12s, color 0.12s;
+}
+.fi-pick:hover { background: var(--row-hover); color: var(--text); }
+/* selected icon mirrors the log header's matches-only toggle (.lv-toggle.active) */
+.fi-pick.on { background: var(--accent-bg); color: #2c6ce6; }
+.fi-pick.on:hover { background: var(--accent-bg-strong); color: #2c6ce6; }
 .menu-item .mi-key { margin-left: auto; font-size: 11px; color: var(--text-3); }
 /* left check column for toggle items (View ▸ Show …). A lit (checked) toggle
    shows a brand-blue check; --accent here is a near-white surface token, so the

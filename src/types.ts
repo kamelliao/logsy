@@ -62,6 +62,10 @@ export interface FilterSet {
 /** The set of bookmark glyphs a marker can use. */
 export type MarkerIcon = "bookmark" | "star" | "flag" | "bug" | "pin" | "alert";
 
+/** The set of glyphs a log file's sidebar entry can use. */
+export type FileIcon =
+  | "file" | "star" | "flag" | "bug" | "zap" | "alert";
+
 /** A user-placed bookmark pinned to one log line, with an optional note. */
 export interface Marker {
   /** Line number the marker is pinned to. */
@@ -79,6 +83,8 @@ export interface LogFile {
   lineCount: number;
   /** Character encoding the file was decoded with (e.g. "UTF-8", "Big5"). */
   encoding?: string;
+  /** User-chosen sidebar glyph; undefined = default document icon. */
+  icon?: FileIcon;
   sets: FilterSet[];
   activeSetId: string | null;
   /** User bookmarks pinned to line numbers (persisted with the file). */
