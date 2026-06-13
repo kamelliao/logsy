@@ -98,7 +98,6 @@ function nextPaint(): Promise<void> {
 export function App() {
   const [state, setState] = useState<AppState>(loadState);
   const [editing, setEditing] = useState<{ isNew: boolean; filter: Filter; genSeed?: string } | null>(null);
-  const [findOpen, setFindOpen] = useState(false);
   // Lines explicitly added to the comparison panel (kept separate from selection).
   const [compareLines, setCompareLines] = useState<Set<number>>(() => new Set());
   const fpRef = useRef<PanelImperativeHandle | null>(null);
@@ -150,6 +149,9 @@ export function App() {
 
   const file = state.files.find((f) => f.id === state.activeFileId) ?? state.files[0] ?? null;
   const set = file ? (file.sets.find((g) => g.id === file.activeSetId) ?? file.sets[0]) : null;
+  // Log-view header state is per-document (stored on the active LogFile).
+  const findOpen = file?.findOpen ?? false;
+  const fileViewMode: "all" | "matches" = file?.viewMode ?? "all";
 
   // Switching filter sets (or files) exits "view this filter only".
   useEffect(() => { setSoloFilterId(null); }, [file?.activeSetId, file?.id]);
@@ -171,7 +173,7 @@ export function App() {
     return computeView(lines, [{ ...c, f: { ...c.f, enabled: true, exclude: false } }]);
   }, [soloFilterId, compiled, lines]);
   const logView = soloView ?? view;
-  const effectiveViewMode: "all" | "matches" = soloView ? "matches" : state.viewMode;
+  const effectiveViewMode: "all" | "matches" = soloView ? "matches" : fileViewMode;
   // Rows shown in the comparison panel: explicitly-added, still-visible, parsed lines.
   const compareRows = useMemo(
     () => view.rows
@@ -270,6 +272,11 @@ export function App() {
 
   function withFile(s: AppState, fid: string): LogFile {
     return s.files.find((f) => f.id === fid)!;
+  }
+  // The active file resolved from a state snapshot (mirrors the render-time
+  // `file` derivation) — for patches that must not close over a stale `file`.
+  function activeFile(s: AppState): LogFile | null {
+    return s.files.find((f) => f.id === s.activeFileId) ?? s.files[0] ?? null;
   }
   function withSet(s: AppState, fid: string, gid: string): FilterSet {
     return withFile(s, fid).sets.find((g) => g.id === gid)!;
@@ -816,7 +823,7 @@ export function App() {
   // excluded, just unmatched), switch to all first so the jump lands on it.
   const jumpToMarker = (n: number) => {
     const row = view.rows.find((r) => r.n === n);
-    if (state.viewMode === "matches" && view.hasHighlights && row && !row.excluded && !row.winner) {
+    if (fileViewMode === "matches" && view.hasHighlights && row && !row.excluded && !row.winner) {
       setViewMode("all");
     }
     setMarkerJump({ n, nonce: Date.now() });
@@ -948,8 +955,18 @@ export function App() {
   }, [state.compareCollapsed]);
 
   // ---------- layout ----------
-  // Any explicit view-mode toggle also exits "view this filter only".
-  const setViewMode = (m: "all" | "matches") => { setSoloFilterId(null); setState((s) => ({ ...s, viewMode: m })); };
+  // Any explicit view-mode toggle also exits "view this filter only". Both the
+  // view mode and the find bar are stored per-document on the active LogFile.
+  const setViewMode = (m: "all" | "matches") => {
+    setSoloFilterId(null);
+    patchState((s) => { const f = activeFile(s); if (f) f.viewMode = m; }, { undoable: false });
+  };
+  const setFindOpen = (v: boolean | ((prev: boolean) => boolean)) =>
+    patchState((s) => {
+      const f = activeFile(s);
+      if (!f) return;
+      f.findOpen = typeof v === "function" ? v(f.findOpen ?? false) : v;
+    }, { undoable: false });
   const toggleSidebar = () => setState((s) => ({ ...s, sidebarCollapsed: !s.sidebarCollapsed }));
   const toggleLineNumbers = () => setState((s) => ({ ...s, showLineNumbers: !(s.showLineNumbers ?? true) }));
 
@@ -1003,8 +1020,8 @@ export function App() {
       "$mod+o": (e) => { e.preventDefault(); void openFiles(); },
       "$mod+f": (e) => { e.preventDefault(); setFindOpen(true); },
       "$mod+F": (e) => { e.preventDefault(); setFindOpen(true); },
-      "$mod+h": (e) => { e.preventDefault(); setViewMode(state.viewMode === "all" ? "matches" : "all"); },
-      "$mod+H": (e) => { e.preventDefault(); setViewMode(state.viewMode === "all" ? "matches" : "all"); },
+      "$mod+h": (e) => { e.preventDefault(); setViewMode(fileViewMode === "all" ? "matches" : "all"); },
+      "$mod+H": (e) => { e.preventDefault(); setViewMode(fileViewMode === "all" ? "matches" : "all"); },
       "$mod+=": (e) => { e.preventDefault(); zoomIn(); },
       "$mod+shift+=": (e) => { e.preventDefault(); zoomIn(); },
       "$mod+-": (e) => { e.preventDefault(); zoomOut(); },
@@ -1017,7 +1034,7 @@ export function App() {
         else if (openScreen && state.files.length > 0) setOpenScreen(false);
       },
     });
-  }, [findOpen, editing, openScreen, state.files.length, state.viewMode, zoomIn, zoomOut, zoomReset, shortcutsOpen, aboutOpen]);
+  }, [findOpen, editing, openScreen, state.files.length, fileViewMode, zoomIn, zoomOut, zoomReset, shortcutsOpen, aboutOpen]);
 
   // ---------- menu actions ----------
   const openDocs = () => { invoke("open_url", { url: DOCS_URL }).catch((e) => toast.error("Could not open documentation: " + String(e))); };
@@ -1114,8 +1131,8 @@ export function App() {
     View: [
       { label: "Show filter panel", checked: !state.filterCollapsed, key: "Ctrl B", disabled: !file, action: toggleFilterCollapsed },
       { sep: true },
-      { label: "Show only filtered lines", checked: state.viewMode === "matches", key: "Ctrl H",
-        action: () => setViewMode(state.viewMode === "matches" ? "all" : "matches") },
+      { label: "Show only filtered lines", checked: fileViewMode === "matches", key: "Ctrl H",
+        action: () => setViewMode(fileViewMode === "matches" ? "all" : "matches") },
       { label: "Show line numbers", checked: showLineNumbers, action: toggleLineNumbers },
       { sep: true },
       { label: "Zoom In", key: "Ctrl +", action: zoomIn },
