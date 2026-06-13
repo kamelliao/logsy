@@ -1471,7 +1471,10 @@ button { font-family: inherit; }
 /* body scrolls; header and footer stay pinned */
 /* overflow-x: hidden — overflow-y:auto alone makes overflow-x compute to auto,
    so any unbreakable content would surface a horizontal scrollbar here */
-.modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 4px 20px 8px; }
+/* Reserve the vertical scrollbar's gutter so content height changes (opening
+   the match preview, toggling regex, etc.) don't add/remove the scrollbar and
+   shift the body horizontally ("bouncing"). */
+.modal-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable; padding: 4px 20px 8px; }
 .field { margin-bottom: 16px; }
 .field > label {
   display: block; font-size: 12px; font-weight: 600;
