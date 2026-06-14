@@ -14,6 +14,12 @@ const LANE_MIN = 16, LANE_MAX = 40;
 const EMPTY_H = 120;  // height when there are no lanes yet (room for the hint)
 const MAX_H = 420;
 
+// Minimap (overview strip above the main canvas): fixed height; a draggable
+// brush shows the visible window over the whole [0, maxT] domain. Only shown
+// once there are events to overview.
+const MM_H = 30;     // minimap strip height (CSS px)
+const MM_EDGE = 5;   // px around a brush edge that grabs it to resize (zoom)
+
 /** Format a ns instant/duration with an adaptive unit. */
 function fmtNs(ns: number): string {
   const a = Math.abs(ns);
@@ -86,6 +92,11 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
   const [measure, setMeasure] = useState<{ t0: number; t1: number } | null>(null);
   const pan = useRef<{ x: number; offset: number } | null>(null);
   const measuring = useRef(false);
+  // Minimap drag state: `mode` is which part of the brush the gesture grabbed
+  // (body → pan, left/right edge → zoom that edge), `offset`/`nsPerPx` snapshot
+  // the view at grab time so the move is computed from the delta.
+  const mmRef = useRef<HTMLCanvasElement>(null);
+  const mmDrag = useRef<{ mode: "pan" | "left" | "right"; startX: number; offset: number; nsPerPx: number } | null>(null);
   // Height tracks the lane count: AXIS strip + one LANE_MAX row per visible lane
   // + bottom gap, capped at MAX_H. No trailing blank space below the last lane.
   const wrapH = lanes.length === 0
@@ -148,6 +159,10 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
 
   const xOf = useCallback((t: number, v: View) => GUTTER + (t - v.offset) / v.nsPerPx, []);
   const tOf = useCallback((x: number, v: View) => v.offset + (x - GUTTER) * v.nsPerPx, []);
+  // Minimap maps the whole [0, domMax] domain across the same plot region, so its
+  // ticks line up horizontally with the main axis below.
+  const mmX = useCallback((t: number) => GUTTER + (t / domMax) * plotW, [domMax, plotW]);
+  const mmT = useCallback((x: number) => ((x - GUTTER) / plotW) * domMax, [domMax, plotW]);
 
   const viewRef = useRef(view);
   viewRef.current = view;
@@ -302,6 +317,109 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
     }
   }, [view, size.w, size.h, marks, lanes, laneIndex, laneH, hover, cursor, measure, xOf, tOf]);
 
+  // --- minimap draw ---
+  useEffect(() => {
+    const cv = mmRef.current;
+    if (!cv || !view || size.w <= 0 || marks.length === 0) return;
+    const dpr = window.devicePixelRatio || 1;
+    const W = size.w, H = MM_H;
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
+    const ctx = cv.getContext("2d")!;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+
+    const cs = getComputedStyle(cv);
+    const cBorder = cs.getPropertyValue("--border").trim() || "#e3e6ea";
+
+    // "overview" gutter label + divider, mirroring the main canvas gutter.
+    ctx.font = "9px ui-sans-serif, system-ui, sans-serif";
+    ctx.textBaseline = "middle"; ctx.textAlign = "left";
+    ctx.strokeStyle = cBorder; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(GUTTER + 0.5, 0); ctx.lineTo(GUTTER + 0.5, H); ctx.stroke();
+
+    // every mark, compressed onto the full domain (points → ticks, spans → bars).
+    const top = 4, bot = H - 4;
+    for (const m of marks) {
+      const x1 = mmX(m.t);
+      ctx.strokeStyle = ctx.fillStyle = m.color || "#cdd3da";
+      if (m.end !== undefined) {
+        const x2 = Math.max(mmX(m.end), x1 + 1);
+        ctx.globalAlpha = 0.6; ctx.fillRect(x1, top, x2 - x1, bot - top); ctx.globalAlpha = 1;
+      } else {
+        ctx.globalAlpha = 0.85; ctx.lineWidth = 1.5;
+        ctx.beginPath(); ctx.moveTo(x1 + 0.5, top); ctx.lineTo(x1 + 0.5, bot); ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+    }
+
+    // brush = the visible window; dim the domain outside it.
+    const bx0 = Math.max(GUTTER, mmX(view.offset));
+    const bx1 = Math.min(W - RIGHT, mmX(view.offset + plotW * view.nsPerPx));
+    ctx.fillStyle = "rgba(120,130,140,0.18)";
+    if (bx0 > GUTTER) ctx.fillRect(GUTTER, 0, bx0 - GUTTER, H);
+    if (bx1 < W - RIGHT) ctx.fillRect(bx1, 0, W - RIGHT - bx1, H);
+    ctx.fillStyle = "rgba(59,130,246,0.10)";
+    ctx.fillRect(bx0, 0, Math.max(1, bx1 - bx0), H);
+    ctx.strokeStyle = "rgba(59,130,246,0.7)"; ctx.lineWidth = 1;
+    ctx.strokeRect(bx0 + 0.5, 0.5, Math.max(1, bx1 - bx0) - 1, H - 1);
+    // edge handles
+    ctx.fillStyle = "rgba(59,130,246,0.7)";
+    ctx.fillRect(bx0, H / 2 - 5, 2, 10);
+    ctx.fillRect(bx1 - 2, H / 2 - 5, 2, 10);
+  }, [view, size.w, marks, domMax, plotW, mmX]);
+
+  // --- minimap interaction ---
+  const onMmDown = (e: React.PointerEvent) => {
+    if (!view) return;
+    const rect = mmRef.current!.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    mmRef.current!.setPointerCapture(e.pointerId);
+    const span = plotW * view.nsPerPx;
+    let x0 = mmX(view.offset), x1 = mmX(view.offset + span);
+    let offset = view.offset;
+    // Click outside the brush → recenter it on the cursor first, then pan.
+    if (px < x0 - MM_EDGE || px > x1 + MM_EDGE) {
+      const v = clampView({ offset: mmT(px) - span / 2, nsPerPx: view.nsPerPx });
+      setView(v);
+      offset = v.offset; x0 = mmX(v.offset); x1 = mmX(v.offset + span);
+      mmDrag.current = { mode: "pan", startX: px, offset, nsPerPx: v.nsPerPx };
+      return;
+    }
+    const mode = Math.abs(px - x0) <= MM_EDGE ? "left" : Math.abs(px - x1) <= MM_EDGE ? "right" : "pan";
+    mmDrag.current = { mode, startX: px, offset, nsPerPx: view.nsPerPx };
+  };
+  const onMmMove = (e: React.PointerEvent) => {
+    const cv = mmRef.current!;
+    const rect = cv.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const d = mmDrag.current;
+    if (!d) {
+      // hover cursor hint when not dragging (no re-render)
+      const v = viewRef.current;
+      if (v) {
+        const x0 = mmX(v.offset), x1 = mmX(v.offset + plotW * v.nsPerPx);
+        cv.style.cursor = Math.abs(px - x0) <= MM_EDGE || Math.abs(px - x1) <= MM_EDGE
+          ? "ew-resize" : px >= x0 && px <= x1 ? "grab" : "pointer";
+      }
+      return;
+    }
+    const nsPerMmPx = domMax / plotW;
+    if (d.mode === "pan") {
+      setView(clampView({ offset: d.offset + (px - d.startX) * nsPerMmPx, nsPerPx: d.nsPerPx }));
+    } else {
+      const startT = d.offset, endT = d.offset + plotW * d.nsPerPx, tAt = mmT(px);
+      const eps = plotW * 1e-3; // keep the window from collapsing to zero width
+      if (d.mode === "left") {
+        const newStart = Math.min(tAt, endT - eps);
+        setView(clampView({ offset: newStart, nsPerPx: (endT - newStart) / plotW }));
+      } else {
+        const newEnd = Math.max(tAt, startT + eps);
+        setView(clampView({ offset: startT, nsPerPx: (newEnd - startT) / plotW }));
+      }
+    }
+  };
+  const onMmUp = () => { mmDrag.current = null; };
+
   // --- interaction ---
   useEffect(() => {
     const cv = canvasRef.current;
@@ -396,6 +514,17 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
   const hm = hover ? marks[hover.i] : null;
   const fieldEntries = hm?.fields ? Object.entries(hm.fields).slice(0, 8) : [];
   return (
+    <div className="tlc-outer">
+    {marks.length > 0 && (
+      <canvas
+        className="tlc-mm"
+        ref={mmRef}
+        style={{ width: "100%", height: MM_H }}
+        onPointerDown={onMmDown}
+        onPointerMove={onMmMove}
+        onPointerUp={onMmUp}
+      />
+    )}
     <div className="tlc-wrap" ref={wrapRef} style={{ height: wrapH }}>
       <canvas
         ref={canvasRef}
@@ -441,6 +570,7 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
         })(),
         document.body,
       )}
+    </div>
     </div>
   );
 }

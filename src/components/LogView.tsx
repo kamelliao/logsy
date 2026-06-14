@@ -2,7 +2,7 @@ import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "
 import { Activity, ArrowDown, ArrowUp, Bookmark, ChevronDown, ChevronRight, Columns3, Copy, Download, Eye, Filter, Search, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { LogFile, ViewResult, FieldValue, Marker, MarkerIcon } from "../types";
+import type { LogFile, ViewResult, FieldValue, Marker, MarkerIcon, Filter as FilterCfg } from "../types";
 import { escapeRegex } from "../logic";
 import { MARKER_ICONS, MarkerGlyph, markerColor } from "./markers";
 import { Button } from "./ui/button";
@@ -67,6 +67,8 @@ function FieldTable({ fields }: { fields: Record<string, FieldValue> }) {
 interface LogViewProps {
   file: LogFile;
   view: ViewResult;
+  /** Active set's filters, in order — used to label a matched row with its #N. */
+  filters: FilterCfg[];
   viewMode: "all" | "matches";
   /** When set, the view is soloed to one filter; shows the exit banner. */
   soloPattern?: string | null;
@@ -103,12 +105,19 @@ interface LogViewProps {
 }
 
 export function LogView({
-  file, view, viewMode, soloPattern, onExitSolo, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, compareLines, style,
+  file, view, filters, viewMode, soloPattern, onExitSolo, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, compareLines, style,
   selectAllNonce, gotoSignal, onExportView, markers, markerJump, onSetMarker, onRemoveMarker,
   onToggleViewMode, onToggleFind, onCloseFind, onBuildFilter, onAddToCompare, onRemoveFromCompare,
   timelineLines, onAddToTimeline, onRemoveFromTimeline,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
+  // Filter id → 1-based position in the set, so a matched row's tooltip can name
+  // its winner as "#N" (matching the serials shown in the filter/timeline panels).
+  const filterSerial = useMemo(() => {
+    const m = new Map<string, number>();
+    filters.forEach((f, i) => m.set(f.id, i + 1));
+    return m;
+  }, [filters]);
   const scrollRef = useRef<HTMLDivElement>(null);
   const mapCanvasRef = useRef<HTMLCanvasElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
@@ -840,6 +849,12 @@ export function LogView({
               {virtualItems.map((vItem) => {
                 const r = visible[vItem.index];
                 const w = r.winner;
+                // Tooltip lists every matched highlight filter by serial (winner
+                // first), e.g. "Matched filters: #1, #3, #5".
+                const matched = w ? view.matchedFiltersFor(r.n) : [];
+                const matchTitle = matched.length
+                  ? `Matched filter${matched.length > 1 ? "s" : ""}: ${matched.map((f) => `#${filterSerial.get(f.id) ?? "?"}`).join(", ")}`
+                  : undefined;
                 const dim = viewMode === "all" && view.hasHighlights && !w;
                 const sel = selectedLines.has(r.n);
                 const mk = markerMap.get(r.n);
@@ -862,6 +877,7 @@ export function LogView({
                     <div
                       className={"log-row" + (w ? " matched" : "") + (dim ? " dim" : "") + (sel ? " selected" : "") + (canExpand ? " expandable" : "") + (compareLines.has(r.n) ? " incompare" : "")}
                       style={rowStyle}
+                      title={matchTitle}
                       onMouseDown={(e) => handleRowMouseDown(e, vItem.index)}
                       onMouseEnter={() => handleRowMouseEnter(vItem.index)}
                       onClick={(e) => onRowClick(e, vItem.index, r.n)}
