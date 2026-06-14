@@ -139,6 +139,8 @@ export interface AppState {
   /** Log lines added to the timeline, per file id. Persisted (survives reload),
    *  but not on the undo stack; line numbers are file-specific so it's keyed by file. */
   timelineLinesByFile?: Record<string, number[]>;
+  /** Height (px) of the timeline panel's draggable bottom sheet (track list). */
+  timelineSheetH?: number;
 }
 
 export interface PaletteEntry {
