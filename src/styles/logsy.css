@@ -554,6 +554,13 @@ button { font-family: inherit; }
 }
 
 /* ---- timeline canvas (phase 2) ---- */
+.tlc-outer { width: 100%; }
+/* Overview strip above the main canvas: a draggable brush over the whole domain. */
+.tlc-mm {
+  display: block; width: 100%; margin: 2px 0 0; touch-action: none;
+  border: 1px solid var(--border); border-radius: 8px;
+  background: var(--panel-bg-2, #f6f7f8);
+}
 .tlc-wrap {
   position: relative; width: 100%; margin: 2px 0 6px;
   border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
@@ -865,15 +872,15 @@ button { font-family: inherit; }
 .bm-row:hover .bm-del, .bm-del:focus-visible { opacity: 1; }
 .bm-del:hover { background: #fdecec; color: var(--error); }
 
-/* Sonner toast overrides */
+/* Sonner toast overrides (light theme) */
 .logsy-toast {
-  background: var(--text) !important; color: #fff !important;
-  border: none !important; box-shadow: var(--shadow-pop) !important;
+  background: #fff !important; color: var(--text) !important;
+  border: 1px solid var(--border) !important; box-shadow: var(--shadow-pop) !important;
   font-family: var(--ui-font) !important; font-size: 12.5px !important;
   font-weight: 500 !important; border-radius: 8px !important;
 }
-.logsy-toast-title { color: #fff !important; }
-.logsy-toast-icon { color: #fff !important; }
+.logsy-toast-title { color: var(--text) !important; }
+.logsy-toast-icon { color: var(--text-2) !important; }
 
 /* ---- find bar ---- */
 .findbar {

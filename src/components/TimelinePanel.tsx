@@ -1,21 +1,23 @@
-import { useMemo, useState, useRef, useEffect, CSSProperties } from "react";
+import { useCallback, useState, useRef, useEffect, CSSProperties } from "react";
 import {
-  Eye, EyeOff, GripVertical, Trash2, Plus,
-  Circle, Square, Triangle, Diamond,
+  Eye, EyeOff, GripVertical, Trash2, Plus, ListPlus, ListMinus, MoveRight, X,
+  Circle, Square, Triangle, Diamond, ChartNoAxesGantt,
 } from "lucide-react";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
+import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
   SortableContext, useSortable, arrayMove, verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Filter, TimelineSource, TimeUnit, EventMark, EventShape } from "../types";
+import type { Filter, FieldDef, TimelineSource, TimeUnit, EventMark, EventShape } from "../types";
 import { trackFieldsOf } from "../logic";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./ui/select";
 import { Button } from "./ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyContent } from "./ui/empty";
 import { TimelineCanvas } from "./TimelineCanvas";
 
 const UNITS: TimeUnit[] = ["hms", "s", "ms", "us", "ns"];
@@ -38,21 +40,30 @@ interface Props {
   tracks: TimelineSource[];
   /** All filters of the active set — source of the field pickers. */
   filters: Filter[];
+  /** Per-filter set of field names allowed as a time field (numeric / time-like). */
+  timeFields: Map<string, Set<string>>;
   marks: EventMark[];
   /** How many log lines the user has added to the timeline. */
   lineCount: number;
   onSetTrack: (tr: TimelineSource) => void;
-  onAddTrack: (filterId: string, timeField: string) => void;
   onRemoveTrack: (id: string) => void;
   onReorderTracks: (ids: string[]) => void;
   onClear: () => void;
+  /** Pull every visible track's matching lines onto the timeline (empty-state bridge). */
+  onAddMatchingLines: () => void;
+  /** Import one track's matching lines (per-row button). */
+  onImportTrackLines: (tr: TimelineSource) => void;
+  /** Remove one track's matching lines from the timeline (per-row button). */
+  onClearTrackLines: (tr: TimelineSource) => void;
+  /** Per track id: how many lines its filter+field matches, and how many of those
+   *  are currently on the timeline — drives the import/clear disabled states. */
+  trackLineStats: Map<string, { matching: number; inTl: number }>;
   onJump: (lineN: number) => void;
   /** Open the Edit modal for a filter (from a track row's filter chip). */
   onEditFilter: (id: string) => void;
 }
 
 const TITLE = "mt-3 mb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground";
-const EMPTY = "px-0.5 py-1 text-muted-foreground leading-relaxed";
 // Sized down to the tiny xs trigger it hangs off: the default popup uses text-sm
 // with roomy padding, which dwarfs the xs trigger. Shrink item/label text +
 // padding to match. Width stays >= the trigger (default min-w-anchor) and grows
@@ -62,14 +73,19 @@ const COMPACT =
   "[&_[data-slot=select-label]]:px-1.5";
 
 export function TimelinePanel({
-  tracks, filters, marks, lineCount,
-  onSetTrack, onAddTrack, onRemoveTrack, onReorderTracks, onClear, onJump, onEditFilter,
+  tracks, filters, timeFields, marks, lineCount,
+  onSetTrack, onRemoveTrack, onReorderTracks, onClear, onAddMatchingLines,
+  onImportTrackLines, onClearTrackLines, trackLineStats, onJump, onEditFilter,
 }: Props) {
   const lanes = tracks.filter((t) => !t.hidden).map((t) => t.lane);
-  // Filters that expose at least one parsed field can back a track.
-  const usableFilters = useMemo(
-    () => filters.filter((f) => trackFieldsOf(f).length > 0),
-    [filters],
+  // A filter's fields that may back a time field: restricted to the numeric /
+  // time-like ones (the timeline can only plot numbers / clocks).
+  const fieldsOf = useCallback(
+    (f: Filter): FieldDef[] => {
+      const allow = timeFields.get(f.id);
+      return trackFieldsOf(f).filter((d) => allow?.has(d.name));
+    },
+    [timeFields],
   );
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -91,44 +107,44 @@ export function TimelinePanel({
     : marks.length === 0 ? "Added lines expose no field for these tracks"
     : undefined;
   const hint =
-    tracks.length === 0 ? (
+    // No tracks → the Tracks empty state below carries the guidance.
+    tracks.length === 0 ? null
+    : lineCount === 0 ? (
       <>
-        A track plots one parsed field of one filter. Add a regex filter with a named
-        group like <code className="rounded bg-muted px-1">{"(?<ts>…)"}</code>, then
-        right-click the filter → <b>Add to timeline track</b> (or <b>+ Add track</b> below),
-        and right-click log lines → <b>Add to timeline</b>.
+        Right-click log lines → <b>Add to timeline</b>, or{" "}
+        <button
+          type="button"
+          className="cursor-pointer font-medium text-foreground underline underline-offset-2 hover:text-primary"
+          onClick={onAddMatchingLines}
+        >
+          add all matching lines
+        </button>
+        {" "}now.
       </>
-    ) : lineCount === 0 ? (
-      <>Right-click log lines → <b>Add to timeline</b> to place their timestamps here.</>
     ) : marks.length === 0 ? (
       <>The added lines don't match any track's filter, or expose no track field.</>
     ) : null;
 
   return (
     <div className="flex flex-1 min-h-0 flex-col overflow-hidden px-2.5 py-2 text-xs text-foreground">
-      {/* header */}
+      {/* header: guidance on the left, event/line counts (+ clear) on the right */}
       <div className="flex items-center gap-2">
-        <span className="text-muted-foreground">
+        {hint && <p className="flex-1 leading-relaxed text-muted-foreground">{hint}</p>}
+        <span className="ml-auto shrink-0 whitespace-nowrap text-muted-foreground">
           {marks.length} event{marks.length === 1 ? "" : "s"} · {lineCount} line{lineCount === 1 ? "" : "s"}
         </span>
-        {lineCount > 0 && (
-          <Button variant="ghost" size="xs" className="ml-auto text-muted-foreground" onClick={onClear}>
-            Clear lines
-          </Button>
-        )}
+        <Button variant="ghost" size="xs" disabled={lineCount === 0} className="shrink-0 text-muted-foreground" onClick={onClear}>
+          Clear lines
+        </Button>
       </div>
 
       {/* canvas — always shown (even empty), sticky above the scrolling rows */}
       <div className="mt-1.5">
         <TimelineCanvas marks={marks} lanes={lanes} onJump={onJump} placeholder={placeholder} />
       </div>
-      {hint && <p className={EMPTY}>{hint}</p>}
 
       {/* tracks header (fixed) */}
-      <div className="flex items-center gap-2">
-        <div className={TITLE}>Tracks</div>
-        <AddTrack filters={usableFilters} onAdd={onAddTrack} className="ml-auto mt-3 mb-1.5" />
-      </div>
+      <div className={TITLE}>Tracks</div>
 
       {/* track rows (scroll) — `scroll` matches the filter panel's scrollbar chrome;
           stable gutter keeps rows from shifting when the bar appears; the negative
@@ -136,16 +152,41 @@ export function TimelinePanel({
           (like the filter panel) instead of floating inset */}
       <div className="scroll -mr-2.5 flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable]">
         {tracks.length === 0 ? (
-          <p className={EMPTY}>No tracks. Use <b>+ Add track</b> to pick a filter and a field.</p>
+          <Empty className="h-full p-4">
+            <EmptyHeader>
+              <EmptyMedia variant="icon"><ChartNoAxesGantt /></EmptyMedia>
+              <EmptyTitle className="text-sm">No tracks yet</EmptyTitle>
+            </EmptyHeader>
+            <EmptyContent>
+              <ol className="space-y-1.5 text-left text-xs text-muted-foreground">
+                <li>
+                  <span className="mr-1 font-semibold text-foreground tabular-nums">1.</span>
+                  In the <b className="text-foreground">Filters</b> tab, right-click a filter →{" "}
+                  <b className="text-foreground">Add to timeline track</b>.
+                </li>
+                <li>
+                  <span className="mr-1 font-semibold text-foreground tabular-nums">2.</span>
+                  In the log view, right-click the lines you want →{" "}
+                  <b className="text-foreground">Add to timeline</b>.
+                </li>
+              </ol>
+            </EmptyContent>
+          </Empty>
         ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd}>
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} modifiers={[restrictToVerticalAxis]}>
             <SortableContext items={tracks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-              {tracks.map((tr) => (
+              {tracks.map((tr) => {
+                const st = trackLineStats.get(tr.id);
+                return (
                 <TrackRow
-                  key={tr.id} tr={tr} filters={filters}
+                  key={tr.id} tr={tr} filters={filters} fieldsOf={fieldsOf}
                   onSet={onSetTrack} onRemove={() => onRemoveTrack(tr.id)} onEditFilter={onEditFilter}
+                  onImport={() => onImportTrackLines(tr)} onClearLines={() => onClearTrackLines(tr)}
+                  canImport={!!st && st.matching > 0 && st.inTl < st.matching}
+                  canClear={!!st && st.inTl > 0}
                 />
-              ))}
+                );
+              })}
             </SortableContext>
           </DndContext>
         )}
@@ -154,56 +195,10 @@ export function TimelinePanel({
   );
 }
 
-/** "+ Add track" — pick a filter, then a field; adds on field choice. */
-function AddTrack({ filters, onAdd, className }: {
-  filters: Filter[]; onAdd: (filterId: string, field: string) => void; className?: string;
-}) {
-  const [open, setOpen] = useState(false);
-  const [filterId, setFilterId] = useState<string>("");
-  const filter = filters.find((f) => f.id === filterId);
-  const fields = filter ? trackFieldsOf(filter) : [];
-
-  if (filters.length === 0) return null;
-
-  if (!open) {
-    return (
-      <Button variant="ghost" size="xs" className={className} onClick={() => setOpen(true)}>
-        <Plus className="size-3" /> Add track
-      </Button>
-    );
-  }
-  return (
-    <div className={`flex items-center gap-1.5 ${className ?? ""}`}>
-      <Select value={filterId} onValueChange={(v) => v != null && setFilterId(v)}>
-        <SelectTrigger size="sm" className="w-[120px]"><SelectValue placeholder="filter…" /></SelectTrigger>
-        <SelectContent>
-          {filters.map((f) => (
-            <SelectItem key={f.id} value={f.id}>{f.description || f.pattern || f.id}</SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
-      <Select
-        value=""
-        onValueChange={(v) => { if (v != null && filterId) { onAdd(filterId, v); setOpen(false); setFilterId(""); } }}
-      >
-        <SelectTrigger size="sm" className="w-[100px]" disabled={!filter}>
-          <SelectValue placeholder="field…" />
-        </SelectTrigger>
-        <SelectContent>
-          {fields.map((d) => <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <Button variant="ghost" size="xs" className="text-muted-foreground"
-        onClick={() => { setOpen(false); setFilterId(""); }}>
-        cancel
-      </Button>
-    </div>
-  );
-}
-
-function TrackRow({ tr, filters, onSet, onRemove, onEditFilter }: {
-  tr: TimelineSource; filters: Filter[];
+function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onEditFilter, onImport, onClearLines, canImport, canClear }: {
+  tr: TimelineSource; filters: Filter[]; fieldsOf: (f: Filter) => FieldDef[];
   onSet: (tr: TimelineSource) => void; onRemove: () => void; onEditFilter: (id: string) => void;
+  onImport: () => void; onClearLines: () => void; canImport: boolean; canClear: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tr.id });
   const style: CSSProperties = {
@@ -227,7 +222,7 @@ function TrackRow({ tr, filters, onSet, onRemove, onEditFilter }: {
   // the chip opens its Edit modal, so the full filter is one click away.
   const filterIndex = filters.findIndex((f) => f.id === tr.filterId);
   const filter = filterIndex >= 0 ? filters[filterIndex] : undefined;
-  const fields = filter ? trackFieldsOf(filter) : [];
+  const fields = filter ? fieldsOf(filter) : [];
   const otherFields = fields.filter((d) => d.name !== tr.timeField);
   const filterName = filter ? (filter.description?.trim() || filter.pattern || filter.id) : "missing filter";
   const serial = filterIndex >= 0 ? `#${filterIndex + 1}` : "#?";
@@ -259,48 +254,69 @@ function TrackRow({ tr, filters, onSet, onRemove, onEditFilter }: {
           {tr.lane}
         </span>
       )}
-      <button
-        type="button"
-        className="max-w-[150px] cursor-pointer truncate rounded px-1 text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground disabled:cursor-default disabled:hover:bg-transparent"
+      <Button
+        variant="ghost"
+        size="xs"
+        className="max-w-[150px] min-w-0 px-1 text-[10px] font-normal text-muted-foreground hover:text-foreground"
         title={filter ? `Edit filter — ${filterName}` : "Filter not found"}
         disabled={!filter}
         onClick={() => filter && onEditFilter(filter.id)}
       >
-        <span className="font-semibold tabular-nums">{serial}</span> · {filterName}
-      </button>
+        <span className="min-w-0 truncate">
+          <span className="font-semibold tabular-nums">{serial}</span> · {filterName}
+        </span>
+      </Button>
 
-      {/* config selects — small, pushed to the right (left of hide/delete).
-          Mark kind (point/span) sits left of the time field. */}
-      <Select value={tr.kind} onValueChange={(v) => v != null && onSet({ ...tr, kind: v as "point" | "span" })}>
-        <SelectTrigger size="xs" className="ml-auto w-[66px]"><SelectValue /></SelectTrigger>
-        <SelectContent className={COMPACT}>
-          <SelectGroup>
-            <SelectLabel>Mark kind</SelectLabel>
-            <SelectItem value="point">point</SelectItem>
-            <SelectItem value="span" disabled={otherFields.length === 0}>span</SelectItem>
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-      <Select value={tr.timeField} onValueChange={(v) => v != null && onSet({ ...tr, timeField: v })}>
-        <SelectTrigger size="xs" className="w-[78px]"><SelectValue placeholder="field…" /></SelectTrigger>
-        <SelectContent className={COMPACT}>
-          <SelectGroup>
-            <SelectLabel>Time field</SelectLabel>
-            {fields.map((d) => <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>)}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-      {tr.kind === "span" && (
-        <Select value={tr.endField ?? ""} onValueChange={(v) => v != null && onSet({ ...tr, endField: v })}>
-          <SelectTrigger size="xs" className="w-[78px]"><SelectValue placeholder="end…" /></SelectTrigger>
+      {/* Field pill (pushed right, left of unit/hide/delete): the start time field
+          and — for a span — the end field, grouped in ONE bordered control so the
+          start→end relationship is self-contained. kind is derived from having an
+          end field; a point shows just a "+" to add one. The unit select stays
+          OUTSIDE the pill so it can't be mistaken for a span target. */}
+      <div className="ml-auto inline-flex items-center gap-0.5 rounded-md border border-input bg-background px-0.5">
+        <Select value={tr.timeField} onValueChange={(v) => v != null && onSet({ ...tr, timeField: v })}>
+          <SelectTrigger size="xs" className="w-[68px] border-0 bg-transparent shadow-none hover:bg-muted/60 data-[size=xs]:h-5"><SelectValue placeholder="field…" /></SelectTrigger>
           <SelectContent className={COMPACT}>
             <SelectGroup>
-              <SelectLabel>End field</SelectLabel>
-              {otherFields.map((d) => <SelectItem key={d.name} value={d.name}>→ {d.name}</SelectItem>)}
+              <SelectLabel>{tr.endField ? "Start field" : "Time field"}</SelectLabel>
+              {fields.map((d) => <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>)}
             </SelectGroup>
           </SelectContent>
         </Select>
-      )}
+        {tr.endField ? (
+          <>
+            <MoveRight className="size-3 shrink-0 text-muted-foreground/60" />
+            <Select value={tr.endField ?? ""} onValueChange={(v) => v != null && onSet({ ...tr, kind: "span", endField: v })}>
+              <SelectTrigger size="xs" className="w-[68px] border-0 bg-transparent shadow-none hover:bg-muted/60 data-[size=xs]:h-5"><SelectValue placeholder="end…" /></SelectTrigger>
+              <SelectContent className={COMPACT}>
+                <SelectGroup>
+                  <SelectLabel>End field</SelectLabel>
+                  {otherFields.map((d) => <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>)}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="size-4 shrink-0 rounded text-muted-foreground hover:text-foreground"
+              title="Remove end field (make it a point)"
+              onClick={() => onSet({ ...tr, kind: "point", endField: undefined })}
+            >
+              <X className="size-3" />
+            </Button>
+          </>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="size-4 shrink-0 rounded text-muted-foreground/60 hover:text-foreground"
+            title="Add an end field → draw as a span"
+            onClick={() => onSet({ ...tr, kind: "span", endField: otherFields[0].name })}
+            disabled={otherFields.length === 0}
+          >
+            <Plus className="size-3" />
+          </Button>
+        )}
+      </div>
       <Select value={tr.unit} onValueChange={(v) => v != null && onSet({ ...tr, unit: v as TimeUnit })}>
         <SelectTrigger size="xs" className="w-[58px]"><SelectValue /></SelectTrigger>
         <SelectContent className={COMPACT}>
@@ -312,6 +328,22 @@ function TrackRow({ tr, filters, onSet, onRemove, onEditFilter }: {
       </Select>
 
       <Button
+        variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
+        title="Import this track's matching lines onto the timeline"
+        disabled={!canImport}
+        onClick={onImport}
+      >
+        <ListPlus />
+      </Button>
+      <Button
+        variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
+        title="Remove this track's lines from the timeline"
+        disabled={!canClear}
+        onClick={onClearLines}
+      >
+        <ListMinus />
+      </Button>
+      <Button
         variant="ghost" size="icon-xs"
         className={`${tr.hidden ? "text-muted-foreground/50" : "text-muted-foreground"}`}
         title={tr.hidden ? "Show track" : "Hide track"}
@@ -319,7 +351,7 @@ function TrackRow({ tr, filters, onSet, onRemove, onEditFilter }: {
       >
         {tr.hidden ? <EyeOff /> : <Eye />}
       </Button>
-      <Button variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-destructive"
+      <Button variant="ghost" size="icon-xs" className="size-[24px] text-muted-foreground hover:text-destructive"
         title="Delete track" onClick={onRemove}>
         <Trash2 />
       </Button>

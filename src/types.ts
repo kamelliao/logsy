@@ -136,6 +136,9 @@ export interface AppState {
   /** User-customised quick-access colour palette (swatches row in Edit filter).
    *  undefined = use the built-in defaults. */
   customPalette?: PaletteEntry[];
+  /** Log lines added to the timeline, per file id. Persisted (survives reload),
+   *  but not on the undo stack; line numbers are file-specific so it's keyed by file. */
+  timelineLinesByFile?: Record<string, number[]>;
 }
 
 export interface PaletteEntry {
@@ -207,6 +210,11 @@ export interface ViewResult {
    * has no field provider.
    */
   fieldsFor(n: number): Record<string, FieldValue> | undefined;
+  /**
+   * All enabled highlight (non-exclude) filters matching line `n`, in filter
+   * order (colour winner first). Lazy; backed by the per-filter match bit sets.
+   */
+  matchedFiltersFor(n: number): Filter[];
 }
 
 export interface Segment {

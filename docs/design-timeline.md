@@ -2,6 +2,19 @@
 
 Status: **v2 implemented 2026-06-14** (branch `feat/event-timeline`, not committed). Tests green.
 
+### v2.7 refinements (2026-06-14)
+- **`+ Add track` button removed.** It was the lowest-context of the three add
+  paths — a mini filter picker rebuilding a selection the user already has in the
+  Filters tab. Adding a track now happens where the context is: the **filter row's
+  right-click → *Add to timeline track*** (one item per usable field), backed by the
+  line→track auto-create (A2). The panel's `AddTrack` composer, `usableFilters`, and
+  the `onAddTrack` prop were dropped (`addTrack` stays in App for the filter menu).
+- **Empty Tracks state uses a shadcn `Empty` component** (new `ui/empty.tsx`):
+  `ChartNoAxesGantt` icon + "No tracks yet" + guidance pointing at the right-click
+  path. The old header empty-state hint (the `tracks.length === 0` branch that also
+  mentioned `+ Add track`) was removed; the header hint now starts at the
+  "lines" stage (`lineCount === 0`).
+
 ### v2.1 refinements (2026-06-14)
 - **Add a track from the filter list**: a filter row's right-click / ⋮ menu now
   offers *Add to timeline track* (one item per numeric field when the filter has
@@ -45,6 +58,85 @@ Status: **v2 implemented 2026-06-14** (branch `feat/event-timeline`, not committ
   pan both clamp. Auto-fit is keyed on the **data range only** (not `plotW`), with a
   separate idempotent clamp effect on width change — so a **resize no longer resets
   zoom/pan**.
+
+### v2.6 polish (2026-06-14)
+- **Per-row import + clear, with disabled states.** Each track row now has a
+  `ListMinus` *clear* button left of the `ListPlus` *import* button. App computes
+  `trackLineStats: Map<trackId, {matching, inTl}>` (per track: matching lines via
+  `winnerLines`, and how many are already on the timeline); import is disabled when
+  all matches are already added (`inTl === matching`) or there are none, clear when
+  none are on the timeline (`inTl === 0`). `onClearTrackLines` removes just that
+  track's lines.
+- **Track DnD locked to the vertical axis** via `restrictToVerticalAxis`
+  (`@dnd-kit/modifiers`) on the `DndContext` — no sideways drift.
+- **Field-picker labels** are terse + context-aware: the start select reads
+  *"Time field"* for a point, *"Start field"* once an end exists; the end select
+  reads *"End field"*.
+- **Toast switched to a light theme** — `.logsy-toast` was an inverted dark chip
+  (`background: var(--text)`, white text); now white bg, `var(--text)` text,
+  `var(--border)` border, `var(--text-2)` icon.
+
+### v2.5 refinements (2026-06-14)
+- **Guidance moved above the canvas.** The empty-state hint (incl. the *add all
+  matching lines* button) now sits in the panel header, **left of the
+  "N events · N lines" counts**, instead of below the canvas.
+- **Added lines persist across reload, per file.** `timelineLines` is no longer
+  ephemeral React state — it lives in `AppState.timelineLinesByFile` (a
+  `Record<fileId, number[]>`), derived back into a `Set` per active file. Mutations
+  go through plain `setState` (persisted, **not** undoable). The file-switch reset
+  effect no longer clears it (each file reads its own set); only `compareLines`
+  still resets there.
+- **Time field restricted to numeric / time-like fields.** A field can back a time
+  field only if its declared type is numeric (`int|hex|float|time`) **or** a sampled
+  matched value passes `isTimeLike()` (int / hex / decimal / clock — judged on the
+  VALUE, since a char-set test on the regex source is unreliable: quantifiers, char
+  classes, hex). App computes `timeFieldsByFilter: Map<filterId, Set<field>>` in one
+  O(rows) pass (sampling ≤20 winner lines per provider that has string-typed
+  fields), threaded into the panel's pickers (`fieldsOf`) and used for A2's
+  auto-track field choice. `trackFieldsOf` (returns all fields) is now filtered by
+  this allow-set at the call sites.
+- **Span UX — kind derived from the end field; field "pill".** The `Mark kind`
+  select is gone. The start field and (for a span) the end field live together in
+  **one bordered pill** (`inline-flex … rounded-md border`), with the inner
+  `SelectTrigger`s stripped to borderless (`border-0 bg-transparent shadow-none`)
+  so the pill reads as a single control. A point shows `[ field ] +`; the `+`
+  reveals `[ field ] → [ end ] ✕` (the `MoveRight` arrow only ever sits *between
+  the two field selects*, never next to the unit). Picking an end sets
+  `kind:"span"`; the `✕` clears it back to `kind:"point"`. The **unit select stays
+  OUTSIDE the pill** — the earlier inline `→`-before-unit adder read as a false
+  "field → unit" span, which this fixes. (`TimelineSource.kind` is still written
+  for `buildTimeline`; local `addEnd` reveals the end picker before a field is
+  chosen; the `+` only shows when the filter has another field to pair.)
+
+### v2.4 — affordance: auto-bridge the two-step setup (2026-06-14)
+The timeline needs two inputs (a **track** = filter+field, and **lines**), declared
+in two places with AND semantics — so either one alone yields an identical empty
+canvas, and the user can't tell which step they're missing. The two directions are
+asymmetric: **track→lines is deterministic** (the filter already knows its matching
+lines) so it can be auto-filled; **line→track is ambiguous** (which field is the
+timestamp?) so it's offered, not silent. Fixes (App.tsx only; model/persistence
+untouched):
+- **A1 — per-row "import matching lines" button.** Creating a track only *defines
+  what to plot*; it does **not** auto-pull lines (that conflates "define a measure"
+  with "load data" and could flood the canvas). Instead each track row has a
+  `ListPlus` button → `importTrackLines(tr)`, which adds that track's
+  `winnerLines(filterId, timeField)` (visible lines where this filter is the
+  **first-match winner** and exposes the field — exactly the lines that produce a
+  mark) with a `"N lines imported"` toast. Explicit, per-track, affordance next to
+  the track.
+- **A2 — adding lines with no matching track creates one.** The LogView *Add to
+  timeline* handler is now `addLinesToTimeline`: after adding, it finds the distinct
+  first-match filters among the added lines that have **no track**, and **batches**
+  one track each (`field = trackFieldsOf(f)[0]`) into a **single undoable patch** +
+  one toast, then switches to the Timeline tab. Batching is the fix for a
+  multi-filter selection spawning overlapping prompts. These tracks are created with
+  **autofill:false** — the user already picked the lines, so don't flood the
+  filter's other matches.
+- **B — empty-state bridge button.** The "tracks exist, no lines" hint gained an
+  inline **add all matching lines** button → `addAllMatchingLines` (every visible
+  track's `winnerLines`). Backs up A1 after a *Clear lines*.
+- `winnerLines` / `buildTrack` factored out and shared by all three paths;
+  `TimelinePanel` gained `onAddMatchingLines`.
 
 ### v2.3 refinements (2026-06-14)
 - **Hover card no longer clipped**: `.tlc-wrap` is `overflow:hidden` (rounded corners

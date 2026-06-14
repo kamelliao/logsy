@@ -213,6 +213,18 @@ export function guessUnit(name: string, sample?: string): TimeUnit {
   return "hms";
 }
 
+/**
+ * Whether a field's raw matched value looks like a timestamp the timeline can
+ * plot: an integer, hex (`0x…`), decimal, or a clock (`H:MM:SS.mmm` / `M:SS`).
+ * Judged on the matched VALUE rather than the regex source — a char-set test on
+ * the pattern is unreliable because real numeric patterns use quantifiers, char
+ * classes, escapes, and hex (`\d+`, `[0-9]{2}`, `0x[0-9a-f]+`).
+ */
+const TIME_LIKE_RE = /^\s*(?:0[xX][0-9a-fA-F]+|[+-]?\d+(?:[.,]\d+)?|\d{1,3}(?::\d{2}){1,2}(?:[.,]\d+)?)\s*$/;
+export function isTimeLike(raw: string): boolean {
+  return TIME_LIKE_RE.test(raw);
+}
+
 /** Extract a compiled structural filter's named groups from a line, coerced by type. */
 function extractFields(re: RegExp, defs: FieldDef[], line: string): Record<string, FieldValue> {
   re.lastIndex = 0;
@@ -293,9 +305,13 @@ export function computeView(lines: string[], compiled: CompiledFilter[]): ViewRe
   const winnerIdx = new Int32Array(n).fill(-1);
   const fieldsIdx = new Int32Array(n).fill(-1);
   const excludedArr = new Uint8Array(n);
+  // Keep each usable filter's match bit set so a row can later report *all* the
+  // highlight filters it matched (not just the colour winner) on demand.
+  const usableBits: Uint8Array[] = new Array(usable.length);
   for (let u = usable.length - 1; u >= 0; u--) {
     const c = usable[u];
     const { bits, count } = matchBitsFor(lines, c.re!);
+    usableBits[u] = bits;
     counts[c.f.id] = count;
     if (!c.f.enabled) continue;
     const isExclude = c.f.exclude;
@@ -336,7 +352,23 @@ export function computeView(lines: string[], compiled: CompiledFilter[]): ViewRe
     return extractFields(p.re, p.defs, row.text);
   };
 
-  return { rows, counts, hasHighlights, hasExcludes, matchedCount, excludedCount, fieldsFor };
+  // Every enabled highlight (non-exclude) filter that matches line `n`, in filter
+  // order (so the colour winner is first). Computed on demand from the cached
+  // bit sets — used by the log row's hover tooltip.
+  const matchedFiltersFor = (n: number): Filter[] => {
+    const i = n - 1;
+    if (i < 0 || i >= lines.length) return [];
+    const out: Filter[] = [];
+    const byte = i >> 3, bit = 1 << (i & 7);
+    for (let u = 0; u < usable.length; u++) {
+      const c = usable[u];
+      if (!c.f.enabled || c.f.exclude) continue;
+      if (usableBits[u][byte] & bit) out.push(c.f);
+    }
+    return out;
+  };
+
+  return { rows, counts, hasHighlights, hasExcludes, matchedCount, excludedCount, fieldsFor, matchedFiltersFor };
 }
 
 // --- Timeline: extract events from the lines the user added ----------------
