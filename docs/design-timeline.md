@@ -2,6 +2,85 @@
 
 Status: **v2 implemented 2026-06-14** (branch `feat/event-timeline`, not committed). Tests green.
 
+### v2.8 refinements (2026-06-14)
+- **Bug fix — only one track survived a reload.** `normalizeState` (the
+  localStorage-load path) still de-duped `g.sources` by **`timeField` alone**
+  (leftover v1 logic), so tracks sharing a field name (several filters each
+  exposing `ts`/`time`) collapsed to one. Now de-dupes by the v2 key
+  **`filterId:timeField`** and requires a `filterId` string, matching
+  `filterFile.ts:importSources`. Regression test in `timeline.test.ts`.
+- **Filter chip → hover card (no Edit modal).** A track row's filter chip no
+  longer opens the Edit modal; it's a read-only `HoverCard` (`ui/hover-card`)
+  showing serial + description, the pattern, the filter's time fields (active one
+  marked), and flags. `TimelinePanel.onEditFilter` prop dropped (App's
+  `openEditFilter` stays for the Filters tab).
+- **Timeline can pop out — and SHARES one dock with Compare.** Compare and
+  Timeline, when popped, live as **tabs in a single popped dock** on the side
+  opposite the main panel (never two stacked docks). New
+  `AppState.timelinePopped`, plus a shared `poppedActiveTab: "compare" |
+  "timeline"` and `poppedCollapsed` that **replace** the old per-panel
+  `compareCollapsed`/`timelineCollapsed` (migrated in `normalizeState`). One `pop`
+  dock entry (ref `popRef`), one `popDockNode` (collapsed → simple strip head;
+  expanded → `panel-tabs` over the popped tabs + the active body), one resize
+  effect. `popCompareOut`/`popTimelineOut` set `poppedActiveTab` + expand;
+  dock-back returns that panel to the main tabbed dock and focuses the other in
+  the popped dock. Pop-out button sits in the main tab-bar header when
+  Compare/Timeline is the active tab.
+
+### v2.10 — canvas: hover keyboard nav + scroll under the sheet (2026-06-15)
+- **WASD works on hover, not click-to-focus.** The canvas keyboard nav was bound
+  to `onKeyDown` (needed DOM focus → a click first). Replaced with a window
+  `keydown` listener gated on a `hoverRef` (set on `onPointerEnter`, cleared on
+  leave), so A/D pan + W/S zoom act whenever the cursor is over the canvas. Guarded
+  to skip when an `INPUT`/`TEXTAREA`/contenteditable is focused, so it never
+  hijacks typing. `tabIndex`/`onKeyDown` removed from the `<canvas>`.
+- **Lanes behind the sheet are scrollable; canvas stays full height.**
+  `.tl-sheet` is `position:absolute; bottom:0` (overlays the canvas). The canvas
+  reserved only `HANDLE_H`, so a pulled-up sheet hid the lower lanes with no way to
+  scroll them up. Fix keeps the canvas **full height** (no resize → no jump when
+  the sheet drags) and instead extends its scroll range: the panel passes the
+  covered height as `bottomInset = renderH − HANDLE_H`, and the canvas adds it to
+  the scroll spacer (`spacerH = max(0, contentH − size.h + bottomInset)`) so the
+  bottom lanes can be scrolled up from behind the sheet. (A first attempt shrank
+  the canvas viewport to `paddingBottom: renderH` — rejected: it made the canvas
+  jump on every sheet drag.) `MIN_PLOT_H` 90 → 120 so a usable strip (minimap +
+  axis + a lane) always stays uncovered above the sheet.
+- **Canvas goes full-width / frameless so its scrollbar aligns with the sheet's.**
+  `.tlc-wrap` and `.tlc-mm` dropped their `border` + `border-radius`; the canvas
+  container dropped its `px-2.5` inset. The plot now runs edge-to-edge (like the
+  log view), so `.tlc-wrap`'s scrollbar sits at the panel's right edge, lined up
+  with the bottom sheet's (`.tl-sheet-body`) — both full-width with `.scroll` +
+  `scrollbar-gutter: stable`. Minimap keeps a `border-bottom` divider (suppressed
+  via `.tlc-mm:empty` when there are no events).
+
+### v2.9 — per-track line counts + gutter marker (2026-06-14)
+The added-line set was near-invisible (only aggregate counts + canvas marks). This
+surfaces it **without re-rendering log text** (that would duplicate the log view).
+- **Per-track count badge** `inTl / matching` (e.g. `12/40` = on-timeline /
+  matchable) on each track row, left of the import/clear buttons. App's
+  `trackLineStats` stays `{matching, inTl}`.
+- **`.intimeline` gutter marker** in the log view (mirrors `.incompare`): a teal
+  inset bar (`--tl-accent`, #0d9488) on timeline lines; a line in both compare and
+  timeline stacks blue 0–2px + teal 2–4px. So which lines are on the timeline is
+  visible *in context* while scrolling the log — this is the canonical "which
+  lines" surface, alongside the canvas marks.
+- **Orphan hint** — a bounded one-liner in the sheet hint area when there are
+  lines on the timeline that **no track plots** ("added but nothing shows"): a
+  count + **Jump** (to the first) + **Remove** (all). `orphanLines` = timeline
+  lines absent from `marks`. This is the one thing not visible via the badge /
+  gutter / canvas, so it's the only added-line detail the panel shows.
+
+#### Rejected: a per-line "Lines" index (built, then removed)
+A `Tracks ⇄ Lines` toggle with per-track chip lists (in-timeline + an expandable,
+capped candidate list, dot=toggle / number=jump, "Not plotted" group) was built
+and then **removed**: it duplicated what the badges + gutter marker + canvas
+already convey, and one DOM node per added line doesn't scale (a filter matching
+tens of thousands of lines, plus "add all"). The added-line set already scales the
+canvas/marks, so listing it per-line added cost without unique value. Kept only the
+cheap, bounded pieces (badge, gutter, orphan hint). Also rejected earlier: a
+full-text line list (duplicates the log), a "timeline-only" log-view filter (can't
+*add* not-yet lines), and minimap ticks (deferred).
+
 ### v2.7 refinements (2026-06-14)
 - **`+ Add track` button removed.** It was the lowest-context of the three add
   paths — a mini filter picker rebuilding a selection the user already has in the

@@ -3,7 +3,8 @@ import {
   compileAll, computeView, coerceValue, coerceTime, guessUnit,
   buildTimeline, trackFieldsOf,
 } from "../logic";
-import type { Filter, FieldDef, TimelineSource } from "../types";
+import { normalizeState } from "../data";
+import type { Filter, FieldDef, TimelineSource, AppState } from "../types";
 
 function filter(id: string, pattern: string, fields: FieldDef[], over: Partial<Filter> = {}): Filter {
   return {
@@ -132,4 +133,24 @@ test("a line whose fields lack the track field is skipped", () => {
   const lines = ["00:00:01.000 a"];
   const v = viewOf(lines, [filter("f", "(?<ts>\\d+:\\d+:\\d+\\.\\d+)", [{ name: "ts", type: "time" }])]);
   expect(buildTimeline(v, [1], [track("f", "ghost")])).toEqual([]);
+});
+
+// --- persistence: normalizeState keeps every (filter, field) track -----------
+
+test("normalizeState de-dupes tracks by (filterId, timeField), not field name alone", () => {
+  // Two tracks share the field name "ts" but bind different filters — both must
+  // survive a reload. The old code de-duped by timeField only, collapsing them.
+  const sources: TimelineSource[] = [track("f1", "ts"), track("f2", "ts")];
+  const state = {
+    files: [{
+      id: "file1", name: "log", sets: [{
+        id: "g1", name: "set", filters: [], groups: [], order: [], sources,
+      }], activeSetId: "g1", markers: [],
+    }],
+    activeFileId: "file1",
+  } as unknown as AppState;
+  const out = normalizeState(state);
+  const kept = out.files[0].sets[0].sources;
+  expect(kept?.length).toBe(2);
+  expect(kept?.map((s) => s.filterId)).toEqual(["f1", "f2"]);
 });

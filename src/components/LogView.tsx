@@ -875,7 +875,7 @@ export function LogView({
                     style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}
                   >
                     <div
-                      className={"log-row" + (w ? " matched" : "") + (dim ? " dim" : "") + (sel ? " selected" : "") + (canExpand ? " expandable" : "") + (compareLines.has(r.n) ? " incompare" : "")}
+                      className={"log-row" + (w ? " matched" : "") + (dim ? " dim" : "") + (sel ? " selected" : "") + (canExpand ? " expandable" : "") + (compareLines.has(r.n) ? " incompare" : "") + (timelineLines.has(r.n) ? " intimeline" : "")}
                       style={rowStyle}
                       title={matchTitle}
                       onMouseDown={(e) => handleRowMouseDown(e, vItem.index)}

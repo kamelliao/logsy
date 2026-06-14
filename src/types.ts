@@ -119,14 +119,21 @@ export interface AppState {
   showLineNumbers: boolean;
   /** Where the comparison panel docks *when popped out* of the tabbed panel. */
   comparePos: "bottom" | "right";
-  /** Collapsed (rolled-up) state of the main tabbed panel / popped compare dock. */
+  /** Collapsed (rolled-up) state of the main tabbed panel. */
   filterCollapsed: boolean;
-  compareCollapsed: boolean;
   /** Active tab in the main panel (Filters, Compare, Bookmarks, Timeline share one tabbed dock). */
   activePanelTab: "filters" | "compare" | "bookmarks" | "timeline";
-  /** When true, Compare is shown as its own dock (so it can sit beside Filters)
-   *  instead of as a tab in the main panel. */
+  /** When true, Compare is shown in the popped dock (beside Filters) instead of as
+   *  a tab in the main panel. */
   comparePopped: boolean;
+  /** When true, Timeline is shown in the popped dock (beside Filters) instead of
+   *  as a tab in the main panel. */
+  timelinePopped?: boolean;
+  /** Compare and Timeline, when popped out, SHARE one dock on the side opposite
+   *  the main panel. This is the active tab within that shared popped dock. */
+  poppedActiveTab?: "compare" | "timeline";
+  /** Collapsed (rolled-up) state of the shared popped dock. */
+  poppedCollapsed?: boolean;
   /**
    * Persisted panel sizes (percent), bucketed by group-structure key so that
    * sizes from one dock arrangement never bleed into another. Outer key is the

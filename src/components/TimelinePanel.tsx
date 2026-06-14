@@ -2,6 +2,7 @@ import { useCallback, useState, useRef, useEffect, CSSProperties } from "react";
 import {
   Eye, EyeOff, GripVertical, Trash2, Plus, ListPlus, ListMinus, MoveRight, X,
   Circle, Square, Triangle, Diamond, ChartNoAxesGantt, ChevronDown, ChevronUp,
+  AlertTriangle,
 } from "lucide-react";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -17,6 +18,7 @@ import { trackFieldsOf } from "../logic";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./ui/select";
 import { Button } from "./ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "./ui/hover-card";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyContent } from "./ui/empty";
 import { TimelineCanvas } from "./TimelineCanvas";
 
@@ -55,11 +57,14 @@ interface Props {
   /** Remove one track's matching lines from the timeline (per-row button). */
   onClearTrackLines: (tr: TimelineSource) => void;
   /** Per track id: how many lines its filter+field matches, and how many of those
-   *  are currently on the timeline — drives the import/clear disabled states. */
+   *  are on the timeline — drives the import/clear states and the per-row badge. */
   trackLineStats: Map<string, { matching: number; inTl: number }>;
+  /** On the timeline but plotting no mark (no track / field) — the "added but
+   *  nothing shows" case, surfaced as a bounded hint. */
+  orphanLines: number[];
+  /** Remove the given lines from the timeline (orphan-hint "Remove" action). */
+  onRemoveLines: (ns: number[]) => void;
   onJump: (lineN: number) => void;
-  /** Open the Edit modal for a filter (from a track row's filter chip). */
-  onEditFilter: (id: string) => void;
   /** Persisted height (px) of the draggable bottom sheet. */
   sheetH: number;
   onSetSheetH: (h: number) => void;
@@ -69,8 +74,9 @@ interface Props {
 // bottom padding so its lanes are never hidden behind the peeking sheet. Must
 // match `.tl-sheet-handle` height in logsy.css.
 const HANDLE_H = 34;
-// Smallest plot we keep visible above a fully-pulled-up sheet.
-const MIN_PLOT_H = 90;
+// How much of the panel the sheet can never cover — caps how far it pulls up so a
+// usable strip of canvas (minimap + axis + a lane) stays uncovered above it.
+const MIN_PLOT_H = 120;
 // Fixed height the chevron expands the sheet to (it does not restore the last
 // dragged height — every expand opens to this size).
 const EXPANDED_H = 200;
@@ -85,7 +91,8 @@ const COMPACT =
 export function TimelinePanel({
   tracks, filters, timeFields, marks, lineCount,
   onSetTrack, onRemoveTrack, onReorderTracks, onAddMatchingLines,
-  onImportTrackLines, onClearTrackLines, trackLineStats, onJump, onEditFilter,
+  onImportTrackLines, onClearTrackLines, trackLineStats,
+  orphanLines, onRemoveLines, onJump,
   sheetH, onSetSheetH,
 }: Props) {
   // The bottom sheet's height is driven locally during a drag (no per-move
@@ -185,8 +192,15 @@ export function TimelinePanel({
     <div ref={rootRef} className="relative flex flex-1 min-h-0 flex-col overflow-hidden text-xs text-foreground">
       {/* canvas fills the whole panel; bottom padding reserves room for the
           always-present (collapsed) sheet handle so no lane hides under it */}
-      <div className="min-h-0 flex-1 px-2.5 pt-2" style={{ paddingBottom: HANDLE_H }}>
-        <TimelineCanvas marks={marks} lanes={lanes} onJump={onJump} placeholder={placeholder} />
+      {/* The canvas stays full height; the sheet overlays its bottom. We pass the
+          covered height (renderH − handle) as `bottomInset` so the canvas adds that
+          much extra scroll range — lanes hidden behind the sheet can be scrolled up
+          into view, while the canvas itself never resizes (no jump on sheet drag). */}
+      <div className="min-h-0 flex-1 pt-2" style={{ paddingBottom: HANDLE_H }}>
+        <TimelineCanvas
+          marks={marks} lanes={lanes} onJump={onJump} placeholder={placeholder}
+          bottomInset={Math.max(0, renderH - HANDLE_H)}
+        />
       </div>
 
       {/* draggable bottom sheet: handle bar (grip + counts + clear), the contextual
@@ -202,6 +216,7 @@ export function TimelinePanel({
           <span className="tl-sheet-counts">
             {marks.length} event{marks.length === 1 ? "" : "s"} · {lineCount} line{lineCount === 1 ? "" : "s"}
           </span>
+          {hint && <span className="tl-sheet-counts">{hint}</span>}
           <Button
             variant="ghost" size="icon-xs" className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
             title={collapsed ? "Expand tracks" : "Collapse tracks"}
@@ -210,7 +225,31 @@ export function TimelinePanel({
             {collapsed ? <ChevronUp /> : <ChevronDown />}
           </Button>
         </div>
-        {hint && <p className="tl-sheet-hint">{hint}</p>}
+        
+        {/* The one thing not visible elsewhere: lines on the timeline that no track
+            plots (added, but nothing shows). Bounded to a count + actions. */}
+        {orphanLines.length > 0 && (
+          <p className="tl-sheet-hint flex items-center gap-1.5">
+            <AlertTriangle className="size-3 shrink-0 text-amber-500" />
+            <span>
+              <b className="font-semibold tabular-nums">{orphanLines.length}</b> added line{orphanLines.length === 1 ? "" : "s"} not plotted by any track.
+            </span>
+            <button
+              type="button"
+              className="cursor-pointer font-medium text-foreground underline underline-offset-2 hover:text-primary"
+              onClick={() => onJump(orphanLines[0])}
+            >
+              Jump
+            </button>
+            <button
+              type="button"
+              className="cursor-pointer font-medium text-foreground underline underline-offset-2 hover:text-primary"
+              onClick={() => onRemoveLines(orphanLines)}
+            >
+              Remove
+            </button>
+          </p>
+        )}
         <div className="tl-sheet-body scroll">
         {tracks.length === 0 ? (
           <Empty className="h-full p-4">
@@ -241,8 +280,9 @@ export function TimelinePanel({
                 return (
                 <TrackRow
                   key={tr.id} tr={tr} filters={filters} fieldsOf={fieldsOf}
-                  onSet={onSetTrack} onRemove={() => onRemoveTrack(tr.id)} onEditFilter={onEditFilter}
+                  onSet={onSetTrack} onRemove={() => onRemoveTrack(tr.id)}
                   onImport={() => onImportTrackLines(tr)} onClearLines={() => onClearTrackLines(tr)}
+                  inTl={st?.inTl ?? 0} matching={st?.matching ?? 0}
                   canImport={!!st && st.matching > 0 && st.inTl < st.matching}
                   canClear={!!st && st.inTl > 0}
                 />
@@ -257,10 +297,11 @@ export function TimelinePanel({
   );
 }
 
-function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onEditFilter, onImport, onClearLines, canImport, canClear }: {
+function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLines, inTl, matching, canImport, canClear }: {
   tr: TimelineSource; filters: Filter[]; fieldsOf: (f: Filter) => FieldDef[];
-  onSet: (tr: TimelineSource) => void; onRemove: () => void; onEditFilter: (id: string) => void;
-  onImport: () => void; onClearLines: () => void; canImport: boolean; canClear: boolean;
+  onSet: (tr: TimelineSource) => void; onRemove: () => void;
+  onImport: () => void; onClearLines: () => void;
+  inTl: number; matching: number; canImport: boolean; canClear: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tr.id });
   const style: CSSProperties = {
@@ -316,25 +357,44 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onEditFilter, onImpo
           {tr.lane}
         </span>
       )}
-      <Button
-        variant="ghost"
-        size="xs"
-        className="max-w-[150px] min-w-0 px-1 text-[10px] font-normal text-muted-foreground hover:text-foreground"
-        title={filter ? `Edit filter — ${filterName}` : "Filter not found"}
-        disabled={!filter}
-        onClick={() => filter && onEditFilter(filter.id)}
-      >
-        <span className="min-w-0 truncate">
+      {/* Filter chip: hover reveals the filter's pattern + fields (read-only). It
+          no longer opens the Edit modal — the full filter lives one hover away. */}
+      {filter ? (
+        <HoverCard>
+          <HoverCardTrigger
+            render={
+              <span className="inline-flex max-w-[150px] min-w-0 cursor-default items-center rounded px-1 py-0.5 text-[10px] font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground" />
+            }
+          >
+            <span className="min-w-0 truncate">
+              <span className="font-semibold tabular-nums">{serial}</span> · {filterName}
+            </span>
+          </HoverCardTrigger>
+          <HoverCardContent side="top" align="start" className="w-72">
+            <FilterHoverBody filter={filter} serial={serial} fields={fields} timeField={tr.timeField} />
+          </HoverCardContent>
+        </HoverCard>
+      ) : (
+        <span
+          className="max-w-[150px] min-w-0 truncate px-1 text-[10px] font-normal text-muted-foreground/70"
+          title="Filter not found"
+        >
           <span className="font-semibold tabular-nums">{serial}</span> · {filterName}
         </span>
-      </Button>
+      )}
 
       {/* Field pill (pushed right, left of unit/hide/delete): the start time field
           and — for a span — the end field, grouped in ONE bordered control so the
           start→end relationship is self-contained. kind is derived from having an
           end field; a point shows just a "+" to add one. The unit select stays
           OUTSIDE the pill so it can't be mistaken for a span target. */}
-      <div className="ml-auto inline-flex items-center gap-0.5 rounded-md border border-input bg-background px-0.5">
+      <span
+        className="ml-auto shrink-0 tabular-nums text-[10px] text-muted-foreground"
+        title={`${inTl} on the timeline / ${matching} matchable line${matching === 1 ? "" : "s"}`}
+      >
+        {inTl}<span className="text-muted-foreground/50">/{matching}</span>
+      </span>
+      <div className="inline-flex items-center gap-0.5 rounded-md border border-input bg-background px-0.5">
         <Select value={tr.timeField} onValueChange={(v) => v != null && onSet({ ...tr, timeField: v })}>
           <SelectTrigger size="xs" className="w-[68px] border-0 bg-transparent shadow-none hover:bg-muted/60 data-[size=xs]:h-5"><SelectValue placeholder="field…" /></SelectTrigger>
           <SelectContent className={COMPACT}>
@@ -417,6 +477,55 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onEditFilter, onImpo
         title="Delete track" onClick={onRemove}>
         <Trash2 />
       </Button>
+    </div>
+  );
+}
+
+/** Read-only filter detail shown on hovering a track row's filter chip:
+ *  serial + description, the pattern, and the filter's fields (time field marked). */
+function FilterHoverBody({ filter, serial, fields, timeField }: {
+  filter: Filter; serial: string; fields: FieldDef[]; timeField: string;
+}) {
+  const desc = filter.description?.trim();
+  const flags = [
+    !filter.regex && "plain text",
+    filter.exclude && "exclude",
+    filter.caseSensitive && "case-sensitive",
+    !filter.enabled && "disabled",
+  ].filter(Boolean) as string[];
+  return (
+    <div className="flex flex-col gap-2 text-xs">
+      <div className="flex items-baseline gap-1.5">
+        <span className="font-semibold tabular-nums text-muted-foreground">{serial}</span>
+        <span className="min-w-0 break-words font-medium text-foreground">{desc || <span className="italic text-muted-foreground">no description</span>}</span>
+      </div>
+      <div>
+        <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Pattern</div>
+        <code className="block max-h-24 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/60 px-1.5 py-1 font-mono text-[11px] text-foreground">
+          {filter.pattern || <span className="italic text-muted-foreground">(empty)</span>}
+        </code>
+      </div>
+      {fields.length > 0 && (
+        <div>
+          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Time fields</div>
+          <div className="flex flex-wrap gap-1">
+            {fields.map((d) => (
+              <span
+                key={d.name}
+                className={`inline-flex items-center gap-1 rounded border px-1 py-0.5 text-[10px] ${
+                  d.name === timeField ? "border-foreground/40 bg-accent font-medium text-foreground" : "border-border text-muted-foreground"
+                }`}
+              >
+                {d.name}
+                {d.type && <span className="text-muted-foreground/70">{d.type}</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {flags.length > 0 && (
+        <div className="text-[10px] text-muted-foreground">{flags.join(" · ")}</div>
+      )}
     </div>
   );
 }
