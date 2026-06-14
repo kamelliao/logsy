@@ -72,9 +72,13 @@ interface Props {
   onJump: (lineN: number) => void;
   /** Centered message shown over the (otherwise empty) canvas when there are no events. */
   placeholder?: string;
+  /** Height (px) at the canvas bottom currently covered by the overlaying sheet.
+   *  Added to the scroll range so lanes behind the sheet can be scrolled into view
+   *  — the canvas itself stays full height (no resize/jump when the sheet moves). */
+  bottomInset?: number;
 }
 
-export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
+export function TimelineCanvas({ marks, lanes, onJump, placeholder, bottomInset = 0 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // `size` is the scroll VIEWPORT (the wrap's client box); the canvas always fills
@@ -114,7 +118,9 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
   // past the viewport instead of scaling each lane to the panel height.
   const laneH = LANE_H;
   const contentH = lanes.length ? AXIS + lanes.length * laneH + PAD : size.h;
-  const spacerH = Math.max(0, contentH - size.h);
+  // Extend the scroll range by the sheet-covered height so the bottom lanes can be
+  // scrolled up from behind the sheet (only meaningful when there are lanes).
+  const spacerH = Math.max(0, contentH - size.h + (lanes.length ? bottomInset : 0));
 
   // Clamp a view to the [0, domMax] domain: cap zoom-out at "whole domain fills
   // the plot", and keep the visible window inside the domain.
@@ -166,6 +172,11 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
 
   const viewRef = useRef(view);
   viewRef.current = view;
+  // Latest cursor + whether the pointer is over the canvas, read by the
+  // window-level key handler so WASD works on hover (no click-to-focus needed).
+  const cursorRef = useRef(cursor);
+  cursorRef.current = cursor;
+  const hoverRef = useRef(false);
 
   const pick = useCallback((px: number, py: number): number => {
     if (!view || py < AXIS) return -1;
@@ -509,29 +520,38 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
       // a real drag keeps the band shown for reading the duration
     }
   };
-  const onLeave = () => { setCursor(null); if (!measuring.current) setHover(null); };
+  const onLeave = () => { hoverRef.current = false; setCursor(null); if (!measuring.current) setHover(null); };
   const fit = () => { lastRange.current = ""; setView(null); };
 
-  // Keyboard nav (canvas must be focused — a click focuses it): A/D pan
-  // left/right, W/S zoom in/out. Zoom keeps the point under the cursor (or the
-  // plot center) fixed, mirroring the wheel.
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    const v = viewRef.current;
-    if (!v) return;
-    const k = e.key.toLowerCase();
-    if (k === "a" || k === "d") {
-      const step = plotW * 0.15 * v.nsPerPx;
-      setView(clampView({ ...v, offset: v.offset + (k === "a" ? -step : step) }));
-    } else if (k === "w" || k === "s") {
-      const px = cursor ? cursor.x : GUTTER + plotW / 2;
-      const tAt = tOf(px, v);
-      const nsPerPx = v.nsPerPx * (k === "w" ? 1 / 1.2 : 1.2);
-      setView(clampView({ offset: tAt - (px - GUTTER) * nsPerPx, nsPerPx }));
-    } else {
-      return;
-    }
-    e.preventDefault();
-  };
+  // Keyboard nav works while the cursor is OVER the canvas — no click-to-focus
+  // needed. A/D pan left/right, W/S zoom in/out (anchored at the cursor, else the
+  // plot center). Skipped while an editable element is focused so it never hijacks
+  // typing elsewhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!hoverRef.current) return;
+      const ae = document.activeElement as HTMLElement | null;
+      if (ae && (ae.tagName === "INPUT" || ae.tagName === "TEXTAREA" || ae.isContentEditable)) return;
+      const v = viewRef.current;
+      if (!v) return;
+      const k = e.key.toLowerCase();
+      if (k === "a" || k === "d") {
+        const step = plotW * 0.15 * v.nsPerPx;
+        setView(clampView({ ...v, offset: v.offset + (k === "a" ? -step : step) }));
+      } else if (k === "w" || k === "s") {
+        const c = cursorRef.current;
+        const px = c ? c.x : GUTTER + plotW / 2;
+        const tAt = tOf(px, v);
+        const nsPerPx = v.nsPerPx * (k === "w" ? 1 / 1.2 : 1.2);
+        setView(clampView({ offset: tAt - (px - GUTTER) * nsPerPx, nsPerPx }));
+      } else {
+        return;
+      }
+      e.preventDefault();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [plotW, tOf, clampView]);
 
   const hm = hover ? marks[hover.i] : null;
   const fieldEntries = hm?.fields ? Object.entries(hm.fields).slice(0, 8) : [];
@@ -559,13 +579,12 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
       <div className="tlc-vp">
         <canvas
           ref={canvasRef}
-          tabIndex={0}
           style={{ outline: "none", cursor: pan.current ? "grabbing" : hover ? "pointer" : "crosshair" }}
+          onPointerEnter={() => { hoverRef.current = true; }}
           onPointerDown={onDown}
           onPointerMove={onMove}
           onPointerUp={onUp}
           onPointerLeave={onLeave}
-          onKeyDown={onKeyDown}
         />
         <button className="tlc-fit" title="Fit all events" onClick={fit}>fit</button>
         {measure && (

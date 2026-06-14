@@ -165,9 +165,11 @@ export function initialState(): AppState {
     showLineNumbers: true,
     comparePos: "right",
     filterCollapsed: false,
-    compareCollapsed: false,
     activePanelTab: "filters",
     comparePopped: false,
+    timelinePopped: false,
+    poppedActiveTab: "compare",
+    poppedCollapsed: false,
     panelSizes: {},
   };
 }
@@ -201,15 +203,19 @@ export function normalizeState(state: AppState): AppState {
       for (const id of [...ungroupedIds, ...groupIds]) {
         if (!present.has(id)) g.order.push(id);
       }
-      // Timeline track config (per time-field): keep well-formed, de-duped by
-      // field name. Keep undefined when there are none.
+      // Timeline track config: a track = (filter, field), so de-dupe by the
+      // `filterId:timeField` pair — NOT by field name alone (which collapsed
+      // every track sharing a field like `ts`/`time` down to one on reload).
+      // Keep undefined when there are none.
       if (Array.isArray(g.sources)) {
         const seen = new Set<string>();
         g.sources = g.sources
           .filter((s) => {
-            if (!s || typeof s.timeField !== "string" || seen.has(s.timeField)) return false;
+            if (!s || typeof s.filterId !== "string" || typeof s.timeField !== "string") return false;
             if (s.kind !== "point" && s.kind !== "span") return false;
-            seen.add(s.timeField);
+            const key = s.filterId + ":" + s.timeField;
+            if (seen.has(key)) return false;
+            seen.add(key);
             return true;
           })
           .map((s) => ({
@@ -246,9 +252,15 @@ export function normalizeState(state: AppState): AppState {
   if (state.showLineNumbers === undefined) state.showLineNumbers = true;
   if (state.comparePos !== "bottom" && state.comparePos !== "right") state.comparePos = "right";
   if (state.filterCollapsed === undefined) state.filterCollapsed = false;
-  if (state.compareCollapsed === undefined) state.compareCollapsed = false;
   if (!["filters", "compare", "bookmarks", "timeline"].includes(state.activePanelTab)) state.activePanelTab = "filters";
   if (typeof state.comparePopped !== "boolean") state.comparePopped = false;
+  if (typeof state.timelinePopped !== "boolean") state.timelinePopped = false;
+  if (state.poppedActiveTab !== "compare" && state.poppedActiveTab !== "timeline") state.poppedActiveTab = "compare";
+  if (typeof state.poppedCollapsed !== "boolean") state.poppedCollapsed = false;
+  // Migrate the pre-shared-dock collapse flag onto the shared popped dock.
+  const legacyCmpCollapsed = (state as Partial<Record<"compareCollapsed", boolean>>).compareCollapsed;
+  if (legacyCmpCollapsed && !state.poppedCollapsed) state.poppedCollapsed = true;
+  delete (state as Partial<Record<"compareCollapsed", unknown>>).compareCollapsed;
   // panelSizes is bucketed (group → id → percent); drop any old flat/invalid shape.
   if (!state.panelSizes || typeof state.panelSizes !== "object" ||
       Object.values(state.panelSizes).some((v) => typeof v !== "object" || v === null)) {
