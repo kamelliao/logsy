@@ -5,14 +5,12 @@ import type { EventMark, EventShape } from "../types";
 // Layout constants (CSS px).
 const GUTTER = 76;   // left lane-label column
 const RIGHT = 12;
-const AXIS = 18;     // top axis strip (timestamps)
+const AXIS = 18;     // top axis strip (timestamps) — pinned, never scrolls
 const PAD = 6;       // gap below the last lane
-const LANE_MIN = 16, LANE_MAX = 40;
-
-// The canvas auto-fits its lane content (no manual resize): one row per visible
-// lane, capped so a long track list can't push the rest of the panel around.
-const EMPTY_H = 120;  // height when there are no lanes yet (room for the hint)
-const MAX_H = 420;
+// Each lane is a fixed height: adding tracks grows the plot (and scrolls it
+// vertically past the viewport) rather than squeezing every lane thinner, so
+// many tracks stay readable at a glance regardless of the panel's height.
+const LANE_H = 28;
 
 // Minimap (overview strip above the main canvas): fixed height; a draggable
 // brush shows the visible window over the whole [0, maxT] domain. Only shown
@@ -79,7 +77,10 @@ interface Props {
 export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const [size, setSize] = useState({ w: 0, h: EMPTY_H });
+  // `size` is the scroll VIEWPORT (the wrap's client box); the canvas always fills
+  // it and lanes beyond it are reached by vertical scroll, not by shrinking.
+  const [size, setSize] = useState({ w: 0, h: 0 });
+  const [scrollY, setScrollY] = useState(0);
   const [view, setView] = useState<View | null>(null);
   // `x`/`y` are canvas-relative px (for picking); `cx`/`cy` are viewport client
   // coords used to place the portaled tooltip so the wrap's overflow can't clip it.
@@ -97,11 +98,6 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
   // the view at grab time so the move is computed from the delta.
   const mmRef = useRef<HTMLCanvasElement>(null);
   const mmDrag = useRef<{ mode: "pan" | "left" | "right"; startX: number; offset: number; nsPerPx: number } | null>(null);
-  // Height tracks the lane count: AXIS strip + one LANE_MAX row per visible lane
-  // + bottom gap, capped at MAX_H. No trailing blank space below the last lane.
-  const wrapH = lanes.length === 0
-    ? EMPTY_H
-    : Math.min(MAX_H, AXIS + lanes.length * LANE_MAX + PAD);
 
   const laneIndex = useMemo(() => new Map(lanes.map((l, i) => [l, i])), [lanes]);
   // The time domain is fixed to [0, maxT]: the axis never scrolls left of 0 nor
@@ -114,7 +110,11 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
   const domMax = Math.max(1, maxT);
 
   const plotW = Math.max(1, size.w - GUTTER - RIGHT);
-  const laneH = Math.max(LANE_MIN, Math.min(LANE_MAX, (size.h - AXIS - PAD) / Math.max(1, lanes.length)));
+  // Fixed lane height: the plot grows with the track count and scrolls vertically
+  // past the viewport instead of scaling each lane to the panel height.
+  const laneH = LANE_H;
+  const contentH = lanes.length ? AXIS + lanes.length * laneH + PAD : size.h;
+  const spacerH = Math.max(0, contentH - size.h);
 
   // Clamp a view to the [0, domMax] domain: cap zoom-out at "whole domain fills
   // the plot", and keep the visible window inside the domain.
@@ -126,7 +126,7 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
     return { offset, nsPerPx };
   }, [plotW, domMax]);
 
-  // Track the wrapper's rendered size (width is fluid; height follows wrapH).
+  // Track the wrapper's rendered (viewport) size.
   useLayoutEffect(() => {
     const el = wrapRef.current;
     if (!el) return;
@@ -168,8 +168,8 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
   viewRef.current = view;
 
   const pick = useCallback((px: number, py: number): number => {
-    if (!view) return -1;
-    const lane = Math.floor((py - AXIS) / laneH);
+    if (!view || py < AXIS) return -1;
+    const lane = Math.floor((py - AXIS + scrollY) / laneH);
     let best = -1, bestD = 7;
     for (let i = 0; i < marks.length; i++) {
       const m = marks[i];
@@ -180,7 +180,7 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
       if (d < bestD) { bestD = d; best = i; }
     }
     return best;
-  }, [marks, view, laneIndex, xOf, laneH]);
+  }, [marks, view, laneIndex, xOf, laneH, scrollY]);
 
   // Snap a cursor x to the nearest event edge (a point's t, or a span's t/end)
   // within SNAP_PX, so a measurement locks onto exact event timestamps and the Δ
@@ -201,7 +201,7 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
   // --- draw ---
   useEffect(() => {
     const cv = canvasRef.current;
-    if (!cv || !view || size.w <= 0) return;
+    if (!cv || !view || size.w <= 0 || size.h <= 0) return;
     const dpr = window.devicePixelRatio || 1;
     const W = size.w, H = size.h;
     cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr);
@@ -216,45 +216,51 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
     ctx.font = "10px ui-sans-serif, system-ui, sans-serif";
     ctx.textBaseline = "middle";
 
-    const lanesH = Math.min(lanes.length, Math.floor((H - AXIS - PAD) / laneH)) * laneH;
-    const bottom = AXIS + lanesH;
+    // Visible plot floor: the viewport bottom, but no lower than the last lane's
+    // bottom (in viewport coords, offset by scrollY) so gridlines and bands don't
+    // bleed into empty space when the lanes don't fill the viewport.
+    const lanesFloor = lanes.length ? AXIS + lanes.length * laneH - scrollY : H - PAD;
+    const bottom = Math.min(H - PAD, lanesFloor);
 
-    // lane bands + labels
+    // Tick positions are shared by the gridlines (in the lane area) and the
+    // pinned axis labels below.
+    const step = niceStep(view.nsPerPx * 70);
+    const t0 = Math.ceil(tOf(GUTTER, view) / step) * step;
+
+    // lane bands + labels — clipped to below the (pinned) axis so scrolled rows
+    // never paint over the timestamp strip; offset by scrollY.
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, AXIS, W, bottom - AXIS); ctx.clip();
     for (let i = 0; i < lanes.length; i++) {
-      const yTop = AXIS + i * laneH;
-      if (yTop + laneH > H - PAD + 0.5) break;
+      const yTop = AXIS + i * laneH - scrollY;
+      if (yTop >= bottom || yTop + laneH <= AXIS) continue;
       if (i % 2 === 1) { ctx.fillStyle = "rgba(130,140,150,0.07)"; ctx.fillRect(0, yTop, W, laneH); }
       ctx.fillStyle = cMuted; ctx.textAlign = "left";
       const name = lanes[i].length > 11 ? lanes[i].slice(0, 10) + "…" : lanes[i];
       ctx.fillText(name, 6, yTop + laneH / 2);
     }
-    // gutter divider
-    ctx.strokeStyle = cBorder; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(GUTTER + 0.5, 0); ctx.lineTo(GUTTER + 0.5, bottom); ctx.stroke();
+    ctx.restore();
 
-    // top axis strip
-    ctx.strokeStyle = cBorder;
-    ctx.beginPath(); ctx.moveTo(GUTTER, AXIS + 0.5); ctx.lineTo(W - RIGHT, AXIS + 0.5); ctx.stroke();
-    const step = niceStep(view.nsPerPx * 70);
-    const t0 = Math.ceil(tOf(GUTTER, view) / step) * step;
-    ctx.fillStyle = cMuted; ctx.textAlign = "center";
+    // gutter divider + vertical gridlines (full plot height; below the axis)
+    ctx.strokeStyle = cBorder; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(GUTTER + 0.5, AXIS); ctx.lineTo(GUTTER + 0.5, bottom); ctx.stroke();
+    ctx.strokeStyle = "rgba(130,140,150,0.18)";
     for (let t = t0; ; t += step) {
       const x = xOf(t, view);
       if (x > W - RIGHT) break;
-      ctx.strokeStyle = "rgba(130,140,150,0.18)";
+      if (x < GUTTER) continue;
       ctx.beginPath(); ctx.moveTo(x + 0.5, AXIS); ctx.lineTo(x + 0.5, bottom); ctx.stroke();
-      ctx.fillText(fmtNs(t), x, AXIS / 2);
     }
 
-    // marks (clipped to plot)
+    // marks (clipped to plot, offset by scrollY)
     ctx.save();
     ctx.beginPath(); ctx.rect(GUTTER, AXIS, W - GUTTER - RIGHT, bottom - AXIS); ctx.clip();
     for (let i = 0; i < marks.length; i++) {
       const m = marks[i];
       const li = laneIndex.get(m.lane);
       if (li === undefined) continue;
-      const cy = AXIS + li * laneH + laneH / 2;
-      if (cy > bottom) continue;
+      const cy = AXIS + li * laneH + laneH / 2 - scrollY;
+      if (cy < AXIS || cy > bottom) continue;
       const x1 = xOf(m.t, view);
       const hot = hover?.i === i;
       ctx.fillStyle = m.color || "#cdd3da";
@@ -270,9 +276,9 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
     }
     ctx.restore();
 
-    // measure band (drawn under the guide line, over the marks). Edges come from
-    // TIME, so the band tracks the data through zoom/pan and Δ stays constant;
-    // only its on-screen position/width changes. Clamped to the plot for drawing.
+    // measure band (drawn over the marks). Edges come from TIME, so the band
+    // tracks the data through zoom/pan and Δ stays constant; only its on-screen
+    // position/width changes. Clamped to the plot for drawing.
     if (measure) {
       const xa = xOf(measure.t0, view), xb = xOf(measure.t1, view);
       const lo = Math.min(xa, xb), hi = Math.max(xa, xb);
@@ -299,12 +305,25 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
       }
     }
 
-    // full-height hover guide line (over everything) + the cursor timestamp,
-    // shown in the axis strip above the line so the exact instant is readable.
+    // full-height hover guide line (over the lanes) + the cursor timestamp.
     if (cursor && cursor.x > GUTTER && cursor.x <= W - RIGHT && cursor.y >= AXIS) {
       ctx.strokeStyle = "rgba(59,130,246,0.5)"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.moveTo(cursor.x + 0.5, AXIS); ctx.lineTo(cursor.x + 0.5, bottom); ctx.stroke();
+    }
 
+    // --- pinned top axis strip (drawn last so nothing scrolls over it) ---
+    ctx.clearRect(0, 0, W, AXIS);
+    ctx.strokeStyle = cBorder; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(GUTTER, AXIS + 0.5); ctx.lineTo(W - RIGHT, AXIS + 0.5); ctx.stroke();
+    ctx.fillStyle = cMuted; ctx.textAlign = "center";
+    for (let t = t0; ; t += step) {
+      const x = xOf(t, view);
+      if (x > W - RIGHT) break;
+      if (x < GUTTER) continue;
+      ctx.fillText(fmtNs(t), x, AXIS / 2);
+    }
+    // cursor timestamp, shown in the axis strip above the guide line
+    if (cursor && cursor.x > GUTTER && cursor.x <= W - RIGHT && cursor.y >= AXIS) {
       const label = fmtNs(tOf(cursor.x, view));
       ctx.font = "10px ui-sans-serif, system-ui, sans-serif";
       const tw = ctx.measureText(label).width;
@@ -315,7 +334,7 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
       ctx.fillText(label, cx, (AXIS - 1) / 2);
       ctx.textAlign = "left";
     }
-  }, [view, size.w, size.h, marks, lanes, laneIndex, laneH, hover, cursor, measure, xOf, tOf]);
+  }, [view, size.w, size.h, scrollY, marks, lanes, laneIndex, laneH, hover, cursor, measure, xOf, tOf]);
 
   // --- minimap draw ---
   useEffect(() => {
@@ -331,7 +350,7 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
     const cs = getComputedStyle(cv);
     const cBorder = cs.getPropertyValue("--border").trim() || "#e3e6ea";
 
-    // "overview" gutter label + divider, mirroring the main canvas gutter.
+    // "overview" gutter divider, mirroring the main canvas gutter.
     ctx.font = "9px ui-sans-serif, system-ui, sans-serif";
     ctx.textBaseline = "middle"; ctx.textAlign = "left";
     ctx.strokeStyle = cBorder; ctx.lineWidth = 1;
@@ -355,10 +374,10 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
     // brush = the visible window; dim the domain outside it.
     const bx0 = Math.max(GUTTER, mmX(view.offset));
     const bx1 = Math.min(W - RIGHT, mmX(view.offset + plotW * view.nsPerPx));
-    ctx.fillStyle = "rgba(120,130,140,0.18)";
+    ctx.fillStyle = "rgba(120, 130, 140, 0.05)";
     if (bx0 > GUTTER) ctx.fillRect(GUTTER, 0, bx0 - GUTTER, H);
     if (bx1 < W - RIGHT) ctx.fillRect(bx1, 0, W - RIGHT - bx1, H);
-    ctx.fillStyle = "rgba(59,130,246,0.10)";
+    ctx.fillStyle = "rgba(59,130,246,0)";
     ctx.fillRect(bx0, 0, Math.max(1, bx1 - bx0), H);
     ctx.strokeStyle = "rgba(59,130,246,0.7)"; ctx.lineWidth = 1;
     ctx.strokeRect(bx0 + 0.5, 0.5, Math.max(1, bx1 - bx0) - 1, H - 1);
@@ -424,9 +443,12 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
   useEffect(() => {
     const cv = canvasRef.current;
     if (!cv) return;
+    // Plain wheel scrolls the lanes vertically (native, via the scroll wrap);
+    // Ctrl/⌘+wheel zooms the time axis, cursor-anchored.
     const onWheel = (e: WheelEvent) => {
       const v = viewRef.current;
       if (!v) return;
+      if (!(e.ctrlKey || e.metaKey)) return;
       e.preventDefault();
       const rect = cv.getBoundingClientRect();
       const px = e.clientX - rect.left;
@@ -515,62 +537,73 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder }: Props) {
   const fieldEntries = hm?.fields ? Object.entries(hm.fields).slice(0, 8) : [];
   return (
     <div className="tlc-outer">
-    {marks.length > 0 && (
-      <canvas
-        className="tlc-mm"
-        ref={mmRef}
-        style={{ width: "100%", height: MM_H }}
-        onPointerDown={onMmDown}
-        onPointerMove={onMmMove}
-        onPointerUp={onMmUp}
-      />
-    )}
-    <div className="tlc-wrap" ref={wrapRef} style={{ height: wrapH }}>
-      <canvas
-        ref={canvasRef}
-        tabIndex={0}
-        style={{ width: "100%", height: "100%", outline: "none", cursor: pan.current ? "grabbing" : hover ? "pointer" : "crosshair" }}
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerLeave={onLeave}
-        onKeyDown={onKeyDown}
-      />
-      <button className="tlc-fit" title="Fit all events" onClick={fit}>fit</button>
-      {measure && (
-        <button className="tlc-clear" title="Clear measurement" onClick={() => setMeasure(null)}>clear Δ</button>
-      )}
-      {placeholder && marks.length === 0 && <div className="tlc-empty">{placeholder}</div>}
-      {/* Tooltip is portaled to <body> with fixed positioning so the wrap's
-          `overflow:hidden` can't clip a tall card; it flips up/left near edges. */}
-      {hm && hover && createPortal(
-        (() => {
-          const flipUp = hover.cy > window.innerHeight / 2;
-          const flipLeft = hover.cx > window.innerWidth - 252;
-          const pos: React.CSSProperties = {
-            position: "fixed", zIndex: 1000, maxHeight: "60vh", overflow: "hidden",
-            left: flipLeft ? undefined : hover.cx + 14,
-            right: flipLeft ? window.innerWidth - hover.cx + 14 : undefined,
-            top: flipUp ? undefined : hover.cy + 14,
-            bottom: flipUp ? window.innerHeight - hover.cy + 14 : undefined,
-          };
-          return (
-            <div className="tlc-tip" style={pos}>
-              <div className="tlc-tip-h"><span className="tlc-tip-lane" style={{ background: hm.color }}>{hm.lane}</span> L{hm.lineN}</div>
-              <div className="tlc-tip-t">{fmtNs(hm.t)}{hm.end !== undefined ? `  →  ${fmtNs(hm.end)}  (Δ ${fmtNs(hm.end - hm.t)})` : ""}</div>
-              {fieldEntries.length > 0 && (
-                <div className="tlc-tip-fields">
-                  {fieldEntries.map(([k, v]) => (
-                    <div className="tlc-tip-field" key={k}><span className="tlc-tip-k">{k}</span><span className="tlc-tip-v">{v.raw}</span></div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })(),
-        document.body,
+    <div className="tlc-mm">
+      {marks.length > 0 && (
+        <canvas
+          ref={mmRef}
+          style={{ width: size.w || "100%", height: MM_H }}
+          onPointerDown={onMmDown}
+          onPointerMove={onMmMove}
+          onPointerUp={onMmUp}
+        />
       )}
     </div>
+    {/* Scroll wrap: lanes scroll vertically here; the canvas (+ its overlay
+        controls) is sticky so the axis/buttons stay pinned, and a spacer below
+        creates the scroll range. */}
+    <div
+      className="tlc-wrap scroll"
+      ref={wrapRef}
+      onScroll={(e) => setScrollY((e.currentTarget as HTMLDivElement).scrollTop)}
+    >
+      <div className="tlc-vp">
+        <canvas
+          ref={canvasRef}
+          tabIndex={0}
+          style={{ outline: "none", cursor: pan.current ? "grabbing" : hover ? "pointer" : "crosshair" }}
+          onPointerDown={onDown}
+          onPointerMove={onMove}
+          onPointerUp={onUp}
+          onPointerLeave={onLeave}
+          onKeyDown={onKeyDown}
+        />
+        <button className="tlc-fit" title="Fit all events" onClick={fit}>fit</button>
+        {measure && (
+          <button className="tlc-clear" title="Clear measurement" onClick={() => setMeasure(null)}>clear Δ</button>
+        )}
+        {placeholder && marks.length === 0 && <div className="tlc-empty">{placeholder}</div>}
+      </div>
+      <div className="tlc-spacer" style={{ height: spacerH }} />
+    </div>
+    {/* Tooltip is portaled to <body> with fixed positioning so the wrap's
+        `overflow` can't clip a tall card; it flips up/left near edges. */}
+    {hm && hover && createPortal(
+      (() => {
+        const flipUp = hover.cy > window.innerHeight / 2;
+        const flipLeft = hover.cx > window.innerWidth - 252;
+        const pos: React.CSSProperties = {
+          position: "fixed", zIndex: 1000, maxHeight: "60vh", overflow: "hidden",
+          left: flipLeft ? undefined : hover.cx + 14,
+          right: flipLeft ? window.innerWidth - hover.cx + 14 : undefined,
+          top: flipUp ? undefined : hover.cy + 14,
+          bottom: flipUp ? window.innerHeight - hover.cy + 14 : undefined,
+        };
+        return (
+          <div className="tlc-tip" style={pos}>
+            <div className="tlc-tip-h"><span className="tlc-tip-lane" style={{ background: hm.color }}>{hm.lane}</span> L{hm.lineN}</div>
+            <div className="tlc-tip-t">{fmtNs(hm.t)}{hm.end !== undefined ? `  →  ${fmtNs(hm.end)}  (Δ ${fmtNs(hm.end - hm.t)})` : ""}</div>
+            {fieldEntries.length > 0 && (
+              <div className="tlc-tip-fields">
+                {fieldEntries.map(([k, v]) => (
+                  <div className="tlc-tip-field" key={k}><span className="tlc-tip-k">{k}</span><span className="tlc-tip-v">{v.raw}</span></div>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })(),
+      document.body,
+    )}
     </div>
   );
 }

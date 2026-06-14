@@ -900,7 +900,6 @@ export function App() {
     });
   const addToTimeline = (ns: number[]) => mutateTimeline((c) => ns.forEach((n) => c.add(n)));
   const removeFromTimeline = (ns: number[]) => mutateTimeline((c) => ns.forEach((n) => c.delete(n)));
-  const clearTimeline = () => mutateTimeline((c) => c.clear());
   // Tracks are a document edit → undoable; persisted on the set, keyed by id.
   const setTrack = (tr: TimelineSource) => patchState((s) => {
     if (!file || !set) return;
@@ -965,9 +964,9 @@ export function App() {
     const lines = winnerLines(tr.filterId, tr.timeField);
     if (lines.length) {
       addToTimeline(lines);
-      toast.success(`${lines.length} line${lines.length === 1 ? "" : "s"} imported`, {
-        description: `For track "${tr.lane}".`, position: "bottom-right",
-      });
+      // toast.success(`${lines.length} line${lines.length === 1 ? "" : "s"} imported`, {
+      //   description: `For track "${tr.lane}".`, position: "bottom-right",
+      // });
     } else {
       toast(`No matching lines`, { description: `Nothing matches "${tr.lane}" yet.`, position: "bottom-right" });
     }
@@ -1202,6 +1201,9 @@ export function App() {
   useEffect(() => {
     function onWheel(e: WheelEvent) {
       if (!e.ctrlKey && !e.metaKey) return;
+      // The timeline owns ctrl+wheel over its own area (axis zoom); don't also
+      // font-zoom the log view when the cursor is there.
+      if ((e.target as Element | null)?.closest?.(".tlc-outer")) return;
       e.preventDefault();
       const dir = e.deltaY < 0 ? 1 : -1;
       setState((s) => ({
@@ -1476,13 +1478,14 @@ export function App() {
         onSetTrack={setTrack}
         onRemoveTrack={removeTrack}
         onReorderTracks={reorderTracks}
-        onClear={clearTimeline}
         onAddMatchingLines={addAllMatchingLines}
         onImportTrackLines={importTrackLines}
         onClearTrackLines={clearTrackLines}
         trackLineStats={trackLineStats}
         onJump={jumpToMarker}
         onEditFilter={openEditFilter}
+        sheetH={state.timelineSheetH ?? 200}
+        onSetSheetH={(h) => setState((s) => ({ ...s, timelineSheetH: h }))}
       />
     );
 

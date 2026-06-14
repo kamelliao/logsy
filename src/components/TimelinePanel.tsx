@@ -1,7 +1,7 @@
 import { useCallback, useState, useRef, useEffect, CSSProperties } from "react";
 import {
   Eye, EyeOff, GripVertical, Trash2, Plus, ListPlus, ListMinus, MoveRight, X,
-  Circle, Square, Triangle, Diamond, ChartNoAxesGantt,
+  Circle, Square, Triangle, Diamond, ChartNoAxesGantt, ChevronDown, ChevronUp,
 } from "lucide-react";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -48,7 +48,6 @@ interface Props {
   onSetTrack: (tr: TimelineSource) => void;
   onRemoveTrack: (id: string) => void;
   onReorderTracks: (ids: string[]) => void;
-  onClear: () => void;
   /** Pull every visible track's matching lines onto the timeline (empty-state bridge). */
   onAddMatchingLines: () => void;
   /** Import one track's matching lines (per-row button). */
@@ -61,9 +60,20 @@ interface Props {
   onJump: (lineN: number) => void;
   /** Open the Edit modal for a filter (from a track row's filter chip). */
   onEditFilter: (id: string) => void;
+  /** Persisted height (px) of the draggable bottom sheet. */
+  sheetH: number;
+  onSetSheetH: (h: number) => void;
 }
 
-const TITLE = "mt-3 mb-1.5 text-[10.5px] font-bold uppercase tracking-wide text-muted-foreground";
+// The always-present (collapsed) handle height: the canvas reserves this much
+// bottom padding so its lanes are never hidden behind the peeking sheet. Must
+// match `.tl-sheet-handle` height in logsy.css.
+const HANDLE_H = 34;
+// Smallest plot we keep visible above a fully-pulled-up sheet.
+const MIN_PLOT_H = 90;
+// Fixed height the chevron expands the sheet to (it does not restore the last
+// dragged height — every expand opens to this size).
+const EXPANDED_H = 200;
 // Sized down to the tiny xs trigger it hangs off: the default popup uses text-sm
 // with roomy padding, which dwarfs the xs trigger. Shrink item/label text +
 // padding to match. Width stays >= the trigger (default min-w-anchor) and grows
@@ -74,9 +84,55 @@ const COMPACT =
 
 export function TimelinePanel({
   tracks, filters, timeFields, marks, lineCount,
-  onSetTrack, onRemoveTrack, onReorderTracks, onClear, onAddMatchingLines,
+  onSetTrack, onRemoveTrack, onReorderTracks, onAddMatchingLines,
   onImportTrackLines, onClearTrackLines, trackLineStats, onJump, onEditFilter,
+  sheetH, onSetSheetH,
 }: Props) {
+  // The bottom sheet's height is driven locally during a drag (no per-move
+  // round-trip through app state); the final value is committed on release.
+  const rootRef = useRef<HTMLDivElement>(null);
+  const [h, setH] = useState(sheetH);
+  const hRef = useRef(h);
+  hRef.current = h;
+  const drag = useRef<{ y: number; h: number } | null>(null);
+  // Adopt an externally changed height only while not dragging (e.g. on reload).
+  useEffect(() => { if (!drag.current) setH(sheetH); }, [sheetH]);
+
+  // Track the panel's height so a persisted sheet height taller than the current
+  // panel (e.g. a short bottom dock) can't push the handle out of reach.
+  const [panelH, setPanelH] = useState(0);
+  useEffect(() => {
+    const el = rootRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => setPanelH(el.clientHeight));
+    ro.observe(el);
+    setPanelH(el.clientHeight);
+    return () => ro.disconnect();
+  }, []);
+  const maxH = panelH > 0 ? Math.max(HANDLE_H, panelH - MIN_PLOT_H) : Infinity;
+  const renderH = Math.min(h, maxH);
+  const collapsed = renderH <= HANDLE_H + 1;
+  // The chevron toggles between collapsed and a fixed expanded height — it does
+  // not restore the last dragged height.
+  const toggleCollapse = () => {
+    const next = collapsed ? EXPANDED_H : HANDLE_H;
+    setH(next);
+    onSetSheetH(next);
+  };
+
+  const onHandleDown = (e: React.PointerEvent) => {
+    // Let the Clear button (and any future controls) work without starting a drag.
+    if ((e.target as HTMLElement).closest("button")) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = { y: e.clientY, h: renderH };
+  };
+  const onHandleMove = (e: React.PointerEvent) => {
+    const d = drag.current;
+    if (!d) return;
+    setH(Math.min(maxH, Math.max(HANDLE_H, d.h + (d.y - e.clientY))));
+  };
+  const onHandleUp = () => { if (drag.current) { drag.current = null; onSetSheetH(hRef.current); } };
+
   const lanes = tracks.filter((t) => !t.hidden).map((t) => t.lane);
   // A filter's fields that may back a time field: restricted to the numeric /
   // time-like ones (the timeline can only plot numbers / clocks).
@@ -126,31 +182,36 @@ export function TimelinePanel({
     ) : null;
 
   return (
-    <div className="flex flex-1 min-h-0 flex-col overflow-hidden px-2.5 py-2 text-xs text-foreground">
-      {/* header: guidance on the left, event/line counts (+ clear) on the right */}
-      <div className="flex items-center gap-2">
-        {hint && <p className="flex-1 leading-relaxed text-muted-foreground">{hint}</p>}
-        <span className="ml-auto shrink-0 whitespace-nowrap text-muted-foreground">
-          {marks.length} event{marks.length === 1 ? "" : "s"} · {lineCount} line{lineCount === 1 ? "" : "s"}
-        </span>
-        <Button variant="ghost" size="xs" disabled={lineCount === 0} className="shrink-0 text-muted-foreground" onClick={onClear}>
-          Clear lines
-        </Button>
-      </div>
-
-      {/* canvas — always shown (even empty), sticky above the scrolling rows */}
-      <div className="mt-1.5">
+    <div ref={rootRef} className="relative flex flex-1 min-h-0 flex-col overflow-hidden text-xs text-foreground">
+      {/* canvas fills the whole panel; bottom padding reserves room for the
+          always-present (collapsed) sheet handle so no lane hides under it */}
+      <div className="min-h-0 flex-1 px-2.5 pt-2" style={{ paddingBottom: HANDLE_H }}>
         <TimelineCanvas marks={marks} lanes={lanes} onJump={onJump} placeholder={placeholder} />
       </div>
 
-      {/* tracks header (fixed) */}
-      <div className={TITLE}>Tracks</div>
-
-      {/* track rows (scroll) — `scroll` matches the filter panel's scrollbar chrome;
-          stable gutter keeps rows from shifting when the bar appears; the negative
-          right margin cancels the panel's px-2.5 so the bar hugs the panel edge
-          (like the filter panel) instead of floating inset */}
-      <div className="scroll -mr-2.5 flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable]">
+      {/* draggable bottom sheet: handle bar (grip + counts + clear), the contextual
+          hint, then the scrolling track list overlaying the canvas bottom */}
+      <div className="tl-sheet" style={{ height: renderH }}>
+        <div
+          className="tl-sheet-handle"
+          onPointerDown={onHandleDown}
+          onPointerMove={onHandleMove}
+          onPointerUp={onHandleUp}
+        >
+          <span className="tl-sheet-grip" />
+          <span className="tl-sheet-counts">
+            {marks.length} event{marks.length === 1 ? "" : "s"} · {lineCount} line{lineCount === 1 ? "" : "s"}
+          </span>
+          <Button
+            variant="ghost" size="icon-xs" className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
+            title={collapsed ? "Expand tracks" : "Collapse tracks"}
+            onClick={toggleCollapse}
+          >
+            {collapsed ? <ChevronUp /> : <ChevronDown />}
+          </Button>
+        </div>
+        {hint && <p className="tl-sheet-hint">{hint}</p>}
+        <div className="tl-sheet-body scroll">
         {tracks.length === 0 ? (
           <Empty className="h-full p-4">
             <EmptyHeader>
@@ -190,6 +251,7 @@ export function TimelinePanel({
             </SortableContext>
           </DndContext>
         )}
+        </div>
       </div>
     </div>
   );

@@ -51,7 +51,8 @@ const SECTIONS: Section[] = [
     rows: [
       { keys: ["W", "S"], label: "Zoom in / out" },
       { keys: ["A", "D"], label: "Pan left / right" },
-      { keys: ["Scroll"], label: "Zoom in / out" },
+      { keys: ["Scroll"], label: "Scroll lanes vertically" },
+      { keys: ["Ctrl", "Scroll"], label: "Zoom in / out" },
       { keys: ["Drag"], label: "Measure Δ (snaps to events)" },
       { keys: ["Shift", "Drag"], label: "Pan the view" },
       { keys: ["Click"], label: "Jump to the event's line" },
