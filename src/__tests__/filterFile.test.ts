@@ -51,6 +51,23 @@ test("round-trip preserves every boolean/color attribute", () => {
   expect(built!.filters[0]).toEqual(f);
 });
 
+test("round-trip preserves timeline tracks and de-dupes by filterId:timeField", () => {
+  const f = makeFilter("(?<a>\\d+) (?<b>\\d+)", { regex: true } as Partial<Filter>);
+  const set = makeSet({
+    filters: [f], order: [f.id],
+    sources: [
+      { id: "tl1", filterId: f.id, timeField: "a", lane: "req", kind: "span", endField: "b", unit: "ms", color: "#abc" },
+      { id: "tl2", filterId: f.id, timeField: "a", lane: "dup", kind: "point", unit: "hms" }, // same pair → dropped
+      { id: "tl3", filterId: "other", timeField: "a", lane: "ok", kind: "point", unit: "ns" }, // diff filter → kept
+    ],
+  });
+  const built = roundTrip(set);
+  expect(built!.sources).toEqual([
+    { id: "tl1", filterId: f.id, timeField: "a", lane: "req", kind: "span", endField: "b", unit: "ms", color: "#abc", collapsed: undefined, hidden: undefined },
+    { id: "tl3", filterId: "other", timeField: "a", lane: "ok", kind: "point", endField: undefined, unit: "ns", color: undefined, collapsed: undefined, hidden: undefined },
+  ]);
+});
+
 // --- legacy format ----------------------------------------------------------
 
 test("buildGroupFromImport reads a legacy flat array of filters", () => {

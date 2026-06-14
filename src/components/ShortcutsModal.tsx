@@ -47,6 +47,17 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    title: "Timeline",
+    rows: [
+      { keys: ["W", "S"], label: "Zoom in / out" },
+      { keys: ["A", "D"], label: "Pan left / right" },
+      { keys: ["Scroll"], label: "Zoom in / out" },
+      { keys: ["Drag"], label: "Measure Δ (snaps to events)" },
+      { keys: ["Shift", "Drag"], label: "Pan the view" },
+      { keys: ["Click"], label: "Jump to the event's line" },
+    ],
+  },
+  {
     title: "Log lines",
     rows: [
       { keys: ["Ctrl", "A"], label: "Select all visible lines" },

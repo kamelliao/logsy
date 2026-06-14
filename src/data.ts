@@ -201,6 +201,26 @@ export function normalizeState(state: AppState): AppState {
       for (const id of [...ungroupedIds, ...groupIds]) {
         if (!present.has(id)) g.order.push(id);
       }
+      // Timeline track config (per time-field): keep well-formed, de-duped by
+      // field name. Keep undefined when there are none.
+      if (Array.isArray(g.sources)) {
+        const seen = new Set<string>();
+        g.sources = g.sources
+          .filter((s) => {
+            if (!s || typeof s.timeField !== "string" || seen.has(s.timeField)) return false;
+            if (s.kind !== "point" && s.kind !== "span") return false;
+            seen.add(s.timeField);
+            return true;
+          })
+          .map((s) => ({
+            ...s,
+            lane: typeof s.lane === "string" ? s.lane : s.timeField,
+            unit: ["hms", "s", "ms", "us", "ns"].includes(s.unit) ? s.unit : "hms",
+          }));
+        if (g.sources.length === 0) delete g.sources;
+      } else if (g.sources !== undefined) {
+        delete g.sources;
+      }
     }
     if (!f.activeSetId || !f.sets.find((g) => g.id === f.activeSetId)) {
       f.activeSetId = f.sets[0]?.id ?? null;
@@ -227,7 +247,7 @@ export function normalizeState(state: AppState): AppState {
   if (state.comparePos !== "bottom" && state.comparePos !== "right") state.comparePos = "right";
   if (state.filterCollapsed === undefined) state.filterCollapsed = false;
   if (state.compareCollapsed === undefined) state.compareCollapsed = false;
-  if (state.activePanelTab !== "filters" && state.activePanelTab !== "compare" && state.activePanelTab !== "bookmarks") state.activePanelTab = "filters";
+  if (!["filters", "compare", "bookmarks", "timeline"].includes(state.activePanelTab)) state.activePanelTab = "filters";
   if (typeof state.comparePopped !== "boolean") state.comparePopped = false;
   // panelSizes is bucketed (group → id → percent); drop any old flat/invalid shape.
   if (!state.panelSizes || typeof state.panelSizes !== "object" ||

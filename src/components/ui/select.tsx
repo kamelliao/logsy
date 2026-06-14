@@ -11,21 +11,39 @@ function SelectValue({ ...props }: SelectPrimitive.Value.Props) {
   return <SelectPrimitive.Value data-slot="select-value" {...props} />
 }
 
+function SelectGroup({ ...props }: SelectPrimitive.Group.Props) {
+  return <SelectPrimitive.Group data-slot="select-group" {...props} />
+}
+
+function SelectLabel({ className, ...props }: SelectPrimitive.GroupLabel.Props) {
+  return (
+    <SelectPrimitive.GroupLabel
+      data-slot="select-label"
+      className={cn("px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground", className)}
+      {...props}
+    />
+  )
+}
+
 function SelectTrigger({
   className,
   size = "default",
   children,
   ...props
-}: SelectPrimitive.Trigger.Props & { size?: "sm" | "default" }) {
+}: SelectPrimitive.Trigger.Props & { size?: "xs" | "sm" | "default" }) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       data-size={size}
       className={cn(
-        "border-input flex w-fit items-center justify-between gap-2 rounded-md border bg-background px-2.5 text-sm whitespace-nowrap shadow-xs transition-colors outline-none",
+        "border-input flex w-fit items-center justify-between gap-1.5 rounded-md border bg-background px-2.5 text-sm whitespace-nowrap shadow-xs transition-colors outline-none",
         "hover:bg-muted focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]",
         "data-[size=default]:h-8 data-[size=sm]:h-7 data-[size=sm]:text-xs disabled:cursor-not-allowed disabled:opacity-50",
-        "[&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:text-muted-foreground",
+        "data-[size=xs]:h-[22px] data-[size=xs]:px-1.5 data-[size=xs]:text-[11px]",
+        "[&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-muted-foreground",
+        // truncate a value that's wider than a width-constrained trigger (w-fit
+        // triggers grow to content, so nothing truncates there)
+        "[&>[data-slot=select-value]]:min-w-0 [&>[data-slot=select-value]]:truncate",
         className
       )}
       {...props}
@@ -78,4 +96,4 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
   )
 }
 
-export { Select, SelectValue, SelectTrigger, SelectContent, SelectItem }
+export { Select, SelectValue, SelectGroup, SelectLabel, SelectTrigger, SelectContent, SelectItem }
