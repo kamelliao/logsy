@@ -7,7 +7,7 @@ import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { save, open, confirm } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { AppState, LogFile, FilterSet, FilterGroup, Filter, FilterLayout, MarkerIcon } from "./types";
+import type { AppState, LogFile, FilterSet, FilterGroup, Filter, FilterLayout, MarkerIcon, TimelineSource } from "./types";
 import {
   uid, makeFilter, filterFromTatAttrs, initialState, normalizeState, DEFAULT_PALETTE,
 } from "./data";
@@ -28,7 +28,7 @@ const SAVE_DIALOG_FILTERS = [{ name: "Logsy filters", extensions: ["json"] }];
  */
 function parseTatFilters(
   text: string
-): { filters: Filter[]; groups: FilterGroup[]; order: string[] } | null {
+): { filters: Filter[]; groups: FilterGroup[]; order: string[]; sources: TimelineSource[] } | null {
   const doc = new DOMParser().parseFromString(text, "application/xml");
   if (doc.getElementsByTagName("parsererror").length) return null;
   if (doc.documentElement?.tagName !== "TextAnalysisTool.NET") return null;
@@ -36,11 +36,11 @@ function parseTatFilters(
   const filters = Array.from(doc.getElementsByTagName("filter")).map((el) =>
     filterFromTatAttrs(Object.fromEntries(attrs.map((k) => [k, el.getAttribute(k)])))
   );
-  return { filters, groups: [], order: filters.map((f) => f.id) };
+  return { filters, groups: [], order: filters.map((f) => f.id), sources: [] };
 }
 
 import { buildGroupFromImport, exportPayload } from "./filterFile";
-import { compileAll, computeView } from "./logic";
+import { compileAll, computeView, buildTimeline, laneColor, guessUnit } from "./logic";
 import { tokenize, buildPattern } from "./lib/generalize";
 import { Sidebar } from "./components/Sidebar";
 import { LogView } from "./components/LogView";
@@ -49,6 +49,7 @@ import { EditModal } from "./components/EditModal";
 import { PaletteModal } from "./components/PaletteModal";
 import { CompareTable } from "./components/CompareTable";
 import { BookmarksPanel } from "./components/BookmarksPanel";
+import { TimelinePanel } from "./components/TimelinePanel";
 import { MenuPopup, type MenuItem } from "./components/MenuPopup";
 import { AboutModal } from "./components/AboutModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
@@ -100,6 +101,8 @@ export function App() {
   const [editing, setEditing] = useState<{ isNew: boolean; filter: Filter; genSeed?: string } | null>(null);
   // Lines explicitly added to the comparison panel (kept separate from selection).
   const [compareLines, setCompareLines] = useState<Set<number>>(() => new Set());
+  // Lines the user added to the timeline (ephemeral, like compareLines).
+  const [timelineLines, setTimelineLines] = useState<Set<number>>(() => new Set());
   const fpRef = useRef<PanelImperativeHandle | null>(null);
   const cmpRef = useRef<PanelImperativeHandle | null>(null);
   const [openMenu, setOpenMenu] = useState<{ name: string; x: number; y: number } | null>(null);
@@ -162,6 +165,13 @@ export function App() {
   );
   const compiled = useMemo(() => compileAll(set?.filters ?? []), [set?.filters]);
   const view = useMemo(() => computeView(lines, compiled), [lines, compiled]);
+  // Timeline tracks: a user-owned, ordered list (no auto-derivation).
+  const tracks = useMemo(() => set?.sources ?? [], [set?.sources]);
+  // Events come from the lines the user added to the timeline (like compare).
+  const marks = useMemo(
+    () => buildTimeline(view, timelineLines, tracks),
+    [view, timelineLines, tracks],
+  );
   // Soloing a filter ("View this filter only"): the log shows just that filter's
   // matches (forced enabled, never excluding), while the filter panel keeps its
   // badge counts from the full `view`. Ephemeral — not persisted, not undoable.
@@ -403,6 +413,7 @@ export function App() {
     }, { undoable: false });
     pushRecent("recentFiles", path);
     setCompareLines(new Set());      // line numbers are file-specific
+    setTimelineLines(new Set());
     setLinesVersion((v) => v + 1);
     setBusy(null);
   }, [loadPaths, patchState, pushRecent]);
@@ -747,6 +758,7 @@ export function App() {
       g.filters = built.filters;
       g.groups = built.groups;
       g.order = built.order;
+      g.sources = built.sources;
       if (foreign) {
         // Imported from a foreign format: the filters now live as Logsy filters,
         // not tied to the source file. "Save Filter" stays enabled and opens
@@ -795,7 +807,7 @@ export function App() {
     setCompareLines((s) => { const x = new Set(s); ns.forEach((n) => x.delete(n)); return x; });
   const clearCompare = () => setCompareLines(new Set());
   // Drop comparison lines when switching files (line numbers are file-specific).
-  useEffect(() => { setCompareLines(new Set()); }, [state.activeFileId]);
+  useEffect(() => { setCompareLines(new Set()); setTimelineLines(new Set()); }, [state.activeFileId]);
 
   // ---------- bookmarks ----------
   const markers = file?.markers ?? [];
@@ -828,6 +840,62 @@ export function App() {
     }
     setMarkerJump({ n, nonce: Date.now() });
   };
+
+  // ---------- timeline ----------
+  // Added lines are ephemeral UI state (not undoable, reset on file switch).
+  const addToTimeline = (ns: number[]) =>
+    setTimelineLines((s) => { const x = new Set(s); ns.forEach((n) => x.add(n)); return x; });
+  const removeFromTimeline = (ns: number[]) =>
+    setTimelineLines((s) => { const x = new Set(s); ns.forEach((n) => x.delete(n)); return x; });
+  const clearTimeline = () => setTimelineLines(new Set());
+  // Tracks are a document edit → undoable; persisted on the set, keyed by id.
+  const setTrack = (tr: TimelineSource) => patchState((s) => {
+    if (!file || !set) return;
+    const g = withSet(s, file.id, set.id);
+    const list = [...(g.sources ?? [])];
+    const i = list.findIndex((x) => x.id === tr.id);
+    if (i >= 0) list[i] = tr; else list.push(tr);
+    g.sources = list;
+  });
+  // Append a new track bound to a (filter, field). The field picker offers a
+  // filter's numeric fields; the first numeric field is the default timestamp.
+  const addTrack = (filterId: string, timeField: string) => {
+    // Sample the field's first matched value so the default unit can be inferred
+    // from its shape (a plain number ⇒ seconds), not just the field name.
+    let sample: string | undefined;
+    for (let n = 1; n <= view.rows.length; n++) {
+      if (view.rows[n - 1]?.fieldsFromId !== filterId) continue;
+      const fv = view.fieldsFor(n)?.[timeField];
+      if (fv) { sample = fv.raw; break; }
+    }
+    patchState((s) => {
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
+      const list = [...(g.sources ?? [])];
+      // Track identity is (filterId, timeField); don't add a duplicate.
+      if (list.some((x) => x.filterId === filterId && x.timeField === timeField)) return;
+      // Default lane name is "<filter#>:<field>" (e.g. "3:ts"), matching the row's
+      // filter serial so the canvas label points back to the source filter.
+      const idx = g.filters.findIndex((f) => f.id === filterId);
+      list.push({
+        id: "tlt_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+        filterId, timeField, lane: `#${idx + 1}:${timeField}`,
+        kind: "point", unit: guessUnit(timeField, sample), color: laneColor(list.length),
+      });
+      g.sources = list;
+    });
+  };
+  const removeTrack = (id: string) => patchState((s) => {
+    if (!file || !set) return;
+    const g = withSet(s, file.id, set.id);
+    g.sources = (g.sources ?? []).filter((x) => x.id !== id);
+  });
+  const reorderTracks = (ids: string[]) => patchState((s) => {
+    if (!file || !set) return;
+    const g = withSet(s, file.id, set.id);
+    const by = new Map((g.sources ?? []).map((x) => [x.id, x]));
+    g.sources = ids.map((id) => by.get(id)!).filter(Boolean);
+  });
 
   // Build CSV text for a single pattern-set's rows.
   const buildCsv = (rows: typeof compareRows) => {
@@ -877,7 +945,7 @@ export function App() {
   const toggleFilterCollapsed = () => setState((s) => ({ ...s, filterCollapsed: !s.filterCollapsed }));
   const toggleCompareCollapsed = () => setState((s) => ({ ...s, compareCollapsed: !s.compareCollapsed }));
   // Select a tab in the main panel (always expands it if it was collapsed).
-  const selectPanelTab = (tab: "filters" | "compare" | "bookmarks") =>
+  const selectPanelTab = (tab: "filters" | "compare" | "bookmarks" | "timeline") =>
     startPanelTransition(() => setState((s) => ({ ...s, activePanelTab: tab, filterCollapsed: false })));
   // Pop Compare out to its own dock (so it can sit beside Filters); Filters takes
   // over the main tab area.
@@ -893,9 +961,10 @@ export function App() {
   const showCompare = compareRows.length > 0;
   // Compare is a tab in the main panel only when it has rows and isn't popped out.
   const compareTabAvailable = showCompare && !state.comparePopped;
-  // Bookmarks is always a tab. Compare falls back to Filters when unavailable.
-  const activePanelTab: "filters" | "compare" | "bookmarks" =
+  // Bookmarks and Timeline are always tabs. Compare falls back to Filters when unavailable.
+  const activePanelTab: "filters" | "compare" | "bookmarks" | "timeline" =
     state.activePanelTab === "bookmarks" ? "bookmarks"
+      : state.activePanelTab === "timeline" ? "timeline"
       : state.activePanelTab === "compare" && compareTabAvailable ? "compare"
       : "filters";
 
@@ -1176,6 +1245,9 @@ export function App() {
         compareLines={compareLines}
         onAddToCompare={addToCompare}
         onRemoveFromCompare={removeFromCompare}
+        timelineLines={timelineLines}
+        onAddToTimeline={addToTimeline}
+        onRemoveFromTimeline={removeFromTimeline}
         selectAllNonce={selectAllNonce}
         gotoSignal={gotoSignal}
         onExportView={exportFilteredView}
@@ -1208,6 +1280,7 @@ export function App() {
         onDuplicateFilter={duplicateFilter}
         onViewFilterOnly={setSoloFilterId}
         onEditFilter={openEditFilter}
+        onAddTimelineTrack={addTrack}
         onApplyLayout={applyLayout}
         onBulk={bulk}
       />
@@ -1236,6 +1309,22 @@ export function App() {
       />
     );
 
+    const timelineBody = (
+      <TimelinePanel
+        tracks={tracks}
+        filters={set?.filters ?? []}
+        marks={marks}
+        lineCount={timelineLines.size}
+        onSetTrack={setTrack}
+        onAddTrack={addTrack}
+        onRemoveTrack={removeTrack}
+        onReorderTracks={reorderTracks}
+        onClear={clearTimeline}
+        onJump={jumpToMarker}
+        onEditFilter={openEditFilter}
+      />
+    );
+
     const foldChevron = (pos: "bottom" | "right", collapsed: boolean) =>
       pos === "bottom"
         ? (collapsed ? <ChevronUp size={15} /> : <ChevronDown size={15} />)
@@ -1254,7 +1343,7 @@ export function App() {
           <div className="dock dock-right collapsed panel-dock">
             <div className="dock-head" onClick={toggleFilterCollapsed} title="Expand  (Ctrl+B)">
               <span className="dock-chevron">{chevron}</span>
-              <span className="dock-title">{activePanelTab === "compare" ? `Compare · ${compareRows.length}` : activePanelTab === "bookmarks" ? `Bookmarks · ${markers.length}` : "Filters"}</span>
+              <span className="dock-title">{activePanelTab === "compare" ? `Compare · ${compareRows.length}` : activePanelTab === "bookmarks" ? `Bookmarks · ${markers.length}` : activePanelTab === "timeline" ? `Timeline · ${marks.length}` : "Filters"}</span>
             </div>
           </div>
         );
@@ -1269,6 +1358,9 @@ export function App() {
               </button>
               <button className={"ptab" + (activePanelTab === "bookmarks" ? " active" : "")} onClick={() => selectPanelTab("bookmarks")}>
                 Bookmarks{markers.length > 0 && <span className="ptab-badge">{markers.length}</span>}
+              </button>
+              <button className={"ptab" + (activePanelTab === "timeline" ? " active" : "")} onClick={() => selectPanelTab("timeline")}>
+                Timeline{marks.length > 0 && <span className="ptab-badge">{marks.length}</span>}
               </button>
               {compareTabAvailable && (
                 <button className={"ptab" + (activePanelTab === "compare" ? " active" : "")} onClick={() => selectPanelTab("compare")}>
@@ -1291,7 +1383,7 @@ export function App() {
             <button className="dock-btn" title={(collapsed ? "Expand" : "Collapse") + "  (Ctrl+B)"} onClick={toggleFilterCollapsed}>{chevron}</button>
           </div>
           {!collapsed && (
-            <div className={"dock-body" + (isPanelPending ? " pending" : "")}>{activePanelTab === "filters" ? filterBody : activePanelTab === "compare" ? compareBody : bookmarksBody}</div>
+            <div className={"dock-body" + (isPanelPending ? " pending" : "")}>{activePanelTab === "filters" ? filterBody : activePanelTab === "compare" ? compareBody : activePanelTab === "timeline" ? timelineBody : bookmarksBody}</div>
           )}
         </div>
       );

@@ -1,5 +1,6 @@
 import * as React from "react"
 import { Menu as MenuPrimitive } from "@base-ui/react/menu"
+import { ChevronRight } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
@@ -69,6 +70,58 @@ function DropdownMenuItem({
   )
 }
 
+// Submenu parts. base-ui's ContextMenu reuses the same Menu primitives, so these
+// work inside both a DropdownMenuContent and a ContextMenuContent.
+function DropdownMenuSub({ ...props }: MenuPrimitive.SubmenuRoot.Props) {
+  return <MenuPrimitive.SubmenuRoot data-slot="dropdown-menu-sub" {...props} />
+}
+
+function DropdownMenuSubTrigger({
+  className,
+  children,
+  ...props
+}: MenuPrimitive.SubmenuTrigger.Props) {
+  return (
+    <MenuPrimitive.SubmenuTrigger
+      data-slot="dropdown-menu-sub-trigger"
+      className={cn("menu-item has-sub", className)}
+      {...props}
+    >
+      {children}
+      <ChevronRight size={14} className="mi-sub" />
+    </MenuPrimitive.SubmenuTrigger>
+  )
+}
+
+function DropdownMenuSubContent({
+  className,
+  sideOffset = 0,
+  alignOffset = -4,
+  zIndex = 50,
+  ...props
+}: MenuPrimitive.Popup.Props &
+  Pick<MenuPrimitive.Positioner.Props, "sideOffset" | "alignOffset"> & {
+    zIndex?: number
+  }) {
+  return (
+    <MenuPrimitive.Portal>
+      <MenuPrimitive.Positioner
+        style={{ zIndex }}
+        side="right"
+        align="start"
+        sideOffset={sideOffset}
+        alignOffset={alignOffset}
+      >
+        <MenuPrimitive.Popup
+          data-slot="dropdown-menu-sub-content"
+          className={cn("menu-pop", className)}
+          {...props}
+        />
+      </MenuPrimitive.Positioner>
+    </MenuPrimitive.Portal>
+  )
+}
+
 function DropdownMenuSeparator({
   className,
   ...props
@@ -104,4 +157,7 @@ export {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuShortcut,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 }

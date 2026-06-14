@@ -1,6 +1,6 @@
 import { memo, useState, useMemo, useRef, useEffect, useCallback, CSSProperties, ReactNode } from "react";
 import {
-  ChevronDown, ChevronRight, Copy, Eye, EyeOff,
+  Activity, ChevronDown, ChevronRight, Copy, Eye, EyeOff,
   Filter as FilterIcon, FileDown, FolderPlus, GripVertical,
   ListChecks, ListX, MoreVertical, MoreHorizontal, Pencil,
   Plus, Save, Search, Trash2, Upload, X,
@@ -31,6 +31,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { LogFile, FilterSet, FilterGroup, Filter, FilterLayout, FieldDef } from "../types";
+import { trackFieldsOf } from "../logic";
 import { Button } from "./ui/button";
 import { Checkbox } from "./ui/checkbox";
 import { ScrollArea } from "./ui/scroll-area";
@@ -41,6 +42,9 @@ import {
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
 } from "./ui/dropdown-menu";
 import {
   ContextMenu,
@@ -53,8 +57,10 @@ import {
 // (base-ui's ContextMenu reuses the same MenuItem/Separator parts, so these
 // fragments work in either popup.)
 
-function RowMenuItems({ onEdit, onViewOnly, onDuplicate, onDelete }: {
+function RowMenuItems({ onEdit, onViewOnly, onDuplicate, onDelete, timeFields, onAddTrack }: {
   onEdit: () => void; onViewOnly: () => void; onDuplicate: () => void; onDelete: () => void;
+  /** Numeric fields of this filter that can back a timeline track. */
+  timeFields: FieldDef[]; onAddTrack: (field: string) => void;
 }) {
   return (
     <>
@@ -67,6 +73,29 @@ function RowMenuItems({ onEdit, onViewOnly, onDuplicate, onDelete }: {
       <DropdownMenuItem onClick={onDuplicate}>
         <span className="mi-ico"><Copy size={15} /></span>Duplicate
       </DropdownMenuItem>
+      {timeFields.length > 0 && (
+        <>
+          <DropdownMenuSeparator />
+          {timeFields.length === 1 ? (
+            <DropdownMenuItem onClick={() => onAddTrack(timeFields[0].name)}>
+              <span className="mi-ico"><Activity size={15} /></span>Add to timeline track
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger>
+                <span className="mi-ico"><Activity size={15} /></span>Add to timeline track
+              </DropdownMenuSubTrigger>
+              <DropdownMenuSubContent>
+                {timeFields.map((d) => (
+                  <DropdownMenuItem key={d.name} onClick={() => onAddTrack(d.name)}>
+                    <span />{d.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuSubContent>
+            </DropdownMenuSub>
+          )}
+        </>
+      )}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onClick={onDelete}>
         <span className="mi-ico"><Trash2 size={15} /></span>Delete
@@ -254,10 +283,13 @@ interface RowApi {
   remove: (id: string) => void;
   duplicate: (id: string) => void;
   viewOnly: (id: string) => void;
+  addTrack: (filterId: string, timeField: string) => void;
 }
 
 interface FilterRowProps {
   f: Filter;
+  /** 0-based position in the set; shown as a 1-based "#N" serial (matches the timeline). */
+  index: number;
   count: number;
   searching: boolean;
   api: RowApi;
@@ -283,13 +315,15 @@ function sameFilter(a: Filter, b: Filter): boolean {
 // drag — dnd-kit re-renders every sortable subscriber on drag start and again
 // each time the pointer crosses a row — only re-runs the thin shell below,
 // not 100+ of these trees per step.
-const FilterRowCells = memo(function FilterRowCells({ f, count, api, dragging }: {
-  f: Filter; count: number; api: RowApi; dragging: boolean;
+const FilterRowCells = memo(function FilterRowCells({ f, index, count, api, dragging }: {
+  f: Filter; index: number; count: number; api: RowApi; dragging: boolean;
 }) {
   const onEdit = () => api.edit(f.id);
   const onDelete = () => api.remove(f.id);
   const onDuplicate = () => api.duplicate(f.id);
   const onViewOnly = () => api.viewOnly(f.id);
+  const timeFields = trackFieldsOf(f);
+  const onAddTrack = (field: string) => api.addTrack(f.id, field);
 
   const flags: { t: string; title: string }[] = [];
   if (f.caseSensitive) flags.push({ t: "Aa", title: "Case sensitive" });
@@ -338,6 +372,10 @@ const FilterRowCells = memo(function FilterRowCells({ f, count, api, dragging }:
           onPointerDown={(e) => e.stopPropagation()}
         />
 
+        {index >= 0 && (
+          <span className="fr-serial" title={`Filter #${index + 1}`}>#{index + 1}</span>
+        )}
+
         {/* no per-cell titles — the row's hover card carries the full detail,
             so hovering the truncated pattern reveals everything, not just it */}
         <div className="fr-pattern">
@@ -377,13 +415,13 @@ const FilterRowCells = memo(function FilterRowCells({ f, count, api, dragging }:
               <MoreVertical />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="bottom" align="end">
-              <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} />
+              <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} timeFields={timeFields} onAddTrack={onAddTrack} />
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
         </HoverCardTrigger>
         <ContextMenuContent>
-          <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} />
+          <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} timeFields={timeFields} onAddTrack={onAddTrack} />
         </ContextMenuContent>
       </ContextMenu>
 
@@ -423,7 +461,7 @@ const FilterRowCells = memo(function FilterRowCells({ f, count, api, dragging }:
     </HoverCard>
   );
 }, (prev, next) =>
-  sameFilter(prev.f, next.f) && prev.count === next.count
+  sameFilter(prev.f, next.f) && prev.index === next.index && prev.count === next.count
   && prev.dragging === next.dragging && prev.api === next.api);
 
 // Thin sortable shell: just the dnd hook and a wrapper div carrying the drag
@@ -431,7 +469,7 @@ const FilterRowCells = memo(function FilterRowCells({ f, count, api, dragging }:
 // change mid-drag; the memoized cells above are skipped while their props are
 // stable. (memo on the shell itself covers parent-driven re-renders; context
 // updates from inside useSortable bypass it by design.)
-const FilterRow = memo(function FilterRow({ f, count, searching, api }: FilterRowProps) {
+const FilterRow = memo(function FilterRow({ f, index, count, searching, api }: FilterRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: f.id,
     disabled: searching,
@@ -443,11 +481,11 @@ const FilterRow = memo(function FilterRow({ f, count, searching, api }: FilterRo
   };
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...(searching ? {} : listeners)}>
-      <FilterRowCells f={f} count={count} api={api} dragging={isDragging} />
+      <FilterRowCells f={f} index={index} count={count} api={api} dragging={isDragging} />
     </div>
   );
 }, (prev, next) =>
-  sameFilter(prev.f, next.f) && prev.count === next.count
+  sameFilter(prev.f, next.f) && prev.index === next.index && prev.count === next.count
   && prev.searching === next.searching && prev.api === next.api);
 
 // ---- group ----
@@ -636,7 +674,7 @@ function PanelListZone({ onAddFilter, onAddGroup, onBulk, children }: {
 
 // ---- drag overlays (the floating clone shown while dragging) ----
 
-function FilterRowOverlay({ f, count }: { f: Filter; count: number }) {
+function FilterRowOverlay({ f, index, count }: { f: Filter; index: number; count: number }) {
   const flags: string[] = [];
   if (f.caseSensitive) flags.push("Aa");
   if (f.regex) flags.push(".*");
@@ -645,6 +683,7 @@ function FilterRowOverlay({ f, count }: { f: Filter; count: number }) {
       <span className="fr-handle"><GripVertical size={12} /></span>
       <span className="fr-check-wrap"><Checkbox checked={f.enabled} onCheckedChange={() => {}} /></span>
       <button className="fr-color" style={{ background: f.bgColor, borderColor: f.textColor }} />
+      {index >= 0 && <span className="fr-serial">#{index + 1}</span>}
       <div className="fr-pattern">{f.pattern || <span className="placeholder">untitled filter</span>}</div>
       <div className="fr-desc">{f.description}</div>
       {flags.length > 0 && <div className="fr-flags">{flags.map((t, i) => <span key={i} className="fr-flag">{t}</span>)}</div>}
@@ -691,6 +730,8 @@ interface FilterPanelProps {
   onDuplicateFilter: (id: string) => void;
   onViewFilterOnly: (id: string) => void;
   onEditFilter: (id: string) => void;
+  /** Append a timeline track bound to (filterId, timeField). */
+  onAddTimelineTrack: (filterId: string, timeField: string) => void;
   /** Commit a whole-group drag arrangement in one undoable step. */
   onApplyLayout: (model: FilterLayout) => void;
   onBulk: (action: string) => void;
@@ -701,7 +742,7 @@ export function FilterPanel({
   onSwitchSet, onAddSet, onRenameSet, onDeleteSet, onDuplicateSet, onReorderSet,
   onAddGroup, onRenameGroup, onToggleGroup, onDeleteGroup, onSetGroupEnabled,
   onUpdateFilter, onAddFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onEditFilter,
-  onApplyLayout, onBulk,
+  onAddTimelineTrack, onApplyLayout, onBulk,
 }: FilterPanelProps) {
   const [search, setSearch] = useState("");
 
@@ -750,6 +791,9 @@ export function FilterPanel({
   // Section / filter metadata lookups (stable across a drag — only order moves).
   const groupById = new Map(groups.map((s) => [s.id, s] as const));
   const filterById = new Map(filters.map((f) => [f.id, f] as const));
+  // 0-based position in the set, shown on each row as a 1-based "#N" serial. Keyed
+  // off set.filters so it matches the serial the timeline panel renders.
+  const indexById = new Map(filters.map((f, i) => [f.id, i] as const));
 
   // Snapshot the committed arrangement as a FilterLayout: the interleaved
   // top-level order plus each group's ordered members. Appends anything
@@ -787,18 +831,19 @@ export function FilterPanel({
 
   // One identity-stable api object for every row; the latest handlers are read
   // through a ref so the rows' memo never breaks when App re-renders.
-  const rowCbRef = useRef({ onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly });
-  rowCbRef.current = { onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly };
+  const rowCbRef = useRef({ onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onAddTimelineTrack });
+  rowCbRef.current = { onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onAddTimelineTrack };
   const rowApi = useMemo<RowApi>(() => ({
     update: (id, patch) => rowCbRef.current.onUpdateFilter(id, patch),
     edit: (id) => rowCbRef.current.onEditFilter(id),
     remove: (id) => rowCbRef.current.onDeleteFilter(id),
     duplicate: (id) => rowCbRef.current.onDuplicateFilter(id),
     viewOnly: (id) => rowCbRef.current.onViewFilterOnly(id),
+    addTrack: (filterId, timeField) => rowCbRef.current.onAddTimelineTrack(filterId, timeField),
   }), []);
 
   function renderRow(f: Filter) {
-    return <FilterRow key={f.id} f={f} count={counts[f.id] ?? 0} searching={searching} api={rowApi} />;
+    return <FilterRow key={f.id} f={f} index={indexById.get(f.id) ?? -1} count={counts[f.id] ?? 0} searching={searching} api={rowApi} />;
   }
 
   // ---- drag-and-drop (dnd-kit "multiple lists") ----
@@ -1120,7 +1165,7 @@ export function FilterPanel({
 
           <DragOverlay>
             {drag?.type === "filter" && filterById.get(drag.activeId) ? (
-              <FilterRowOverlay f={filterById.get(drag.activeId)!} count={counts[drag.activeId] ?? 0} />
+              <FilterRowOverlay f={filterById.get(drag.activeId)!} index={indexById.get(drag.activeId) ?? -1} count={counts[drag.activeId] ?? 0} />
             ) : drag?.type === "group" && groupById.get(drag.activeId) ? (
               <GroupOverlay group={groupById.get(drag.activeId)!} count={byGroup(drag.activeId).length} />
             ) : null}

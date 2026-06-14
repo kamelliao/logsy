@@ -553,6 +553,46 @@ button { font-family: inherit; }
   text-align: center; font-variant-numeric: tabular-nums;
 }
 
+/* ---- timeline canvas (phase 2) ---- */
+.tlc-wrap {
+  position: relative; width: 100%; margin: 2px 0 6px;
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  background: var(--panel-bg, #fff);
+  /* height is controlled inline (auto-fits the lane count); keep a small floor */
+  min-height: 56px;
+}
+.tlc-wrap canvas { display: block; touch-action: none; }
+/* Centered hint over an empty canvas (no events yet). */
+.tlc-empty {
+  position: absolute; inset: 18px 12px 0 76px; pointer-events: none;
+  display: flex; align-items: center; justify-content: center; text-align: center;
+  font-size: 11px; color: var(--text-3, #8c929b); padding: 0 12px;
+}
+.tlc-fit {
+  position: absolute; top: 4px; right: 4px; font-size: 10px; line-height: 1; padding: 3px 6px;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--panel-bg-2, #f6f7f8);
+  color: var(--text-2, #5b616b); cursor: pointer;
+}
+.tlc-fit:hover { color: var(--text); }
+.tlc-clear {
+  position: absolute; top: 4px; right: 38px; font-size: 10px; line-height: 1; padding: 3px 6px;
+  border: 1px solid var(--border); border-radius: 5px; background: var(--panel-bg-2, #f6f7f8);
+  color: var(--text-2, #5b616b); cursor: pointer;
+}
+.tlc-clear:hover { color: var(--text); }
+.tlc-tip {
+  position: absolute; z-index: 5; pointer-events: none; max-width: 240px;
+  background: var(--panel-bg, #fff); border: 1px solid var(--border); border-radius: 7px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.14); padding: 6px 8px; font-size: 11px; color: var(--text);
+}
+.tlc-tip-h { display: flex; align-items: center; gap: 6px; color: var(--text-3, #8c929b); margin-bottom: 2px; }
+.tlc-tip-lane { font-size: 10px; font-weight: 700; color: var(--text); padding: 0 5px; border-radius: 6px; }
+.tlc-tip-t { font-variant-numeric: tabular-nums; font-weight: 600; }
+.tlc-tip-fields { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); display: grid; gap: 1px; }
+.tlc-tip-field { display: flex; gap: 8px; justify-content: space-between; }
+.tlc-tip-k { color: var(--text-3, #8c929b); }
+.tlc-tip-v { color: var(--text); font-variant-numeric: tabular-nums; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 .menu-item.disabled { opacity: 0.5; cursor: default; }
 .menu-item.disabled:hover { background: none; }
 /* sit at the cursor and size to content (a transformed ancestor can otherwise
@@ -1115,6 +1155,14 @@ button { font-family: inherit; }
   cursor: pointer; border: 1px solid rgba(0,0,0,0.12);
   position: relative;
 }
+/* 1-based serial right of the color swatch — matches the timeline panel's "#N". */
+.fr-serial {
+  flex: 0 0 auto;
+  font-family: var(--mono-font);
+  font-size: calc(var(--log-font-size, 12.5px) * 0.76);
+  font-weight: 600; color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
 .fr-pattern {
   flex: 1 1 auto; min-width: 0;
   font-family: var(--mono-font); font-size: calc(var(--log-font-size, 12.5px) * 0.88); color: var(--text);
@@ -1427,7 +1475,8 @@ button { font-family: inherit; }
 .menu-item .mi-label { flex: 1 1 auto; }
 /* submenu rows (File ▸ Recent …) */
 .menu-item.has-sub .mi-sub { margin-left: auto; color: var(--text-3); }
-.menu-item.sub-open { background: var(--row-hover); }
+.menu-item.sub-open,
+.menu-item.has-sub[data-popup-open] { background: var(--row-hover); }
 
 /* ============================================================
    Modal

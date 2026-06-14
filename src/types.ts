@@ -49,6 +49,11 @@ export interface FilterSet {
    * the group, ordered by their position in `filters`).
    */
   order: string[];
+  /**
+   * Timeline event sources for this set: each draws events from one filter's
+   * matched lines onto one named lane. Travels with the saved filter file.
+   */
+  sources?: TimelineSource[];
   /** Last path this set's filters were saved to (for "Save filters"). */
   filePath?: string;
   /**
@@ -117,8 +122,8 @@ export interface AppState {
   /** Collapsed (rolled-up) state of the main tabbed panel / popped compare dock. */
   filterCollapsed: boolean;
   compareCollapsed: boolean;
-  /** Active tab in the main panel (Filters, Compare, Bookmarks share one tabbed dock). */
-  activePanelTab: "filters" | "compare" | "bookmarks";
+  /** Active tab in the main panel (Filters, Compare, Bookmarks, Timeline share one tabbed dock). */
+  activePanelTab: "filters" | "compare" | "bookmarks" | "timeline";
   /** When true, Compare is shown as its own dock (so it can sit beside Filters)
    *  instead of as a tab in the main panel. */
   comparePopped: boolean;
@@ -149,6 +154,18 @@ export interface CompiledFilter {
 
 /** How a parsed field's raw text is coerced for display, sorting, and math. */
 export type FieldType = "string" | "int" | "hex" | "float" | "time";
+
+/**
+ * Unit a timeline source's time field is in. Clock formats ("H:M:S.mmm", "M:S")
+ * are self-describing → `"hms"`; a plain number carries no unit, so the user
+ * declares whether it is seconds / milli / micro / nanoseconds. The timeline
+ * normalizes everything to nanoseconds using this. Lives on `TimelineSource`,
+ * independent of the filter's field definitions.
+ */
+export type TimeUnit = "hms" | "s" | "ms" | "us" | "ns";
+
+/** Marker shape for a point event on the timeline (spans always render as bars). */
+export type EventShape = "circle" | "square" | "triangle" | "diamond";
 
 export interface FieldDef {
   /** Named capture group this field reads from. */
@@ -195,4 +212,54 @@ export interface ViewResult {
 export interface Segment {
   t: string;
   hit: boolean;
+}
+
+/**
+ * One timeline track = one lane, identified by a **(filter, time field)** pair.
+ * Tracks are a user-owned, ordered list on `FilterSet.sources` (no auto-derivation):
+ * the user adds one with `+ Add track`, picking a filter then one of its numeric
+ * fields. Events are produced only for log lines the user has added to the
+ * timeline (like the compare panel); a line feeds this track when its first
+ * matching filter is `filterId` and it exposes `timeField` — emitting a `point`,
+ * or a `span` when `endField` is also present on that line. Persisted with the
+ * saved filter file; identity key is `filterId + ":" + timeField`.
+ */
+export interface TimelineSource {
+  id: string;
+  /** The filter this track binds to (matches `ViewRow.fieldsFromId`). */
+  filterId: string;
+  /** Parsed field name this track reads its time from (point time / span start). */
+  timeField: string;
+  /** Lane label (defaults to the field name). */
+  lane: string;
+  kind: "point" | "span";
+  /** Span only: the field name holding the end time (same filter, same line). */
+  endField?: string;
+  /** Unit the time field(s) are in; normalized to ns. */
+  unit: TimeUnit;
+  /** Mark color; defaults to a per-lane palette color. */
+  color?: string;
+  /** Point marker shape; defaults to "circle". Spans always render as bars. */
+  shape?: EventShape;
+  /** Row collapsed in the config list (UI only). */
+  collapsed?: boolean;
+  /** Hide this track from the timeline without deleting its config. */
+  hidden?: boolean;
+}
+
+/** One extracted timeline event, time normalized to nanoseconds. */
+export interface EventMark {
+  lane: string;
+  /** Event time in canonical nanoseconds (the span start, for a span). */
+  t: number;
+  /** Span end in nanoseconds; absent for point events. */
+  end?: number;
+  /** 1-based log line the event came from. */
+  lineN: number;
+  label: string;
+  color?: string;
+  /** Point marker shape; absent renders as a circle. Ignored for spans. */
+  shape?: EventShape;
+  /** All parsed fields of the source line, for the hover card. */
+  fields?: Record<string, FieldValue>;
 }

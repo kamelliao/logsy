@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "react";
-import { ArrowDown, ArrowUp, Bookmark, ChevronDown, ChevronRight, Columns3, Copy, Download, Eye, Filter, Search, Sparkles, Trash2, X } from "lucide-react";
+import { Activity, ArrowDown, ArrowUp, Bookmark, ChevronDown, ChevronRight, Columns3, Copy, Download, Eye, Filter, Search, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { LogFile, ViewResult, FieldValue, Marker, MarkerIcon } from "../types";
@@ -97,12 +97,16 @@ interface LogViewProps {
   onBuildFilter: (pattern: string, mode?: "exact" | "pattern") => void;
   onAddToCompare: (ns: number[]) => void;
   onRemoveFromCompare: (ns: number[]) => void;
+  timelineLines: Set<number>;
+  onAddToTimeline: (ns: number[]) => void;
+  onRemoveFromTimeline: (ns: number[]) => void;
 }
 
 export function LogView({
   file, view, viewMode, soloPattern, onExitSolo, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, compareLines, style,
   selectAllNonce, gotoSignal, onExportView, markers, markerJump, onSetMarker, onRemoveMarker,
   onToggleViewMode, onToggleFind, onCloseFind, onBuildFilter, onAddToCompare, onRemoveFromCompare,
+  timelineLines, onAddToTimeline, onRemoveFromTimeline,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -941,6 +945,8 @@ export function LogView({
         const parsed = sel.filter((n) => view.rows[n - 1]?.fieldsFromId !== undefined);
         const inCmp = parsed.filter((n) => compareLines.has(n));
         const notIn = parsed.filter((n) => !compareLines.has(n));
+        const inTl = parsed.filter((n) => timelineLines.has(n));
+        const notInTl = parsed.filter((n) => !timelineLines.has(n));
         return (
           <div className="menu-pop row-menu" style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 60 }}>
             <div className="menu-item" onClick={() => { copySelectedLines(); setRowMenu(null); }}>
@@ -977,6 +983,18 @@ export function LogView({
               <div className="menu-item" onClick={() => { onRemoveFromCompare(inCmp); setRowMenu(null); }}>
                 <span className="mi-ico"><Columns3 size={14} /></span>
                 {inCmp.length > 1 ? `Remove ${inCmp.length} lines from compare` : "Remove from compare"}
+              </div>
+            )}
+            {parsed.length > 0 && notInTl.length > 0 && (
+              <div className="menu-item" onClick={() => { onAddToTimeline(notInTl); setRowMenu(null); }}>
+                <span className="mi-ico"><Activity size={14} /></span>
+                {notInTl.length > 1 ? `Add ${notInTl.length} lines to timeline` : "Add to timeline"}
+              </div>
+            )}
+            {inTl.length > 0 && (
+              <div className="menu-item" onClick={() => { onRemoveFromTimeline(inTl); setRowMenu(null); }}>
+                <span className="mi-ico"><Activity size={14} /></span>
+                {inTl.length > 1 ? `Remove ${inTl.length} lines from timeline` : "Remove from timeline"}
               </div>
             )}
           </div>
