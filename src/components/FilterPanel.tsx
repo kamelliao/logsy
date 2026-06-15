@@ -480,7 +480,7 @@ const FilterRow = memo(function FilterRow({ f, index, count, searching, api }: F
     transition,
   };
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...(searching ? {} : listeners)}>
+    <div ref={setNodeRef} data-filter-id={f.id} style={style} {...attributes} {...(searching ? {} : listeners)}>
       <FilterRowCells f={f} index={index} count={count} api={api} dragging={isDragging} />
     </div>
   );
@@ -735,6 +735,13 @@ interface FilterPanelProps {
   /** Commit a whole-group drag arrangement in one undoable step. */
   onApplyLayout: (model: FilterLayout) => void;
   onBulk: (action: string) => void;
+  /** Filter row to scroll into view + flash (e.g. from a Compare group header). */
+  flashFilterId?: string | null;
+  /** Bumps to re-trigger the flash even when the same id is re-requested. */
+  flashNonce?: number;
+  /** Called once a flash request has been consumed, so it doesn't replay on a
+   *  later remount (panel open/close, dock switch). */
+  onFlashConsumed?: () => void;
 }
 
 export function FilterPanel({
@@ -743,6 +750,7 @@ export function FilterPanel({
   onAddGroup, onRenameGroup, onToggleGroup, onDeleteGroup, onSetGroupEnabled,
   onUpdateFilter, onAddFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onEditFilter,
   onAddTimelineTrack, onApplyLayout, onBulk,
+  flashFilterId, flashNonce, onFlashConsumed,
 }: FilterPanelProps) {
   const [search, setSearch] = useState("");
 
@@ -770,6 +778,25 @@ export function FilterPanel({
     panel.addEventListener("wheel", onWheel, { passive: false });
     return () => panel.removeEventListener("wheel", onWheel);
   }, []);
+
+  // Scroll a requested filter row into view and flash it (driven by App, e.g.
+  // from a Compare group header). rAF lets a just-switched-to tab finish mounting
+  // and an expanded group settle before we measure/scroll.
+  useEffect(() => {
+    if (!flashFilterId || !flashNonce) return;
+    const raf = requestAnimationFrame(() => {
+      const list = panelRef.current?.querySelector<HTMLElement>(".filter-list");
+      const row = list?.querySelector<HTMLElement>(`[data-filter-id="${window.CSS.escape(flashFilterId)}"]`);
+      // Consume the request either way so it can't replay when the panel later
+      // remounts (open/close, dock switch) with the same id/nonce still in state.
+      onFlashConsumed?.();
+      if (!row) return;
+      row.scrollIntoView({ block: "center", behavior: "smooth" });
+      row.classList.add("fr-flash");
+      setTimeout(() => row.classList.remove("fr-flash"), 1300);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [flashFilterId, flashNonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // "New group" appends at the end of the list, which can be below the fold;
   // scroll the freshly added group into view once it has rendered.

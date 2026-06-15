@@ -643,106 +643,118 @@ button { font-family: inherit; }
    let this fixed popup stretch to the panel width) */
 .row-menu { width: max-content; max-width: 340px; }
 
-/* ---- multi-line field comparison: one shadcn table per matching pattern ---- */
-.cmp-empty {
-  margin: 14px; padding: 18px 16px; font-size: 12.5px; color: var(--text-3); line-height: 1.6;
+/* ---- shared dock-panel empty state (Compare + Timeline): a dashed card pinned
+   to the top of the panel (not vertically centered) ---- */
+.panel-empty-wrap { display: grid; place-items: start center; height: 100%; padding: 16px; overflow: auto; }
+.panel-empty {
+  max-width: 360px; padding: 20px 18px; font-size: 12.5px; color: var(--text-3); line-height: 1.6;
   text-align: center; background: var(--panel-bg-2);
   border: 1px dashed var(--border-strong); border-radius: 10px;
 }
-.cmp-empty b { color: var(--text-2); font-weight: 600; }
-.cmp-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 11px 12px 14px; scrollbar-gutter: stable; }
+.panel-empty p { margin: 0; }
+.panel-empty p + p { margin-top: 8px; }
+.panel-empty-icon { display: flex; justify-content: center; color: var(--text-3); margin-bottom: 8px; }
+.panel-empty-title { font-family: var(--ui-font); font-size: 13px; font-weight: 600; color: var(--text-2); margin-bottom: 8px; }
+.panel-empty-hint { font-size: 11.5px; opacity: 0.85; }
+.panel-empty b { color: var(--text-2); font-weight: 600; }
 
-.cmp-group { margin-bottom: 16px; }
-.cmp-group:last-child { margin-bottom: 2px; }
-.cmp-group-head { display: flex; align-items: center; gap: 7px; padding: 0 2px 7px; }
+/* ---- multi-line field comparison: one virtualized grid per matching pattern ---- */
+
+.cmp-scroll { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 0 12px 14px; scrollbar-gutter: stable; }
+.cmp-vsizer { position: relative; width: 100%; }
+.cmp-vitem { position: absolute; top: 0; left: 0; width: 100%; }
+/* the active group header pins to the top while you scroll within its group; an
+   opaque background lets it occlude the rows sliding underneath it. */
+.cmp-vitem.stuck { z-index: 2; background: var(--panel-bg, #fbfbfc); }
+
+.cmp-group-head-wrap { padding-top: 15px; }
+.cmp-group-head { display: flex; align-items: center; gap: 7px; height: 31px; padding: 0 2px 7px; }
 .cmp-dot {
   flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
   box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
+}
+/* the dot + #idx + label are one button: clicking jumps to the source filter */
+.cmp-group-jump {
+  display: inline-flex; align-items: center; gap: 7px; min-width: 0; flex: 0 1 auto;
+  padding: 2px 5px; margin: -2px -5px; border: none; background: none; border-radius: 6px;
+  font: inherit; color: inherit; text-align: left; cursor: pointer; transition: background 0.12s;
+}
+.cmp-group-jump:disabled { cursor: default; }
+.cmp-group-jump:hover:not(:disabled) { background: var(--row-hover); }
+/* idx + label share one type scale (ui-font · 12px) so the header reads as one
+   unified line; the idx stays tabular + a touch bolder to set the serial apart. */
+.cmp-group-idx {
+  flex: 0 0 auto; font-family: var(--ui-font); font-size: 12px; font-weight: 700;
+  color: var(--text-3); font-variant-numeric: tabular-nums;
 }
 .cmp-group-label {
   min-width: 0; font-family: var(--ui-font); font-size: 12px; font-weight: 600; color: var(--text-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
+.cmp-group-jump:hover:not(:disabled) .cmp-group-label,
+.cmp-group-jump:hover:not(:disabled) .cmp-group-idx { color: #2c6ce6; }
 .cmp-group-count {
   flex: 0 0 auto; font-size: 10.5px; font-weight: 600; color: var(--text-3);
   background: var(--panel-bg-2); border: 1px solid var(--border); border-radius: 9px;
   padding: 0 7px; line-height: 16px; font-variant-numeric: tabular-nums;
 }
 .cmp-group-spacer { flex: 1 1 auto; }
-.cmp-export {
-  flex: 0 0 auto; display: inline-flex; align-items: center; gap: 5px;
-  height: 24px; padding: 0 9px; border-radius: 6px;
-  border: 1px solid var(--border-strong); background: #fff; color: var(--text-2);
-  font-family: var(--ui-font); font-size: 11.5px; font-weight: 600; cursor: pointer;
-  transition: background 0.12s, border-color 0.12s, color 0.12s, box-shadow 0.12s;
-}
-.cmp-export:hover { background: var(--row-hover); border-color: #c2c7cd; color: var(--text); }
-.cmp-export:active { transform: translateY(0.5px); }
-.cmp-export svg { color: var(--text-3); }
-.cmp-export:hover svg { color: var(--text-2); }
+/* right-side per-table actions (scroll to top · clear lines · export csv) */
+.cmp-group-actions { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 1px; }
 
-/* table wrapped in a rounded card */
-.cmp-card {
-  border: 1px solid var(--border); border-radius: 10px; overflow: hidden;
-  background: #fff; box-shadow: 0 1px 2px rgba(20,22,26,0.04);
-}
-/* The Table's own container scrolls horizontally; give its native scrollbar the
-   exact look of the compare panel's vertical scrollbar (.scroll) so they match.
-   Native scrollbars reserve their own space, so the bar sits below the last row
-   rather than overlapping it. */
-.cmp-card [data-slot="table-container"]::-webkit-scrollbar { width: 12px; height: 12px; }
-.cmp-card [data-slot="table-container"]::-webkit-scrollbar-thumb {
-  background: #cdd1d6;
-  border: 3px solid transparent;
-  background-clip: padding-box;
-  border-radius: 8px;
-}
-.cmp-card [data-slot="table-container"]::-webkit-scrollbar-thumb:hover { background: #b4b9c0; background-clip: padding-box; }
-.cmp-card [data-slot="table-container"]::-webkit-scrollbar-track { background: transparent; }
-/* compare text matches the log line's font + size */
-.cmp-shadcn {
-  width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0;
+/* Column header + body rows are CSS grids sharing one per-group template, so the
+   columns line up across the virtualized (independently positioned) rows. The
+   rows redraw the rounded-card border (left/right on every row, top on the
+   header, bottom on the last row) since they're no longer one DOM element. */
+.cmp-colhead {
+  display: grid; align-items: center; height: var(--log-row-h, 21px);
+  background: var(--panel-bg-2); border: 1px solid var(--border); border-radius: 8px 8px 0 0;
+  /* match the rows' font so the template's `ch` tracks resolve identically and
+     the header columns line up with the body (ch is relative to this element). */
   font-family: var(--mono-font); font-size: var(--log-font-size, 12.5px);
 }
-.cmp-shadcn tr { border: none; }
-.cmp-shadcn th, .cmp-shadcn td {
-  white-space: pre; height: var(--log-row-h, 21px); padding: 0 13px; border: none;
-}
-.cmp-shadcn thead th {
-  color: var(--text-3); font-family: var(--ui-font); font-size: 10.5px; font-weight: 600;
+.cmp-colhead .cmp-ch {
+  padding: 0 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: var(--ui-font); font-size: 10.5px; font-weight: 600; color: var(--text-3);
   letter-spacing: 0.04em; text-transform: uppercase;
-  background: var(--panel-bg-2); border-bottom: 1px solid var(--border);
 }
-.cmp-shadcn tbody td { color: var(--text); border-bottom: 1px solid var(--border); }
-.cmp-shadcn tbody tr:last-child td { border-bottom: none; }
-.cmp-shadcn tbody tr:nth-child(even) { background: rgba(20,22,26,0.018); }
-.cmp-shadcn tbody tr:hover { background: var(--accent-bg); }
-.cmp-shadcn .cmp-ln {
-  color: var(--text-3); text-align: left; font-variant-numeric: tabular-nums;
-  -webkit-user-select: none; user-select: none;
+.cmp-colhead .cmp-rm, .cmp-colhead .cmp-pad { padding: 0; }
+
+.cmp-vrow {
+  display: grid; align-items: center; height: var(--log-row-h, 21px);
+  font-family: var(--mono-font); font-size: var(--log-font-size, 12.5px); color: var(--text);
+  background: #fff;
+  border-left: 1px solid var(--border); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
 }
-/* the body line cell is just the jump button — drop cell padding so the button
-   (which carries the 0 13px padding) aligns with the "line" header */
-.cmp-shadcn td.cmp-ln { padding: 0; }
-.cmp-shadcn .cmp-ln-btn {
+.cmp-vrow.odd { background: rgba(20,22,26,0.018); }
+.cmp-vrow.last { border-radius: 0 0 8px 8px; }
+.cmp-vrow:hover { background: var(--accent-bg); }
+.cmp-cell { padding: 0 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmp-cell.num { font-variant-numeric: tabular-nums; }
+.cmp-cell.cmp-ln { padding: 0; color: var(--text-3); -webkit-user-select: none; user-select: none; }
+.cmp-cell.cmp-rm { padding: 0; display: flex; align-items: center; justify-content: center; }
+.cmp-cell.cmp-pad { padding: 0; }
+.cmp-ln-btn {
   display: block; width: 100%; height: var(--log-row-h, 21px); padding: 0 13px;
   border: none; background: none; cursor: pointer; text-align: left;
-  font: inherit; color: inherit; font-variant-numeric: tabular-nums;
-  transition: color 0.12s;
+  font: inherit; color: inherit; font-variant-numeric: tabular-nums; transition: color 0.12s;
 }
-.cmp-shadcn .cmp-ln-btn:hover { color: #2c6ce6; text-decoration: underline; }
-.cmp-shadcn .num { text-align: left; font-variant-numeric: tabular-nums; }
-/* greedy trailing column: absorbs leftover width so data columns size to their
-   content (no big gaps / right-drift from min-width:100% stretching) */
-.cmp-shadcn .cmp-pad { width: 100%; padding: 0; }
-.cmp-shadcn th.cmp-rm, .cmp-shadcn td.cmp-rm { width: 30px; padding-left: 8px; padding-right: 0; text-align: center; }
-.cmp-shadcn .cmp-rm button {
+.cmp-ln-btn:hover { color: #2c6ce6; text-decoration: underline; }
+.cmp-rm-btn {
   opacity: 0; width: 19px; height: 19px; border: none; background: none; border-radius: 5px;
   display: grid; place-items: center; color: var(--text-3); cursor: pointer;
   transition: opacity 0.1s, background 0.12s, color 0.12s;
 }
-.cmp-shadcn tr:hover .cmp-rm button { opacity: 1; }
-/* .cmp-shadcn .cmp-rm button:hover { background: #fdecec; color: var(--error); } */
+.cmp-vrow:hover .cmp-rm-btn { opacity: 1; }
+
+/* a filter row briefly flashed when jumped-to from a Compare group header. The
+   inner .filter-row paints opaque (#fff, overflow:hidden), so animate it, not
+   the sortable shell that carries the data-filter-id / .fr-flash class. */
+.fr-flash .filter-row { animation: fr-flash-kf 1.25s ease-out; }
+@keyframes fr-flash-kf {
+  0%, 25% { background: var(--accent-bg); border-color: #2c6ce6; box-shadow: inset 0 0 0 1.5px #2c6ce6; }
+  100% { background: #fff; border-color: var(--border); box-shadow: none; }
+}
 /* lines currently in the comparison panel get a subtle marker */
 .log-row.incompare .log-gut { box-shadow: inset 2px 0 0 var(--accent, #2c6ce6); }
 /* lines added to the event timeline get a distinct (teal) gutter marker */

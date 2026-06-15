@@ -20,7 +20,7 @@ import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "./ui/hover-card";
-import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyContent } from "./ui/empty";
+import { PanelEmpty } from "./PanelEmpty";
 import { TimelineCanvas } from "./TimelineCanvas";
 
 const UNITS: TimeUnit[] = ["hms", "s", "ms", "us", "ns"];
@@ -66,6 +66,9 @@ interface Props {
   /** Remove the given lines from the timeline (orphan-hint "Remove" action). */
   onRemoveLines: (ns: number[]) => void;
   onJump: (lineN: number) => void;
+  /** Reveal + flash a track's filter row in the Filters panel (same action as the
+   *  Compare group header). */
+  onFocusFilter: (filterId: string) => void;
   /** Persisted height (px) of the draggable bottom sheet. */
   sheetH: number;
   onSetSheetH: (h: number) => void;
@@ -95,7 +98,7 @@ export function TimelinePanel({
   tracks, filters, timeFields, marks, lineCount,
   onSetTrack, onRemoveTrack, onReorderTracks, onAddMatchingLines,
   onImportTrackLines, onClearTrackLines, trackLineStats,
-  orphanLines, onRemoveLines, onJump,
+  orphanLines, onRemoveLines, onJump, onFocusFilter,
   sheetH, onSetSheetH, iconSize,
 }: Props) {
   // The bottom sheet's height is driven locally during a drag (no per-move
@@ -256,26 +259,20 @@ export function TimelinePanel({
         )}
         <div className="tl-sheet-body scroll">
         {tracks.length === 0 ? (
-          <Empty className="h-full p-4">
-            <EmptyHeader>
-              <EmptyMedia variant="icon"><ChartNoAxesGantt /></EmptyMedia>
-              <EmptyTitle className="text-sm">No tracks yet</EmptyTitle>
-            </EmptyHeader>
-            <EmptyContent>
-              <ol className="space-y-1.5 text-left text-xs text-muted-foreground">
-                <li>
-                  <span className="mr-1 font-semibold text-foreground tabular-nums">1.</span>
-                  In the <b className="text-foreground">Filters</b> tab, right-click a filter →{" "}
-                  <b className="text-foreground">Add to timeline track</b>.
-                </li>
-                <li>
-                  <span className="mr-1 font-semibold text-foreground tabular-nums">2.</span>
-                  In the log view, right-click the lines you want →{" "}
-                  <b className="text-foreground">Add to timeline</b>.
-                </li>
-              </ol>
-            </EmptyContent>
-          </Empty>
+          <PanelEmpty icon={<ChartNoAxesGantt size={22} />} title="No tracks yet">
+            <ol className="mt-1 space-y-1.5 text-left text-xs text-muted-foreground">
+              <li>
+                <span className="mr-1 font-semibold text-foreground tabular-nums">1.</span>
+                In the <b className="text-foreground">Filters</b> tab, right-click a filter →{" "}
+                <b className="text-foreground">Add to timeline track</b>.
+              </li>
+              <li>
+                <span className="mr-1 font-semibold text-foreground tabular-nums">2.</span>
+                In the log view, right-click the lines you want →{" "}
+                <b className="text-foreground">Add to timeline</b>.
+              </li>
+            </ol>
+          </PanelEmpty>
         ) : (
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} modifiers={[restrictToVerticalAxis]}>
             <SortableContext items={tracks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
@@ -286,6 +283,7 @@ export function TimelinePanel({
                   key={tr.id} tr={tr} filters={filters} fieldsOf={fieldsOf}
                   onSet={onSetTrack} onRemove={() => onRemoveTrack(tr.id)}
                   onImport={() => onImportTrackLines(tr)} onClearLines={() => onClearTrackLines(tr)}
+                  onFocusFilter={onFocusFilter}
                   inTl={st?.inTl ?? 0} matching={st?.matching ?? 0}
                   canImport={!!st && st.matching > 0 && st.inTl < st.matching}
                   canClear={!!st && st.inTl > 0}
@@ -301,10 +299,11 @@ export function TimelinePanel({
   );
 }
 
-function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLines, inTl, matching, canImport, canClear }: {
+function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLines, onFocusFilter, inTl, matching, canImport, canClear }: {
   tr: TimelineSource; filters: Filter[]; fieldsOf: (f: Filter) => FieldDef[];
   onSet: (tr: TimelineSource) => void; onRemove: () => void;
   onImport: () => void; onClearLines: () => void;
+  onFocusFilter: (filterId: string) => void;
   inTl: number; matching: number; canImport: boolean; canClear: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tr.id });
@@ -361,13 +360,18 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
           {tr.lane}
         </span>
       )}
-      {/* Filter chip: hover reveals the filter's pattern + fields (read-only). It
-          no longer opens the Edit modal — the full filter lives one hover away. */}
+      {/* Filter chip: hover reveals the filter's pattern + fields (read-only);
+          clicking jumps to + flashes the filter row in the Filters panel (same
+          action as the Compare group header). */}
       {filter ? (
         <HoverCard>
           <HoverCardTrigger
             render={
-              <span className="inline-flex max-w-[150px] min-w-0 cursor-default items-center rounded px-1 py-0.5 text-[10px] font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground" />
+              <span
+                className="inline-flex max-w-[150px] min-w-0 cursor-pointer items-center rounded px-1 py-0.5 text-[10px] font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                title={`Go to filter ${serial} in Filters`}
+                onClick={() => onFocusFilter(tr.filterId)}
+              />
             }
           >
             <span className="min-w-0 truncate">
