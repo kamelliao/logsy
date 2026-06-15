@@ -67,6 +67,10 @@ function FieldTable({ fields }: { fields: Record<string, FieldValue> }) {
 interface LogViewProps {
   file: LogFile;
   view: ViewResult;
+  /** The active file's raw lines. Used only as a stable identity signal for
+   *  resetting selection — it changes on file switch / reload, but NOT when
+   *  filters or the view mode toggle (which re-create `view` but not `lines`). */
+  lines: string[];
   /** Active set's filters, in order — used to label a matched row with its #N. */
   filters: FilterCfg[];
   viewMode: "all" | "matches";
@@ -105,7 +109,7 @@ interface LogViewProps {
 }
 
 export function LogView({
-  file, view, filters, viewMode, soloPattern, onExitSolo, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, compareLines, style,
+  file, view, lines, filters, viewMode, soloPattern, onExitSolo, findOpen, mapColorMode, mapWidth, fontSize, showLineNumbers, compareLines, style,
   selectAllNonce, gotoSignal, onExportView, markers, markerJump, onSetMarker, onRemoveMarker,
   onToggleViewMode, onToggleFind, onCloseFind, onBuildFilter, onAddToCompare, onRemoveFromCompare,
   timelineLines, onAddToTimeline, onRemoveFromTimeline,
@@ -254,7 +258,11 @@ export function LogView({
   // shrank, scrollToIndex(0) was a no-op and the stale offset rendered the
   // view's tail rows below a blank gap until a reload.
 
-  useEffect(() => { setSelectedLines(new Set()); setAnchorRi(null); }, [view]);
+  // Reset selection only when the underlying log content changes (file switch /
+  // reload) — keyed on the stable `lines` identity, NOT `view`, since `view` is
+  // re-created on every state patch (e.g. a Ctrl+H view-mode toggle) and would
+  // otherwise wipe the selection on each one.
+  useEffect(() => { setSelectedLines(new Set()); setAnchorRi(null); }, [lines]);
 
   // Edit ▸ Select All — select every currently-visible line.
   useEffect(() => {
@@ -661,7 +669,11 @@ export function LogView({
         if (selectedLines.size) { e.preventDefault(); copySelectedLines(); }
       } else if (e.key === "Escape" && selectedLines.size) {
         setSelectedLines(new Set());
-      } else if ((e.key === "ArrowRight" || e.key === "Enter") && selectedLines.size === 1) {
+      } else if (e.key === " " && selectedLines.size === 1) {
+        // Space toggles the single selected line's parsed-field table (if any).
+        const n = [...selectedLines][0];
+        if (visible.find((r) => r.n === n)?.fieldsFromId !== undefined) { e.preventDefault(); toggleExpand(n); }
+      } else if (e.key === "ArrowRight" && selectedLines.size === 1) {
         // Expand the single selected line's parsed fields (if it has any).
         const n = [...selectedLines][0];
         if (visible.find((r) => r.n === n)?.fieldsFromId !== undefined) { e.preventDefault(); setExpandedLines((s) => new Set(s).add(n)); }

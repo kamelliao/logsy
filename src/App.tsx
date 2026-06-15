@@ -1419,6 +1419,7 @@ export function App() {
         key={file!.id}
         file={file!}
         view={logView}
+        lines={lines}
         filters={set!.filters}
         viewMode={effectiveViewMode}
         soloPattern={soloView && soloFilter ? (soloFilter.pattern || "untitled filter") : null}
