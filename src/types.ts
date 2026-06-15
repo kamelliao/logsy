@@ -148,6 +148,8 @@ export interface AppState {
   timelineLinesByFile?: Record<string, number[]>;
   /** Height (px) of the timeline panel's draggable bottom sheet (track list). */
   timelineSheetH?: number;
+  /** Size of the event markers (points/spans) drawn on the timeline canvas. */
+  timelineIconSize?: "S" | "M" | "L";
 }
 
 export interface PaletteEntry {

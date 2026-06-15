@@ -76,9 +76,19 @@ interface Props {
    *  Added to the scroll range so lanes behind the sheet can be scrolled into view
    *  — the canvas itself stays full height (no resize/jump when the sheet moves). */
   bottomInset?: number;
+  /** Event-marker size (global setting): point radius + span bar half-height. */
+  iconSize?: "S" | "M" | "L";
 }
 
-export function TimelineCanvas({ marks, lanes, onJump, placeholder, bottomInset = 0 }: Props) {
+// Marker geometry per icon-size setting: `r` = point radius (px), `hot` = its
+// hovered radius, `span` = span-bar half-height (px).
+const ICON_SIZES = {
+  S: { r: 2.5, hot: 3.5, span: 3.5 },
+  M: { r: 3.5, hot: 4.5, span: 5 },
+  L: { r: 5, hot: 6, span: 7 },
+} as const;
+
+export function TimelineCanvas({ marks, lanes, onJump, placeholder, bottomInset = 0, iconSize = "M" }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   // `size` is the scroll VIEWPORT (the wrap's client box); the canvas always fills
@@ -278,10 +288,12 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder, bottomInset 
       ctx.strokeStyle = hot ? cText : "rgba(0,0,0,0.28)";
       ctx.lineWidth = hot ? 1.5 : 1;
       if (m.end !== undefined) {
+        const sh = ICON_SIZES[iconSize].span;
         const x2 = Math.max(xOf(m.end, view), x1 + 2);
-        ctx.beginPath(); ctx.roundRect(x1, cy - 5, x2 - x1, 10, 3); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(x1, cy - sh, x2 - x1, sh * 2, 3); ctx.fill(); ctx.stroke();
       } else {
-        tracePoint(ctx, m.shape, x1, cy, hot ? 4.5 : 3.5);
+        const sz = ICON_SIZES[iconSize];
+        tracePoint(ctx, m.shape, x1, cy, hot ? sz.hot : sz.r);
         ctx.fill(); ctx.stroke();
       }
     }
@@ -345,7 +357,7 @@ export function TimelineCanvas({ marks, lanes, onJump, placeholder, bottomInset 
       ctx.fillText(label, cx, (AXIS - 1) / 2);
       ctx.textAlign = "left";
     }
-  }, [view, size.w, size.h, scrollY, marks, lanes, laneIndex, laneH, hover, cursor, measure, xOf, tOf]);
+  }, [view, size.w, size.h, scrollY, marks, lanes, laneIndex, laneH, hover, cursor, measure, iconSize, xOf, tOf]);
 
   // --- minimap draw ---
   useEffect(() => {

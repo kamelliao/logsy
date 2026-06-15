@@ -99,6 +99,7 @@ interface SidebarProps {
   onSetMapColorMode: (mode: "bg" | "text") => void;
   onSetMapWidth: (w: number) => void;
   onSetFontWeight: (w: number) => void;
+  onSetTimelineIconSize: (sz: "S" | "M" | "L") => void;
   onManagePalette: () => void;
 }
 
@@ -106,7 +107,7 @@ export function Sidebar({
   state, collapsed, openScreen, onToggleCollapse, onSelectFile,
   onOpenFile, onDeleteFile, onSetFileIcon,
   onSetPanelPos, onSetMapColorMode, onSetMapWidth, onSetFontWeight,
-  onManagePalette,
+  onSetTimelineIconSize, onManagePalette,
 }: SidebarProps) {
   return (
     <div className={"sidebar" + (collapsed ? " collapsed" : "")}>
@@ -180,6 +181,14 @@ export function Sidebar({
               <div className="seg" style={{ marginLeft: 8 }}>
                 {[{ label: "Light", value: 300 }, { label: "Regular", value: 400 }, { label: "Medium", value: 500 }].map(({ label, value }) => (
                   <button key={label} className={(state.fontWeight ?? 400) === value ? "on" : ""} onClick={() => onSetFontWeight(value)}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div className="sp-row">
+              Timeline icon size
+              <div className="seg" style={{ marginLeft: 8 }}>
+                {(["S", "M", "L"] as const).map((sz) => (
+                  <button key={sz} className={(state.timelineIconSize ?? "M") === sz ? "on" : ""} onClick={() => onSetTimelineIconSize(sz)}>{sz}</button>
                 ))}
               </div>
             </div>
