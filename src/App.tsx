@@ -99,8 +99,9 @@ function nextPaint(): Promise<void> {
 export function App() {
   const [state, setState] = useState<AppState>(loadState);
   const [editing, setEditing] = useState<{ isNew: boolean; filter: Filter; genSeed?: string } | null>(null);
-  // Lines explicitly added to the comparison panel (kept separate from selection).
-  const [compareLines, setCompareLines] = useState<Set<number>>(() => new Set());
+  // A request to scroll+flash a filter row (e.g. clicking a Compare group header).
+  // The bumping nonce re-triggers the flash even when the same id is re-requested.
+  const [filterFlash, setFilterFlash] = useState<{ id: string; nonce: number } | null>(null);
   const fpRef = useRef<PanelImperativeHandle | null>(null);
   const popRef = useRef<PanelImperativeHandle | null>(null);
   const [openMenu, setOpenMenu] = useState<{ name: string; x: number; y: number } | null>(null);
@@ -170,6 +171,12 @@ export function App() {
   const timelineLines = useMemo(
     () => new Set(file ? state.timelineLinesByFile?.[file.id] ?? [] : []),
     [state.timelineLinesByFile, file],
+  );
+  // Lines explicitly added to the comparison panel. Persisted per file (survives
+  // reload / document switch / filter switch), keyed by file id like the timeline.
+  const compareLines = useMemo(
+    () => new Set(file ? state.compareLinesByFile?.[file.id] ?? [] : []),
+    [state.compareLinesByFile, file],
   );
   // Events come from the lines the user added to the timeline (like compare).
   const marks = useMemo(
@@ -457,7 +464,9 @@ export function App() {
       s.activeFileId = f.id;
     }, { undoable: false });
     pushRecent("recentFiles", path);
-    setCompareLines(new Set());      // line numbers are file-specific
+    // The slot keeps its file id but gets new contents, so its old line numbers
+    // are stale — drop this file's compare lines (timeline does the same on reload).
+    setState((s) => ({ ...s, compareLinesByFile: { ...(s.compareLinesByFile ?? {}), [active.id]: [] } }));
     setLinesVersion((v) => v + 1);
     setBusy(null);
   }, [loadPaths, patchState, pushRecent]);
@@ -840,20 +849,53 @@ export function App() {
   };
 
   // ---------- compare panel ----------
+  // Compare lines persist per file (survive reload / document switch / filter
+  // switch) but are not on the undo stack, so they go through plain setState into
+  // `compareLinesByFile[file.id]` — mirroring the timeline.
+  const mutateCompare = (fn: (cur: Set<number>) => void) =>
+    setState((s) => {
+      const fid = (s.files.find((f) => f.id === s.activeFileId) ?? s.files[0])?.id;
+      if (!fid) return s;
+      const cur = new Set(s.compareLinesByFile?.[fid] ?? []);
+      fn(cur);
+      return { ...s, compareLinesByFile: { ...(s.compareLinesByFile ?? {}), [fid]: [...cur] } };
+    });
   const addToCompare = (ns: number[]) => {
-    setCompareLines((s) => { const x = new Set(s); ns.forEach((n) => x.add(n)); return x; });
+    mutateCompare((c) => ns.forEach((n) => c.add(n)));
     // Surface the comparison: focus its tab, or expand it if it's popped out.
     setState((s) => s.comparePopped
       ? { ...s, poppedCollapsed: false, poppedActiveTab: "compare" }
       : { ...s, activePanelTab: "compare", filterCollapsed: false });
   };
-  const removeFromCompare = (ns: number[]) =>
-    setCompareLines((s) => { const x = new Set(s); ns.forEach((n) => x.delete(n)); return x; });
-  const clearCompare = () => setCompareLines(new Set());
-  // Drop comparison lines when switching files (line numbers are file-specific).
-  // Timeline lines are kept per file in `timelineLinesByFile`, so they aren't reset
-  // here — switching files just reads that file's own set.
-  useEffect(() => { setCompareLines(new Set()); }, [state.activeFileId]);
+  const removeFromCompare = (ns: number[]) => mutateCompare((c) => ns.forEach((n) => c.delete(n)));
+  const clearCompare = () => mutateCompare((c) => c.clear());
+  // Clear just one pattern-table's lines (its Compare group header button).
+  const clearCompareGroup = (id: string | undefined) => {
+    const ns = compareRows.filter((r) => (r.fieldsFromId ?? "") === (id ?? "")).map((r) => r.n);
+    if (ns.length) removeFromCompare(ns);
+  };
+  // Import every visible line this filter parses into the comparison (its group
+  // header button) — the analogue of the timeline track's "import matching lines".
+  const importCompareGroup = (id: string | undefined) => {
+    const ns = view.rows
+      .filter((r) => !r.excluded && r.fieldsFromId !== undefined && (r.fieldsFromId ?? "") === (id ?? ""))
+      .map((r) => r.n);
+    if (ns.length) addToCompare(ns);
+  };
+  // Jump from a Compare group header to the filter that produced it: reveal the
+  // Filters tab, expand the filter's group if collapsed, then flash its row.
+  // selectPanelTab no-ops (no dim transition) when Filters is already the visible
+  // main tab — e.g. Compare popped out into its own dock — so clicking a header
+  // row no longer flickers the filter panel's disable animation.
+  const focusFilter = (id: string) => {
+    selectPanelTab("filters");
+    const f = set?.filters.find((x) => x.id === id);
+    if (f?.groupId) {
+      const grp = set?.groups.find((g) => g.id === f.groupId);
+      if (grp?.collapsed) toggleGroup(grp.id);
+    }
+    setFilterFlash({ id, nonce: Date.now() });
+  };
 
   // ---------- bookmarks ----------
   const markers = file?.markers ?? [];
@@ -1106,9 +1148,23 @@ export function App() {
   const setFilterPos = (pos: "bottom" | "right") => setState((s) => ({ ...s, panelPos: pos }));
   const toggleFilterCollapsed = () => setState((s) => ({ ...s, filterCollapsed: !s.filterCollapsed }));
   const togglePoppedCollapsed = () => setState((s) => ({ ...s, poppedCollapsed: !s.poppedCollapsed }));
-  // Select a tab in the main panel (always expands it if it was collapsed).
-  const selectPanelTab = (tab: "filters" | "compare" | "bookmarks" | "timeline") =>
-    startPanelTransition(() => setState((s) => ({ ...s, activePanelTab: tab, filterCollapsed: false })));
+  // Which tab the main dock actually shows, resolved the same way the render does
+  // (a popped-out Compare/Timeline falls back to Filters). Used to skip a no-op
+  // tab switch so we don't start a panel transition (the dim animation) when the
+  // target tab is already the visible one.
+  const resolveActiveTab = (s: AppState): "filters" | "compare" | "bookmarks" | "timeline" =>
+    s.activePanelTab === "bookmarks" ? "bookmarks"
+      : s.activePanelTab === "timeline" && !s.timelinePopped ? "timeline"
+      : s.activePanelTab === "compare" && !s.comparePopped ? "compare"
+      : "filters";
+  // Select a tab in the main panel (always expands it if it was collapsed). When
+  // that tab is already shown expanded, do nothing — re-running the transition
+  // would needlessly dim the panel body even though no content re-renders.
+  const selectPanelTab = (tab: "filters" | "compare" | "bookmarks" | "timeline") => {
+    const s = stateRef.current;
+    if (resolveActiveTab(s) === tab && !s.filterCollapsed) return;
+    startPanelTransition(() => setState((st) => ({ ...st, activePanelTab: tab, filterCollapsed: false })));
+  };
   // Compare and Timeline, when popped, share ONE dock beside Filters. Popping a
   // panel out focuses it as the active tab in that shared dock and expands it;
   // Filters takes over the main tab area if the popped panel was active there.
@@ -1132,14 +1188,15 @@ export function App() {
   }));
 
   const showCompare = compareRows.length > 0;
-  // Compare is a tab in the main panel only when it has rows and isn't popped out.
-  const compareTabAvailable = showCompare && !state.comparePopped;
+  // Compare is a permanent tab (shows an empty-state when it has no rows); it's a
+  // main-panel tab unless popped out into the shared dock.
+  const compareTabAvailable = !state.comparePopped;
   // Timeline is a tab unless it's popped out into the shared popped dock.
   const timelineTabAvailable = !state.timelinePopped;
   // Compare and Timeline share ONE popped dock. Its tab set is whichever are
-  // popped (Compare also needs rows); the active tab is resolved against that set.
+  // popped; the active tab is resolved against that set.
   const poppedTabs: ("compare" | "timeline")[] = [
-    ...(showCompare && state.comparePopped ? ["compare" as const] : []),
+    ...(state.comparePopped ? ["compare" as const] : []),
     ...(state.timelinePopped ? ["timeline" as const] : []),
   ];
   const popOpen = poppedTabs.length > 0;
@@ -1186,10 +1243,10 @@ export function App() {
   // collapse() records the pre-collapse size, which our maxSize pin corrupts).
   // Resize only on the actual collapse↔expand transition; the panel's
   // defaultSize handles fresh mounts. Expanded → a generous height.
-  // Collapsed strip heights: the main panel keeps its tab bar visible (taller);
-  // the shared popped dock rolls down to a thin header.
+  // Collapsed strip size — shared by both docks so the popped Compare/Timeline
+  // dock collapses to the same tab-bar strip as the Filters/Bookmarks dock.
   const MAIN_COLLAPSED = "34px";
-  const POP_COLLAPSED = "26px";
+  const POP_COLLAPSED = MAIN_COLLAPSED;
   // The popped dock opens larger than the filter dock — its tables/canvas benefit.
   const EXPAND_FP = "30%";
   const EXPAND_POP = "30%";
@@ -1474,19 +1531,27 @@ export function App() {
         onAddTimelineTrack={addTrack}
         onApplyLayout={applyLayout}
         onBulk={bulk}
+        flashFilterId={filterFlash?.id ?? null}
+        flashNonce={filterFlash?.nonce ?? 0}
+        onFlashConsumed={() => setFilterFlash(null)}
       />
     );
     const compareBody = (
       <CompareTable
         rows={compareRows}
+        rowH={rowH}
         onRemove={(n) => removeFromCompare([n])}
         onExport={exportGroupCsv}
+        onClearGroup={clearCompareGroup}
+        onImportMatching={importCompareGroup}
         onJump={jumpToMarker}
+        onFocusFilter={focusFilter}
         labelFor={(id) => {
           const f = set!.filters.find((x) => x.id === id);
           return (f?.description?.trim() || f?.pattern) ?? "Fields";
         }}
         colorFor={(id) => set!.filters.find((x) => x.id === id)?.textColor ?? "#c2c7cd"}
+        indexFor={(id) => set!.filters.findIndex((x) => x.id === id)}
       />
     );
     const bookmarksBody = (
@@ -1517,6 +1582,7 @@ export function App() {
         orphanLines={orphanLines}
         onRemoveLines={removeFromTimeline}
         onJump={jumpToMarker}
+        onFocusFilter={focusFilter}
         sheetH={state.timelineSheetH ?? 200}
         onSetSheetH={(h) => setState((s) => ({ ...s, timelineSheetH: h }))}
         iconSize={state.timelineIconSize ?? "M"}
@@ -1564,7 +1630,7 @@ export function App() {
               )}
               {compareTabAvailable && (
                 <button className={"ptab" + (activePanelTab === "compare" ? " active" : "")} onClick={() => selectPanelTab("compare")}>
-                  Compare<span className="ptab-badge">{compareRows.length}</span>
+                  Compare{showCompare && <span className="ptab-badge">{compareRows.length}</span>}
                 </button>
               )}
             </div>
@@ -1596,17 +1662,20 @@ export function App() {
 
     // The shared popped dock: Compare and Timeline, when popped out, live here as
     // tabs (one or both). It docks on the side opposite the main panel so the two
-    // never sit on the same edge. Collapsed → a thin header strip (simple, so the
-    // vertical-rl collapsed CSS reads); expanded → a tab bar + the active body.
+    // never sit on the same edge. Collapsing mirrors the main dock exactly (same
+    // shared tab-strip look): right → a thin vertical title strip, otherwise the
+    // tab bar stays visible (just the body is dropped).
     const poppedPos: "bottom" | "right" = state.panelPos === "bottom" ? "right" : "bottom";
     const popDockNode = (): ReactNode => {
       const collapsed = !!state.poppedCollapsed;
       const pos = poppedPos;
       const chevron = foldChevron(pos, collapsed);
       const activeTitle = poppedActiveTab === "compare" ? `Compare · ${compareRows.length}` : `Timeline · ${marks.length}`;
-      if (collapsed) {
+
+      // Right-docked + collapsed: a thin vertical strip labelled with the active tab.
+      if (collapsed && pos === "right") {
         return (
-          <div className={"dock dock-" + pos + " collapsed"}>
+          <div className="dock dock-right collapsed panel-dock">
             <div className="dock-head" onClick={togglePoppedCollapsed} title="Expand">
               <span className="dock-chevron">{chevron}</span>
               <span className="dock-title">{activeTitle}</span>
@@ -1614,8 +1683,9 @@ export function App() {
           </div>
         );
       }
+
       return (
-        <div className={"dock dock-" + pos + " panel-dock"}>
+        <div className={"dock dock-" + pos + (collapsed ? " collapsed" : "") + " panel-dock"}>
           <div className="dock-head tabbed">
             <div className="panel-tabs">
               {poppedTabs.map((t) => (
@@ -1625,7 +1695,7 @@ export function App() {
                   onClick={() => setState((s) => ({ ...s, poppedActiveTab: t, poppedCollapsed: false }))}
                 >
                   {t === "compare"
-                    ? <>Compare<span className="ptab-badge">{compareRows.length}</span></>
+                    ? <>Compare{showCompare && <span className="ptab-badge">{compareRows.length}</span>}</>
                     : <>Timeline{marks.length > 0 && <span className="ptab-badge">{marks.length}</span>}</>}
                 </button>
               ))}
@@ -1637,9 +1707,9 @@ export function App() {
             <button className="dock-btn" title="Dock back into panel" onClick={(e) => { e.stopPropagation(); poppedActiveTab === "compare" ? dockCompareBack() : dockTimelineBack(); }}>
               {pos === "bottom" ? <PanelRightClose size={14} /> : <PanelBottomClose size={14} />}
             </button>
-            <button className="dock-btn" title="Collapse" onClick={togglePoppedCollapsed}>{chevron}</button>
+            <button className="dock-btn" title={collapsed ? "Expand" : "Collapse"} onClick={togglePoppedCollapsed}>{chevron}</button>
           </div>
-          <div className="dock-body">{poppedActiveTab === "compare" ? compareBody : timelineBody}</div>
+          {!collapsed && <div className="dock-body">{poppedActiveTab === "compare" ? compareBody : timelineBody}</div>}
         </div>
       );
     };
