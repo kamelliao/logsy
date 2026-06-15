@@ -2,7 +2,7 @@ import { useCallback, useState, useRef, useEffect, CSSProperties } from "react";
 import {
   Eye, EyeOff, GripVertical, Trash2, Plus, ListPlus, ListMinus, MoveRight, X,
   Circle, Square, Triangle, Diamond, ChartNoAxesGantt, ChevronDown, ChevronUp,
-  AlertTriangle,
+  AlertTriangle, MoreHorizontal,
 } from "lucide-react";
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors,
@@ -17,6 +17,7 @@ import type { Filter, FieldDef, TimelineSource, TimeUnit, EventMark, EventShape 
 import { trackFieldsOf } from "../logic";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./ui/select";
 import { Button } from "./ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
 import { HoverCard, HoverCardContent, HoverCardTrigger } from "./ui/hover-card";
 import { Empty, EmptyHeader, EmptyMedia, EmptyTitle, EmptyContent } from "./ui/empty";
@@ -68,6 +69,8 @@ interface Props {
   /** Persisted height (px) of the draggable bottom sheet. */
   sheetH: number;
   onSetSheetH: (h: number) => void;
+  /** Global event-marker size setting. */
+  iconSize?: "S" | "M" | "L";
 }
 
 // The always-present (collapsed) handle height: the canvas reserves this much
@@ -93,7 +96,7 @@ export function TimelinePanel({
   onSetTrack, onRemoveTrack, onReorderTracks, onAddMatchingLines,
   onImportTrackLines, onClearTrackLines, trackLineStats,
   orphanLines, onRemoveLines, onJump,
-  sheetH, onSetSheetH,
+  sheetH, onSetSheetH, iconSize,
 }: Props) {
   // The bottom sheet's height is driven locally during a drag (no per-move
   // round-trip through app state); the final value is committed on release.
@@ -199,7 +202,7 @@ export function TimelinePanel({
       <div className="min-h-0 flex-1 pt-2" style={{ paddingBottom: HANDLE_H }}>
         <TimelineCanvas
           marks={marks} lanes={lanes} onJump={onJump} placeholder={placeholder}
-          bottomInset={Math.max(0, renderH - HANDLE_H)}
+          bottomInset={Math.max(0, renderH - HANDLE_H)} iconSize={iconSize}
         />
       </div>
 
@@ -228,7 +231,8 @@ export function TimelinePanel({
         
         {/* The one thing not visible elsewhere: lines on the timeline that no track
             plots (added, but nothing shows). Bounded to a count + actions. */}
-        {orphanLines.length > 0 && (
+        {/* TODO: should not show this warning when "hide track" */}
+        {false && orphanLines.length > 0 && (
           <p className="tl-sheet-hint flex items-center gap-1.5">
             <AlertTriangle className="size-3 shrink-0 text-amber-500" />
             <span>
@@ -331,7 +335,7 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
   const serial = filterIndex >= 0 ? `#${filterIndex + 1}` : "#?";
 
   return (
-    <div ref={setNodeRef} style={style} className="mb-1 flex flex-wrap items-center gap-1.5 rounded border border-border/60 bg-card/40 px-1.5 py-1">
+    <div ref={setNodeRef} style={style} className="@container mb-1 flex flex-wrap items-center gap-1.5 rounded border border-border/60 bg-card/40 px-1.5 py-1">
       <span className="cursor-grab text-muted-foreground/60 hover:text-muted-foreground" {...attributes} {...listeners}>
         <GripVertical size={12} />
       </span>
@@ -449,34 +453,67 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
         </SelectContent>
       </Select>
 
-      <Button
-        variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
-        title="Import this track's matching lines onto the timeline"
-        disabled={!canImport}
-        onClick={onImport}
-      >
-        <ListPlus />
-      </Button>
-      <Button
-        variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
-        title="Remove this track's lines from the timeline"
-        disabled={!canClear}
-        onClick={onClearLines}
-      >
-        <ListMinus />
-      </Button>
-      <Button
-        variant="ghost" size="icon-xs"
-        className={`${tr.hidden ? "text-muted-foreground/50" : "text-muted-foreground"}`}
-        title={tr.hidden ? "Show track" : "Hide track"}
-        onClick={() => onSet({ ...tr, hidden: tr.hidden ? undefined : true })}
-      >
-        {tr.hidden ? <EyeOff /> : <Eye />}
-      </Button>
-      <Button variant="ghost" size="icon-xs" className="size-[24px] text-muted-foreground hover:text-destructive"
-        title="Delete track" onClick={onRemove}>
-        <Trash2 />
-      </Button>
+      {/* Trailing action buttons. When the row is wide enough they sit inline;
+          below ~340px (a narrow side dock) they collapse into a ⋯ overflow menu
+          so single icons never wrap onto a second line. */}
+      <div className="hidden items-center gap-0.5 @[340px]:flex">
+        <Button
+          variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
+          title="Import this track's matching lines onto the timeline"
+          disabled={!canImport}
+          onClick={onImport}
+        >
+          <ListPlus />
+        </Button>
+        <Button
+          variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
+          title="Remove this track's lines from the timeline"
+          disabled={!canClear}
+          onClick={onClearLines}
+        >
+          <ListMinus />
+        </Button>
+        <Button
+          variant="ghost" size="icon-xs"
+          className={`${tr.hidden ? "text-muted-foreground/50" : "text-muted-foreground"}`}
+          title={tr.hidden ? "Show track" : "Hide track"}
+          onClick={() => onSet({ ...tr, hidden: tr.hidden ? undefined : true })}
+        >
+          {tr.hidden ? <EyeOff /> : <Eye />}
+        </Button>
+        <Button variant="ghost" size="icon-xs" className="size-[24px] text-muted-foreground hover:text-destructive"
+          title="Delete track" onClick={onRemove}>
+          <Trash2 />
+        </Button>
+      </div>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              variant="ghost" size="icon-xs"
+              className="text-muted-foreground hover:text-foreground @[340px]:hidden"
+              title="Track actions"
+            />
+          }
+        >
+          <MoreHorizontal />
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem disabled={!canImport} onClick={onImport}>
+            <span className="mi-ico"><ListPlus size={15} /></span>Import matching lines
+          </DropdownMenuItem>
+          <DropdownMenuItem disabled={!canClear} onClick={onClearLines}>
+            <span className="mi-ico"><ListMinus size={15} /></span>Remove lines from timeline
+          </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => onSet({ ...tr, hidden: tr.hidden ? undefined : true })}>
+            <span className="mi-ico">{tr.hidden ? <EyeOff size={15} /> : <Eye size={15} />}</span>{tr.hidden ? "Show track" : "Hide track"}
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem variant="destructive" onClick={onRemove}>
+            <span className="mi-ico"><Trash2 size={15} /></span>Delete track
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </div>
   );
 }

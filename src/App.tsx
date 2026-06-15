@@ -1518,6 +1518,7 @@ export function App() {
         onJump={jumpToMarker}
         sheetH={state.timelineSheetH ?? 200}
         onSetSheetH={(h) => setState((s) => ({ ...s, timelineSheetH: h }))}
+        iconSize={state.timelineIconSize ?? "M"}
       />
     );
 
@@ -1771,6 +1772,7 @@ export function App() {
             onSetMapColorMode={(mode) => setState((s) => ({ ...s, mapColorMode: mode }))}
             onSetMapWidth={(w) => setState((s) => ({ ...s, mapWidth: w }))}
             onSetFontWeight={(w) => setState((s) => ({ ...s, fontWeight: w }))}
+            onSetTimelineIconSize={(sz) => setState((s) => ({ ...s, timelineIconSize: sz }))}
             onManagePalette={() => setPaletteModalOpen(true)}
           />
           {file && set && !openScreen ? (
