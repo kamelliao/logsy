@@ -520,6 +520,8 @@ button { font-family: inherit; }
   display: grid; place-items: center; color: var(--text-3); cursor: pointer;
 }
 .dock-btn:hover { background: rgba(0,0,0,0.07); color: var(--text); }
+.dock-btn:disabled { opacity: 0.4; cursor: default; }
+.dock-btn:disabled:hover { background: none; color: var(--text-3); }
 .dock-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 /* While a deferred tab/set switch renders the (possibly large) filter list, dim
    the body and ignore input so the click stays responsive (lower INP). */
@@ -676,33 +678,31 @@ button { font-family: inherit; }
 .panel-empty-hint { font-size: 11.5px; opacity: 0.85; }
 .panel-empty b { color: var(--text-2); font-weight: 600; }
 
-/* ---- multi-line field comparison: one virtualized grid per matching pattern ---- */
+/* ---- multi-line field comparison: one bounded, self-scrolling table per pattern ---- */
 
-/* Panel scrolls vertically only — horizontal scrolling is per-table (.cmp-hpane),
-   so a wide table never drags the whole panel (group headers/actions) sideways. */
+/* Panel scrolls vertically only, stacking the tables. Each table is its own 2D
+   scroll box (.cmp-table-scroll), so neither a wide nor a tall table ever drags
+   the whole panel (group headers/actions) around. */
 .cmp-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; padding: 0 12px 14px; scrollbar-gutter: stable; }
-.cmp-vsizer { position: relative; width: 100%; }
-.cmp-vitem { position: absolute; top: 0; left: 0; width: 100%; }
+.cmp-group { padding-top: 15px; }
 
-/* One per group row (column-header + each body row): an independent horizontal
-   scroll box. All hide their own scrollbar — the single visible scrollbar lives
-   in a dedicated strip (.cmp-hbar) so it never overlaps the header text. They all
-   follow it via synced scrollLeft; shift+wheel over any pane scrolls the group.
-   overflow-y must stay hidden (overflow-x:auto would otherwise force it to auto
-   and double-scroll). */
-.cmp-hpane { overflow-x: auto; overflow-y: hidden; width: 100%; height: 100%; scrollbar-width: none; }
-.cmp-hpane::-webkit-scrollbar { height: 0; width: 0; }
-.cmp-hpane-head { height: var(--log-row-h, 21px); }
-/* The one visible scrollbar per table: a dedicated strip under the column headers
-   (only present when the table overflows). Uses the shared `.scroll` chrome and
-   is exactly its own height, so it never covers the header row. */
-.cmp-hbar { height: 12px; overflow-x: auto; overflow-y: hidden; }
-/* the active group header pins to the top while you scroll within its group; an
-   opaque background lets it occlude the rows sliding underneath it. */
-.cmp-vitem.stuck { z-index: 2; background: var(--panel-bg, #fbfbfc); }
+/* The group's toolbar pins to the panel top (CSS sticky) as you scroll between
+   tables; an opaque background lets it occlude the table sliding under it. */
+.cmp-group-head {
+  position: sticky; top: 0; z-index: 3; background: var(--app-bg, #fff);
+  display: flex; align-items: center; gap: 7px; height: 31px; padding: 0 2px 7px;
+}
 
-.cmp-group-head-wrap { padding-top: 15px; }
-.cmp-group-head { display: flex; align-items: center; gap: 7px; height: 31px; padding: 0 2px 7px; }
+/* One table's body: a single scroll container for BOTH axes. Rows scroll
+   vertically inside it (virtualized, capped via inline max-height) and the grid
+   scrolls horizontally on its own native scrollbar. The bordered, rounded card
+   lives here; overflow:auto + border-radius clips the header/last-row corners. */
+.cmp-table-scroll {
+  overflow: auto; border: 1px solid var(--border); border-radius: 8px;
+}
+/* per-group sizer for the virtualized rows; absolutely-positioned rows hang off
+   it and define the horizontal scroll extent (same as the sticky header). */
+.cmp-body { position: relative; min-width: 100%; }
 .cmp-dot {
   flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
   box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
@@ -745,14 +745,15 @@ button { font-family: inherit; }
 
 /* Column header + body rows are CSS grids sharing one per-group template, so the
    columns line up across the virtualized (independently positioned) rows. The
-   rows redraw the rounded-card border (left/right on every row, top on the
-   header, bottom on the last row) since they're no longer one DOM element. */
+   header is `position: sticky` within the scroll box: it stays put on vertical
+   scroll and rides along on horizontal scroll (same container, no JS sync). */
 .cmp-colhead {
+  position: sticky; top: 0; z-index: 1;
   display: grid; align-items: center; height: var(--log-row-h, 21px);
-  /* grow with content (full-width cells) but never narrower than the viewport,
-     so the table overflows + scrolls horizontally while still filling the panel. */
+  /* grow with content (full-width cells) but never narrower than the box, so the
+     table overflows + scrolls horizontally while still filling its width. */
   width: max-content; min-width: 100%;
-  background: var(--panel-bg-2); border: 1px solid var(--border); border-radius: 8px 8px 0 0;
+  background: var(--panel-bg-2); border-bottom: 1px solid var(--border);
   /* match the rows' font so the template's `ch` tracks resolve identically and
      the header columns line up with the body (ch is relative to this element). */
   font-family: var(--mono-font); font-size: var(--log-font-size, 12.5px);
@@ -765,14 +766,13 @@ button { font-family: inherit; }
 .cmp-colhead .cmp-rm, .cmp-colhead .cmp-pad { padding: 0; }
 
 .cmp-vrow {
-  display: grid; align-items: center; height: var(--log-row-h, 21px);
+  position: absolute; top: 0; left: 0;
+  display: grid; align-items: center;
   width: max-content; min-width: 100%;
   font-family: var(--mono-font); font-size: var(--log-font-size, 12.5px); color: var(--text);
-  background: #fff;
-  border-left: 1px solid var(--border); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+  background: #fff; border-bottom: 1px solid var(--border);
 }
 .cmp-vrow.odd { background: rgba(20,22,26,0.018); }
-.cmp-vrow.last { border-radius: 0 0 8px 8px; }
 .cmp-vrow:hover { background: var(--accent-bg); }
 .cmp-cell { padding: 0 13px; white-space: nowrap; }
 .cmp-cell.num { font-variant-numeric: tabular-nums; }

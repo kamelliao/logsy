@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useReducer, useRef, useTransition, Fragment, CSSProperties, ReactNode } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Eraser, FolderOpen, Minus, PanelBottom, PanelBottomClose, PanelRightClose, PanelLeftOpen, PanelRight, PanelTopOpen, Square, Upload, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, ChevronUp, Eraser, FolderOpen, Minus, PanelBottom, PanelBottomClose, PanelRightClose, PanelLeftOpen, PanelRight, PanelTopOpen, Square, Upload, X } from "lucide-react";
 import { tinykeys } from "tinykeys";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
@@ -246,6 +246,28 @@ export function App() {
       .map((r) => ({ ...r, fields: view.fieldsFor(r.n) })),
     [view, compareLines],
   );
+
+  // Per-table collapse for the Compare panel, lifted here so the dock-head's
+  // collapse-all toggle and each table's chevron share one source of truth (the
+  // panel can live in either dock, so the state can't sit inside CompareTable).
+  const [compareCollapsed, setCompareCollapsed] = useState<Set<string>>(() => new Set());
+  const compareGroupIds = useMemo(() => {
+    const s = new Set<string>();
+    for (const r of compareRows) s.add(r.fieldsFromId ?? "");
+    return s;
+  }, [compareRows]);
+  const compareAllCollapsed =
+    compareGroupIds.size > 0 && [...compareGroupIds].every((id) => compareCollapsed.has(id));
+  const toggleCompareCollapse = useCallback((id: string) => {
+    setCompareCollapsed((s) => {
+      const n = new Set(s);
+      if (n.has(id)) n.delete(id); else n.add(id);
+      return n;
+    });
+  }, []);
+  const toggleCompareCollapseAll = useCallback(() => {
+    setCompareCollapsed(compareAllCollapsed ? new Set() : new Set(compareGroupIds));
+  }, [compareAllCollapsed, compareGroupIds]);
 
   // ---------- helpers ----------
   // Latest state, readable from async callbacks (file loading) and from
@@ -1552,6 +1574,8 @@ export function App() {
         onImportMatching={importCompareGroup}
         onJump={jumpToMarker}
         onFocusFilter={focusFilter}
+        collapsed={compareCollapsed}
+        onToggleCollapse={toggleCompareCollapse}
         labelFor={(id) => {
           const f = set!.filters.find((x) => x.id === id);
           return (f?.description?.trim() || f?.pattern) ?? "Fields";
@@ -1644,6 +1668,14 @@ export function App() {
             <div className="dock-spacer" />
             {activePanelTab === "compare" && (
               <>
+                <button
+                  className="dock-btn"
+                  title={compareAllCollapsed ? "Expand all tables" : "Collapse all tables"}
+                  disabled={compareGroupIds.size === 0}
+                  onClick={toggleCompareCollapseAll}
+                >
+                  {compareAllCollapsed ? <ChevronsUpDown size={14} /> : <ChevronsDownUp size={14} />}
+                </button>
                 <button className="dock-btn" title="Clear comparison" onClick={clearCompare}><Eraser size={14} /></button>
                 <button className="dock-btn" title="Pop out beside Filters" onClick={popCompareOut}>
                   {pos === "bottom" ? <PanelLeftOpen size={14} /> : <PanelTopOpen size={14} />}
@@ -1712,7 +1744,17 @@ export function App() {
             </div>
             <div className="dock-spacer" />
             {poppedActiveTab === "compare" ? (
-              <button className="dock-btn" title="Clear comparison" onClick={(e) => { e.stopPropagation(); clearCompare(); }}><Eraser size={14} /></button>
+              <>
+                <button
+                  className="dock-btn"
+                  title={compareAllCollapsed ? "Expand all tables" : "Collapse all tables"}
+                  disabled={compareGroupIds.size === 0}
+                  onClick={(e) => { e.stopPropagation(); toggleCompareCollapseAll(); }}
+                >
+                  {compareAllCollapsed ? <ChevronsUpDown size={14} /> : <ChevronsDownUp size={14} />}
+                </button>
+                <button className="dock-btn" title="Clear comparison" onClick={(e) => { e.stopPropagation(); clearCompare(); }}><Eraser size={14} /></button>
+              </>
             ) : (
               <button className="dock-btn" title="Clear timeline" onClick={(e) => { e.stopPropagation(); clearTimeline(); }}><Eraser size={14} /></button>
             )}
