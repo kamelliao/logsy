@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowUpToLine, ChevronDown, ChevronRight, Download, ListX, ListPlus, X } from "lucide-react";
 import type { ViewRow } from "../types";
@@ -28,15 +28,21 @@ interface CompareTableProps {
   onFocusFilter: (id: string) => void;
 }
 
-// Column widths are estimated from content in `ch` (mono font), clamped so a
-// stray long value can't blow out the row and a short one stays readable.
+// Column widths are estimated from content in `ch` (mono font). Sized to the
+// widest content (header or value) so cells show in full — the table grows past
+// the viewport and scrolls horizontally rather than truncating. A small floor
+// keeps a short column readable.
 const MIN_COL_CH = 3;
-const MAX_COL_CH = 48;
 const CELL_PAD = 26; // 13px each side — matches the cell padding in CSS
 // A head item = group bar + column-header row. Its height beyond one row is
 // fixed in CSS: .cmp-group-head-wrap padding-top (15) + .cmp-group-head (31).
 // Keep this in sync with those rules so the fixed-size virtualizer stays exact.
 const HEAD_EXTRA = 46;
+// Height of the horizontal scrollbar strip under the column-header row (the one
+// visible scrollbar that drives a table's horizontal scroll). Matches the shared
+// `.scroll` scrollbar height (12px) and the `.cmp-hpane-head.wide` extra height
+// in CSS; reserved so the virtualizer's fixed head size stays exact.
+const HBAR_H = 12;
 
 interface Group {
   id: string;                 // "" for ungrouped/unknown
@@ -47,6 +53,8 @@ interface Group {
   rows: ViewRow[];
   cols: string[];
   template: string;           // grid-template-columns shared by header + rows
+  chSum: number;              // total width of the ch-sized tracks (line + data)
+  padCount: number;           // number of CELL_PAD-padded tracks (line + data)
 }
 
 type Item =
@@ -87,13 +95,18 @@ function buildGroups(
         const raw = r.fields?.[c]?.raw;
         if (raw && raw.length > w) w = raw.length;
       }
-      return Math.min(MAX_COL_CH, Math.max(MIN_COL_CH, w));
+      return Math.max(MIN_COL_CH, w);
     });
     const lnCh = Math.max(4, String(maxN).length + 1);
-    const dataTracks = widths.map((w) => `minmax(0, calc(${w}ch + ${CELL_PAD}px))`).join(" ");
-    // remove · line · data… · greedy pad (absorbs slack so columns hug content)
+    // Fixed (non-shrinking) tracks sized to full content; the row's
+    // `width: max-content` (in CSS) lets the table overflow → horizontal scroll.
+    const dataTracks = widths.map((w) => `calc(${w}ch + ${CELL_PAD}px)`).join(" ");
+    // remove · line · data… · greedy pad (absorbs slack so columns hug content
+    // when the table is narrower than the viewport)
     const template = `34px calc(${lnCh}ch + ${CELL_PAD}px) ${dataTracks} minmax(0, 1fr)`;
-    out.push({ id, key, label: labelFor(key), color: colorFor(key), index: indexFor(key), rows: grpRows, cols, template });
+    const chSum = lnCh + widths.reduce((a, b) => a + b, 0);
+    const padCount = 1 + cols.length; // line column + one per data column
+    out.push({ id, key, label: labelFor(key), color: colorFor(key), index: indexFor(key), rows: grpRows, cols, template, chSum, padCount });
   }
   // Order the tables by their filter's position in the set (the #N serial), NOT
   // by Map insertion order — that latter follows whichever group's earliest line
@@ -141,6 +154,48 @@ export function CompareTable({ rows, rowH, onRemove, labelFor, colorFor, indexFo
   const activeStickyRef = useRef(0);
 
   const parentRef = useRef<HTMLDivElement>(null);
+
+  // To reserve the horizontal-scrollbar strip ONLY for tables that actually
+  // overflow (no dead gap under tables that fit), compute each group's content
+  // width analytically: monospace char width × its ch-track total + fixed px.
+  // `chPx`/`panelW` are measured from a probe inside the panel so this works for
+  // every group, even ones currently virtualized out of view.
+  const [metrics, setMetrics] = useState({ chPx: 0, panelW: 0 });
+  useLayoutEffect(() => {
+    const el = parentRef.current;
+    if (!el) return;
+    const probe = document.createElement("span");
+    probe.style.cssText = "position:absolute;visibility:hidden;white-space:pre;font-family:var(--mono-font)";
+    probe.style.fontSize = getComputedStyle(el).getPropertyValue("--log-font-size") || "12.5px";
+    probe.textContent = "0".repeat(50);
+    el.appendChild(probe);
+    const measure = () => {
+      const chPx = probe.getBoundingClientRect().width / 50;
+      const cs = getComputedStyle(el);
+      const padX = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight);
+      setMetrics((m) => {
+        const panelW = el.clientWidth - padX;
+        return m.chPx === chPx && m.panelW === panelW ? m : { chPx, panelW };
+      });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => { ro.disconnect(); probe.remove(); };
+  }, [rowH]); // font zoom changes rowH → re-probe the char width
+  // Group ids whose table is wider than the panel (→ needs the scrollbar strip).
+  // 34 = the fixed remove-button column in the grid template.
+  const hWide = useMemo(() => {
+    const s = new Set<string>();
+    if (metrics.chPx > 0 && metrics.panelW > 0) {
+      for (const g of groups) {
+        const px = 34 + g.chSum * metrics.chPx + g.padCount * CELL_PAD;
+        if (px > metrics.panelW + 0.5) s.add(g.id);
+      }
+    }
+    return s;
+  }, [groups, metrics]);
+
   const virt = useVirtualizer({
     count: items.length,
     getScrollElement: () => parentRef.current,
@@ -152,9 +207,10 @@ export function CompareTable({ rows, rowH, onRemove, labelFor, colorFor, indexFo
     estimateSize: (i) => {
       const it = items[i];
       if (it?.kind !== "head") return rowH;
-      // A collapsed table drops its column-header row, so the head is just the
-      // group bar (HEAD_EXTRA) without the extra log-row of column labels.
-      return collapsed.has(it.g.id) ? HEAD_EXTRA : rowH + HEAD_EXTRA;
+      // A collapsed table drops its column-label row; an expanded one adds it
+      // plus — only when the table overflows — the scrollbar strip (HBAR_H).
+      if (collapsed.has(it.g.id)) return HEAD_EXTRA;
+      return rowH + HEAD_EXTRA + (hWide.has(it.g.id) ? HBAR_H : 0);
     },
     overscan: 16,
     getItemKey: (i) => {
@@ -173,7 +229,30 @@ export function CompareTable({ rows, rowH, onRemove, labelFor, colorFor, indexFo
   });
   // Recompute positions when the shared row height changes (font zoom) or a
   // table collapses/expands (head size + row count change).
-  useEffect(() => { virt.measure(); }, [rowH, collapsed]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { virt.measure(); }, [rowH, collapsed, hWide]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- per-table horizontal scroll -----------------------------------------
+  // Each group's column-header row + body rows are independent horizontal scroll
+  // containers (`.cmp-hpane`, tagged with the group id) so a wide table scrolls
+  // WITHIN itself instead of dragging the whole panel sideways. Their scrollLeft
+  // is kept in lock-step per group: only the header pane shows a scrollbar; the
+  // body panes follow it (and shift+wheel over a body pane scrolls the group too).
+  // Offsets are remembered so panes virtualized back in re-appear aligned.
+  const scrollX = useRef<Map<string, number>>(new Map());
+  const onPaneScroll = useCallback((gid: string, e: React.UIEvent<HTMLDivElement>) => {
+    const left = e.currentTarget.scrollLeft;
+    if (scrollX.current.get(gid) === left) return; // already in sync (echo from a programmatic set)
+    scrollX.current.set(gid, left);
+    parentRef.current
+      ?.querySelectorAll<HTMLElement>(`[data-cmp-gid="${CSS.escape(gid)}"]`)
+      .forEach((el) => { if (el !== e.currentTarget && Math.round(el.scrollLeft) !== Math.round(left)) el.scrollLeft = left; });
+  }, []);
+  // Ref callback: a freshly mounted pane adopts its group's remembered offset.
+  const adoptScroll = useCallback((gid: string) => (el: HTMLDivElement | null) => {
+    if (!el) return;
+    const x = scrollX.current.get(gid) ?? 0;
+    if (x && el.scrollLeft !== x) el.scrollLeft = x;
+  }, []);
 
   if (!rows.length) {
     return (
@@ -269,46 +348,76 @@ export function CompareTable({ rows, rowH, onRemove, labelFor, colorFor, indexFo
                     </div>
                   </div>
                   {!isCollapsed && (
-                    <div className="cmp-colhead" style={{ gridTemplateColumns: it.g.template }}>
-                      <span className="cmp-ch cmp-rm" />
-                      <span className="cmp-ch cmp-ln">line</span>
-                      {it.g.cols.map((c) => <span key={c} className="cmp-ch" title={c}>{c}</span>)}
-                      <span className="cmp-ch cmp-pad" />
-                    </div>
+                    <>
+                      <div
+                        className="cmp-hpane cmp-hpane-head"
+                        data-cmp-gid={it.g.id}
+                        ref={adoptScroll(it.g.id)}
+                        onScroll={(e) => onPaneScroll(it.g.id, e)}
+                      >
+                        <div className="cmp-colhead" style={{ gridTemplateColumns: it.g.template }}>
+                          <span className="cmp-ch cmp-rm" />
+                          <span className="cmp-ch cmp-ln">line</span>
+                          {it.g.cols.map((c) => <span key={c} className="cmp-ch" title={c}>{c}</span>)}
+                          <span className="cmp-ch cmp-pad" />
+                        </div>
+                      </div>
+                      {/* The one visible horizontal scrollbar for this table: its own
+                          strip, never overlapping the header. Its inner spacer is the
+                          table's exact content width so the scroll range matches the
+                          synced panes. */}
+                      {hWide.has(it.g.id) && (
+                        <div
+                          className="cmp-hbar scroll"
+                          data-cmp-gid={it.g.id}
+                          ref={adoptScroll(it.g.id)}
+                          onScroll={(e) => onPaneScroll(it.g.id, e)}
+                        >
+                          <div style={{ width: 34 + it.g.chSum * metrics.chPx + it.g.padCount * CELL_PAD, height: 1 }} />
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
                 );
                 })()
               ) : (
                 <div
-                  className={"cmp-vrow" + (it.ri % 2 ? " odd" : "") + (it.last ? " last" : "")}
-                  style={{ gridTemplateColumns: it.g.template }}
+                  className="cmp-hpane"
+                  data-cmp-gid={it.g.id}
+                  ref={adoptScroll(it.g.id)}
+                  onScroll={(e) => onPaneScroll(it.g.id, e)}
                 >
-                  <span className="cmp-cell cmp-rm">
-                    <button
-                      className="cmp-rm-btn"
-                      aria-label="Remove from compare"
-                      title="Remove from compare"
-                      onClick={() => onRemove(it.r.n)}
-                    >
-                      <X size={13} />
-                    </button>
-                  </span>
-                  <span className="cmp-cell cmp-ln">
-                    <button className="cmp-ln-btn" title={`Jump to line ${it.r.n}`} onClick={() => onJump(it.r.n)}>
-                      {it.r.n}
-                    </button>
-                  </span>
-                  {it.g.cols.map((c) => {
-                    const fv = it.r.fields?.[c];
-                    const isNum = fv && typeof fv.value === "number";
-                    return (
-                      <span key={c} className={"cmp-cell" + (isNum ? " num" : "")} title={fv ? fv.raw : undefined}>
-                        {fv ? fv.raw : "—"}
-                      </span>
-                    );
-                  })}
-                  <span className="cmp-cell cmp-pad" />
+                  <div
+                    className={"cmp-vrow" + (it.ri % 2 ? " odd" : "") + (it.last ? " last" : "")}
+                    style={{ gridTemplateColumns: it.g.template }}
+                  >
+                    <span className="cmp-cell cmp-rm">
+                      <button
+                        className="cmp-rm-btn"
+                        aria-label="Remove from compare"
+                        title="Remove from compare"
+                        onClick={() => onRemove(it.r.n)}
+                      >
+                        <X size={13} />
+                      </button>
+                    </span>
+                    <span className="cmp-cell cmp-ln">
+                      <button className="cmp-ln-btn" title={`Jump to line ${it.r.n}`} onClick={() => onJump(it.r.n)}>
+                        {it.r.n}
+                      </button>
+                    </span>
+                    {it.g.cols.map((c) => {
+                      const fv = it.r.fields?.[c];
+                      const isNum = fv && typeof fv.value === "number";
+                      return (
+                        <span key={c} className={"cmp-cell" + (isNum ? " num" : "")} title={fv ? fv.raw : undefined}>
+                          {fv ? fv.raw : "—"}
+                        </span>
+                      );
+                    })}
+                    <span className="cmp-cell cmp-pad" />
+                  </div>
                 </div>
               )}
             </div>

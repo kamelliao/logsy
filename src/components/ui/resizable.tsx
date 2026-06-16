@@ -20,8 +20,13 @@ function ResizablePanelGroup({
   )
 }
 
-function ResizablePanel({ ...props }: ResizablePrimitive.PanelProps) {
-  return <ResizablePrimitive.Panel data-slot="resizable-panel" {...props} />
+function ResizablePanel({ style, ...props }: ResizablePrimitive.PanelProps) {
+  // The library's inner content div defaults to `overflow: auto`, which adds an
+  // undesired scrollbar when a panel's content has a min-content width wider than
+  // the (narrow) panel. Every panel here manages its own scrolling internally, so
+  // clip at the panel instead. The lib spreads our `style` AFTER its own
+  // `overflow: auto`, so this cleanly overrides it (no !important / CSS needed).
+  return <ResizablePrimitive.Panel data-slot="resizable-panel" style={{ overflow: "hidden", ...style }} {...props} />
 }
 
 function ResizableHandle({
