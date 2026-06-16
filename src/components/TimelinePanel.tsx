@@ -45,6 +45,9 @@ interface Props {
   /** Per-filter set of field names allowed as a time field (numeric / time-like). */
   timeFields: Map<string, Set<string>>;
   marks: EventMark[];
+  /** Span track ids whose end field resolved BEFORE the start (illegal span):
+   *  the end is dropped and the row shows a warning. */
+  badEndTracks: Set<string>;
   /** How many log lines the user has added to the timeline. */
   lineCount: number;
   onSetTrack: (tr: TimelineSource) => void;
@@ -94,7 +97,7 @@ const COMPACT =
   "[&_[data-slot=select-label]]:px-1.5";
 
 export function TimelinePanel({
-  tracks, filters, timeFields, marks, lineCount,
+  tracks, filters, timeFields, marks, badEndTracks, lineCount,
   onSetTrack, onRemoveTrack, onReorderTracks, onAddMatchingLines,
   onImportTrackLines, onClearTrackLines, trackLineStats,
   orphanLines, onRemoveLines, onJump, onFocusFilter,
@@ -288,6 +291,7 @@ export function TimelinePanel({
                     onSet={onSetTrack} onRemove={() => onRemoveTrack(tr.id)}
                     onImport={() => onImportTrackLines(tr)} onClearLines={() => onClearTrackLines(tr)}
                     onFocusFilter={onFocusFilter}
+                    badEnd={badEndTracks.has(tr.id)}
                     inTl={st?.inTl ?? 0} matching={st?.matching ?? 0}
                     canImport={!!st && st.matching > 0 && st.inTl < st.matching}
                     canClear={!!st && st.inTl > 0}
@@ -303,13 +307,18 @@ export function TimelinePanel({
   );
 }
 
-function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLines, onFocusFilter, inTl, matching, canImport, canClear }: {
+function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLines, onFocusFilter, badEnd, inTl, matching, canImport, canClear }: {
   tr: TimelineSource; filters: Filter[]; fieldsOf: (f: Filter) => FieldDef[];
   onSet: (tr: TimelineSource) => void; onRemove: () => void;
   onImport: () => void; onClearLines: () => void;
   onFocusFilter: (filterId: string) => void;
+  badEnd: boolean;
   inTl: number; matching: number; canImport: boolean; canClear: boolean;
 }) {
+  // "Add end field" opens an (empty) end picker rather than auto-selecting a
+  // field — picking a wrong field can produce an end-before-start span. The span
+  // is only committed once the user explicitly chooses the end field.
+  const [addingEnd, setAddingEnd] = useState(false);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tr.id });
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
@@ -423,6 +432,16 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
                 </SelectGroup>
               </SelectContent>
             </Select>
+            {/* End < start: the span is illegal, so its end was dropped (drawn as
+                a point). Flag it so the user knows to fix the field. */}
+            {badEnd && (
+              <span
+                className="flex shrink-0 items-center text-amber-500"
+                title="End time is before start — this span is shown as a point. Pick a different end field."
+              >
+                <AlertTriangle className="size-3" />
+              </span>
+            )}
             <Button
               variant="ghost"
               size="icon-xs"
@@ -433,13 +452,42 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
               <X className="size-3" />
             </Button>
           </>
+        ) : addingEnd ? (
+          // Adding a span: pick the end field explicitly (nothing pre-selected,
+          // so we never commit a likely-wrong end). Committing the choice turns
+          // the track into a span; Escape/cancel reverts to a point.
+          <>
+            <MoveRight className="size-3 shrink-0 text-muted-foreground/60" />
+            <Select
+              defaultOpen
+              value=""
+              onValueChange={(v) => { if (v) { onSet({ ...tr, kind: "span", endField: v }); setAddingEnd(false); } }}
+            >
+              <SelectTrigger size="xs" className="w-[68px] border-0 bg-transparent shadow-none hover:bg-muted/60 data-[size=xs]:h-5"><SelectValue placeholder="end…" /></SelectTrigger>
+              <SelectContent className={COMPACT}>
+                <SelectGroup>
+                  <SelectLabel>End field</SelectLabel>
+                  {otherFields.map((d) => <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>)}
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="size-4 shrink-0 rounded text-muted-foreground hover:text-foreground"
+              title="Cancel"
+              onClick={() => setAddingEnd(false)}
+            >
+              <X className="size-3" />
+            </Button>
+          </>
         ) : (
           <Button
             variant="ghost"
             size="icon-xs"
             className="size-4 shrink-0 rounded text-muted-foreground/60 hover:text-foreground"
             title="Add an end field → draw as a span"
-            onClick={() => onSet({ ...tr, kind: "span", endField: otherFields[0].name })}
+            onClick={() => setAddingEnd(true)}
             disabled={otherFields.length === 0}
           >
             <Plus className="size-3" />
