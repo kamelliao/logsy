@@ -633,9 +633,13 @@ button { font-family: inherit; }
 .tlc-tip-lane { font-size: 10px; font-weight: 700; color: var(--text); padding: 0 5px; border-radius: 6px; }
 .tlc-tip-t { font-variant-numeric: tabular-nums; font-weight: 600; }
 .tlc-tip-fields { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); display: grid; gap: 1px; }
-.tlc-tip-field { display: flex; gap: 8px; justify-content: space-between; }
-.tlc-tip-k { color: var(--text-3, #8c929b); }
+.tlc-tip-field { display: flex; gap: 8px; justify-content: space-between; min-width: 0; }
+.tlc-tip-k { color: var(--text-3, #8c929b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tlc-tip-v { color: var(--text); font-variant-numeric: tabular-nums; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Multi-column (field-heavy lines): tighten each column so the card stays
+   within its widened max-width instead of clipping. */
+.tlc-tip-fields.multi .tlc-tip-k { max-width: 90px; }
+.tlc-tip-fields.multi .tlc-tip-v { max-width: 110px; }
 
 .menu-item.disabled { opacity: 0.5; cursor: default; }
 .menu-item.disabled:hover { background: none; }
