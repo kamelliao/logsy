@@ -256,43 +256,48 @@ export function TimelinePanel({
             </button>
           </p>
         )}
-        <div className="tl-sheet-body scroll">
+        {/* Empty state owns its OWN scroll (PanelEmpty is a scroll container), so
+            it must NOT sit inside the scrolling `.tl-sheet-body` — that nests two
+            scrollers and shows a double scrollbar. Give it a plain flex:1 box. */}
         {tracks.length === 0 ? (
-          <PanelEmpty icon={<ChartNoAxesGantt size={22} />} title="No tracks yet">
-            <ol className="mt-1 space-y-1.5 text-left text-xs text-muted-foreground">
-              <li>
-                <span className="mr-1 font-semibold text-foreground tabular-nums">1.</span>
-                In the <b className="text-foreground">Filters</b> tab, right-click a filter →{" "}
-                <b className="text-foreground">Add to timeline track</b>.
-              </li>
-              <li>
-                <span className="mr-1 font-semibold text-foreground tabular-nums">2.</span>
-                In the log view, right-click the lines you want →{" "}
-                <b className="text-foreground">Add to timeline</b>.
-              </li>
-            </ol>
-          </PanelEmpty>
+          <div className="min-h-0 flex-1">
+            <PanelEmpty icon={<ChartNoAxesGantt size={22} />} title="No tracks yet">
+              <ol className="mt-1 space-y-1.5 text-left text-xs text-muted-foreground">
+                <li>
+                  <span className="mr-1 font-semibold text-foreground tabular-nums">1.</span>
+                  In the <b className="text-foreground">Filters</b> tab, right-click a filter →{" "}
+                  <b className="text-foreground">Add to timeline track</b>.
+                </li>
+                <li>
+                  <span className="mr-1 font-semibold text-foreground tabular-nums">2.</span>
+                  In the log view, right-click the lines you want →{" "}
+                  <b className="text-foreground">Add to timeline</b>.
+                </li>
+              </ol>
+            </PanelEmpty>
+          </div>
         ) : (
-          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} modifiers={[restrictToVerticalAxis]}>
-            <SortableContext items={tracks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
-              {tracks.map((tr) => {
-                const st = trackLineStats.get(tr.id);
-                return (
-                <TrackRow
-                  key={tr.id} tr={tr} filters={filters} fieldsOf={fieldsOf}
-                  onSet={onSetTrack} onRemove={() => onRemoveTrack(tr.id)}
-                  onImport={() => onImportTrackLines(tr)} onClearLines={() => onClearTrackLines(tr)}
-                  onFocusFilter={onFocusFilter}
-                  inTl={st?.inTl ?? 0} matching={st?.matching ?? 0}
-                  canImport={!!st && st.matching > 0 && st.inTl < st.matching}
-                  canClear={!!st && st.inTl > 0}
-                />
-                );
-              })}
-            </SortableContext>
-          </DndContext>
+          <div className="tl-sheet-body scroll">
+            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} modifiers={[restrictToVerticalAxis]}>
+              <SortableContext items={tracks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                {tracks.map((tr) => {
+                  const st = trackLineStats.get(tr.id);
+                  return (
+                  <TrackRow
+                    key={tr.id} tr={tr} filters={filters} fieldsOf={fieldsOf}
+                    onSet={onSetTrack} onRemove={() => onRemoveTrack(tr.id)}
+                    onImport={() => onImportTrackLines(tr)} onClearLines={() => onClearTrackLines(tr)}
+                    onFocusFilter={onFocusFilter}
+                    inTl={st?.inTl ?? 0} matching={st?.matching ?? 0}
+                    canImport={!!st && st.matching > 0 && st.inTl < st.matching}
+                    canClear={!!st && st.inTl > 0}
+                  />
+                  );
+                })}
+              </SortableContext>
+            </DndContext>
+          </div>
         )}
-        </div>
       </div>
     </div>
   );
