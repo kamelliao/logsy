@@ -645,7 +645,16 @@ button { font-family: inherit; }
 
 /* ---- shared dock-panel empty state (Compare + Timeline): a dashed card pinned
    to the top of the panel (not vertically centered) ---- */
-.panel-empty-wrap { display: grid; place-items: start stretch; height: 100%; padding: 16px; overflow: auto; }
+/* Single scroll container for the empty state. `scrollbar-gutter: stable` keeps
+   the scrollbar's track reserved (no shift when it appears) and hugs the right
+   edge; the gutter (12px, = the styled scrollbar width) sits OUTSIDE the padding,
+   so the right padding is trimmed to 4px → the card's left/right insets match
+   (16 left vs 12 gutter + 4 pad right). */
+.panel-empty-wrap {
+  display: grid; place-items: start stretch; height: 100%;
+  padding: 16px 4px 16px 16px; overflow-y: auto; overflow-x: hidden;
+  scrollbar-gutter: stable;
+}
 .panel-empty {
   width: 100%; padding: 20px 18px; font-size: 12.5px; color: var(--text-3); line-height: 1.6;
   text-align: center; background: var(--panel-bg-2);
