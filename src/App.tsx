@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useReducer, useRef, useTransition, Fragment, CSSProperties, ReactNode } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, FolderOpen, Minus, PanelBottom, PanelBottomClose, PanelRightClose, PanelLeftOpen, PanelRight, PanelTopOpen, Square, Upload, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, ChevronUp, Eraser, FolderOpen, Minus, PanelBottom, PanelBottomClose, PanelRightClose, PanelLeftOpen, PanelRight, PanelTopOpen, Square, Upload, X } from "lucide-react";
 import { tinykeys } from "tinykeys";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
@@ -942,6 +942,9 @@ export function App() {
     });
   const addToTimeline = (ns: number[]) => mutateTimeline((c) => ns.forEach((n) => c.add(n)));
   const removeFromTimeline = (ns: number[]) => mutateTimeline((c) => ns.forEach((n) => c.delete(n)));
+  // Global clear: drop every line from the timeline (tracks stay). Mirrors
+  // `clearCompare` — the panel's dock-head "Clear" action.
+  const clearTimeline = () => mutateTimeline((c) => c.clear());
   // Tracks are a document edit → undoable; persisted on the set, keyed by id.
   const setTrack = (tr: TimelineSource) => patchState((s) => {
     if (!file || !set) return;
@@ -1637,16 +1640,19 @@ export function App() {
             <div className="dock-spacer" />
             {activePanelTab === "compare" && (
               <>
-                <button className="dock-btn" title="Clear comparison" onClick={clearCompare}><X size={14} /></button>
+                <button className="dock-btn" title="Clear comparison" onClick={clearCompare}><Eraser size={14} /></button>
                 <button className="dock-btn" title="Pop out beside Filters" onClick={popCompareOut}>
                   {pos === "bottom" ? <PanelLeftOpen size={14} /> : <PanelTopOpen size={14} />}
                 </button>
               </>
             )}
             {activePanelTab === "timeline" && (
-              <button className="dock-btn" title="Pop out beside Filters" onClick={popTimelineOut}>
-                {pos === "bottom" ? <PanelLeftOpen size={14} /> : <PanelTopOpen size={14} />}
-              </button>
+              <>
+                <button className="dock-btn" title="Clear timeline" onClick={clearTimeline}><Eraser size={14} /></button>
+                <button className="dock-btn" title="Pop out beside Filters" onClick={popTimelineOut}>
+                  {pos === "bottom" ? <PanelLeftOpen size={14} /> : <PanelTopOpen size={14} />}
+                </button>
+              </>
             )}
             <button className="dock-btn" title={pos === "bottom" ? "Dock right" : "Dock bottom"} onClick={() => setFilterPos(pos === "bottom" ? "right" : "bottom")}>
               {pos === "bottom" ? <PanelRight size={14} /> : <PanelBottom size={14} />}
@@ -1701,8 +1707,10 @@ export function App() {
               ))}
             </div>
             <div className="dock-spacer" />
-            {poppedActiveTab === "compare" && (
-              <button className="dock-btn" title="Clear comparison" onClick={(e) => { e.stopPropagation(); clearCompare(); }}><X size={14} /></button>
+            {poppedActiveTab === "compare" ? (
+              <button className="dock-btn" title="Clear comparison" onClick={(e) => { e.stopPropagation(); clearCompare(); }}><Eraser size={14} /></button>
+            ) : (
+              <button className="dock-btn" title="Clear timeline" onClick={(e) => { e.stopPropagation(); clearTimeline(); }}><Eraser size={14} /></button>
             )}
             <button className="dock-btn" title="Dock back into panel" onClick={(e) => { e.stopPropagation(); poppedActiveTab === "compare" ? dockCompareBack() : dockTimelineBack(); }}>
               {pos === "bottom" ? <PanelRightClose size={14} /> : <PanelBottomClose size={14} />}

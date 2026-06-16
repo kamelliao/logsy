@@ -645,9 +645,9 @@ button { font-family: inherit; }
 
 /* ---- shared dock-panel empty state (Compare + Timeline): a dashed card pinned
    to the top of the panel (not vertically centered) ---- */
-.panel-empty-wrap { display: grid; place-items: start center; height: 100%; padding: 16px; overflow: auto; }
+.panel-empty-wrap { display: grid; place-items: start stretch; height: 100%; padding: 16px; overflow: auto; }
 .panel-empty {
-  max-width: 360px; padding: 20px 18px; font-size: 12.5px; color: var(--text-3); line-height: 1.6;
+  width: 100%; padding: 20px 18px; font-size: 12.5px; color: var(--text-3); line-height: 1.6;
   text-align: center; background: var(--panel-bg-2);
   border: 1px dashed var(--border-strong); border-radius: 10px;
 }
@@ -673,27 +673,34 @@ button { font-family: inherit; }
   flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%;
   box-shadow: 0 0 0 2px rgba(0,0,0,0.05);
 }
-/* the dot + #idx + label are one button: clicking jumps to the source filter */
+/* the dot + #idx · label are one button: clicking jumps to the source filter.
+   Styled to match the timeline track's filter chip — "#N · description" with a
+   semibold tabular serial, a muted middot, and a regular-weight name. */
 .cmp-group-jump {
-  display: inline-flex; align-items: center; gap: 7px; min-width: 0; flex: 0 1 auto;
+  display: inline-flex; align-items: center; gap: 5px; min-width: 0; flex: 0 1 auto;
   padding: 2px 5px; margin: -2px -5px; border: none; background: none; border-radius: 6px;
   font: inherit; color: inherit; text-align: left; cursor: pointer; transition: background 0.12s;
 }
 .cmp-group-jump:disabled { cursor: default; }
 .cmp-group-jump:hover:not(:disabled) { background: var(--row-hover); }
-/* idx + label share one type scale (ui-font · 12px) so the header reads as one
-   unified line; the idx stays tabular + a touch bolder to set the serial apart. */
+/* idx · label share one type scale (ui-font · 12px) so the header reads as one
+   unified line; the idx stays tabular + semibold to set the serial apart. */
 .cmp-group-idx {
-  flex: 0 0 auto; font-family: var(--ui-font); font-size: 12px; font-weight: 700;
+  flex: 0 0 auto; font-family: var(--ui-font); font-size: 12px; font-weight: 600;
   color: var(--text-3); font-variant-numeric: tabular-nums;
 }
+.cmp-group-mid { flex: 0 0 auto; font-family: var(--ui-font); font-size: 12px; color: var(--text-3); }
 .cmp-group-label {
-  min-width: 0; font-family: var(--ui-font); font-size: 12px; font-weight: 600; color: var(--text-2);
+  min-width: 0; font-family: var(--ui-font); font-size: 12px; font-weight: 400; color: var(--text-2);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .cmp-group-jump:hover:not(:disabled) .cmp-group-label,
-.cmp-group-jump:hover:not(:disabled) .cmp-group-idx { color: #2c6ce6; }
-.cmp-group-count {
+.cmp-group-jump:hover:not(:disabled) .cmp-group-mid,
+.cmp-group-jump:hover:not(:disabled) .cmp-group-idx { color: var(--text); }
+/* Count pill in the Compare group header (sits alone, so the bordered pill reads
+   cleanly). The Timeline row keeps its count as plain text — there it sits next
+   to bordered selects, where a pill would look like another control. */
+.count-badge {
   flex: 0 0 auto; font-size: 10.5px; font-weight: 600; color: var(--text-3);
   background: var(--panel-bg-2); border: 1px solid var(--border); border-radius: 9px;
   padding: 0 7px; line-height: 16px; font-variant-numeric: tabular-nums;
