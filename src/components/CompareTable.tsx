@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { defaultRangeExtractor, useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowUpToLine, ChevronDown, ChevronRight, Download, ListPlus, ListX, X } from "lucide-react";
+import { ArrowUpToLine, ChevronDown, ChevronRight, Download, ListX, ListPlus, X } from "lucide-react";
 import type { ViewRow } from "../types";
 import { Button } from "./ui/button";
 import { PanelEmpty } from "./PanelEmpty";
@@ -77,7 +77,12 @@ function buildGroups(
       for (const k of Object.keys(r.fields ?? {})) if (!seen.has(k)) { seen.add(k); cols.push(k); }
     }
     const widths = cols.map((c) => {
-      let w = c.length;
+      // The header renders in ui-font, uppercase, with letter-spacing — a touch
+      // wider per glyph than the mono `ch` the track is sized in — so size the
+      // column to the header's name with a little slack, otherwise a name no
+      // longer than its values would still get ellipsized. Values use their raw
+      // length as-is (they share the mono font with the `ch` track).
+      let w = Math.ceil(c.length * 1.18) + 1;
       for (const r of grpRows) {
         const raw = r.fields?.[c]?.raw;
         if (raw && raw.length > w) w = raw.length;
@@ -221,11 +226,16 @@ export function CompareTable({ rows, rowH, onRemove, labelFor, colorFor, indexFo
                       disabled={!it.g.key}
                     >
                       <span className="cmp-dot" style={{ background: it.g.color }} />
-                      {it.g.index >= 0 && <span className="cmp-group-idx">#{it.g.index + 1}</span>}
+                      {it.g.index >= 0 && (
+                        <>
+                          <span className="cmp-group-idx">#{it.g.index + 1}</span>
+                          <span className="cmp-group-mid">·</span>
+                        </>
+                      )}
                       <span className="cmp-group-label">{it.g.label}</span>
                     </button>
-                    <span className="cmp-group-count">{it.g.rows.length}</span>
                     <span className="cmp-group-spacer" />
+                    <span className="count-badge">{it.g.rows.length}</span>
                     <div className="cmp-group-actions">
                       <Button
                         variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
@@ -237,14 +247,14 @@ export function CompareTable({ rows, rowH, onRemove, labelFor, colorFor, indexFo
                       </Button>
                       <Button
                         variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
-                        title="Import every line this filter parses into the comparison"
+                        title="Import this table's matching lines into the comparison"
                         onClick={() => onImportMatching(it.g.key)}
                       >
                         <ListPlus />
                       </Button>
                       <Button
                         variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
-                        title="Clear this table's lines"
+                        title="Remove this table's lines from the comparison"
                         onClick={() => onClearGroup(it.g.key)}
                       >
                         <ListX />

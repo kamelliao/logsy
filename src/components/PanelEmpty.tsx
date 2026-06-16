@@ -9,7 +9,7 @@ export function PanelEmpty({ icon, title, children }: {
   children?: ReactNode;
 }) {
   return (
-    <div className="panel-empty-wrap">
+    <div className="panel-empty-wrap scroll">
       <div className="panel-empty">
         {icon && <div className="panel-empty-icon">{icon}</div>}
         <div className="panel-empty-title">{title}</div>

@@ -1,6 +1,6 @@
 import { useCallback, useState, useRef, useEffect, CSSProperties } from "react";
 import {
-  Eye, EyeOff, GripVertical, Trash2, Plus, ListPlus, ListMinus, MoveRight, X,
+  Eye, EyeOff, GripVertical, Trash2, Plus, ListPlus, ListX, MoveRight, X,
   Circle, Square, Triangle, Diamond, ChartNoAxesGantt, ChevronDown, ChevronUp,
   AlertTriangle, MoreHorizontal,
 } from "lucide-react";
@@ -19,7 +19,6 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrig
 import { Button } from "./ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
 import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "./ui/hover-card";
 import { PanelEmpty } from "./PanelEmpty";
 import { TimelineCanvas } from "./TimelineCanvas";
 
@@ -342,7 +341,7 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
       {editing ? (
         <input
           ref={inputRef}
-          className="h-6 w-[110px] rounded border border-input bg-background px-1 text-xs font-medium outline-none focus:border-ring"
+          className="h-6 w-[110px] rounded border border-input bg-background px-1 text-[11px] font-medium outline-none focus:border-ring"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitRename}
@@ -353,55 +352,50 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
         />
       ) : (
         <span
-          className="max-w-[110px] cursor-text truncate font-medium"
+          className="max-w-[110px] cursor-text truncate text-[11px] font-medium"
           title="Double-click to rename"
           onDoubleClick={() => setEditing(true)}
         >
           {tr.lane}
         </span>
       )}
-      {/* Filter chip: hover reveals the filter's pattern + fields (read-only);
-          clicking jumps to + flashes the filter row in the Filters panel (same
-          action as the Compare group header). */}
+      {/* Filter chip: clicking jumps to + flashes the filter row in the Filters
+          panel (same action as the Compare group header), which shows the filter's
+          full pattern/fields — so no separate hover card is needed here. */}
       {filter ? (
-        <HoverCard>
-          <HoverCardTrigger
-            render={
-              <span
-                className="inline-flex max-w-[150px] min-w-0 cursor-pointer items-center rounded px-1 py-0.5 text-[10px] font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                title={`Go to filter ${serial} in Filters`}
-                onClick={() => onFocusFilter(tr.filterId)}
-              />
-            }
-          >
-            <span className="min-w-0 truncate">
-              <span className="font-semibold tabular-nums">{serial}</span> · {filterName}
-            </span>
-          </HoverCardTrigger>
-          <HoverCardContent side="top" align="start" className="w-72">
-            <FilterHoverBody filter={filter} serial={serial} fields={fields} timeField={tr.timeField} />
-          </HoverCardContent>
-        </HoverCard>
+        <span
+          className="inline-flex max-w-[150px] min-w-0 cursor-pointer items-center rounded px-1 py-0.5 text-[11px] font-normal text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+          title={`Go to filter ${serial} in Filters`}
+          onClick={() => onFocusFilter(tr.filterId)}
+        >
+          <span className="min-w-0 truncate">
+            <span className="font-semibold tabular-nums">{serial}</span> · {filterName}
+          </span>
+        </span>
       ) : (
         <span
-          className="max-w-[150px] min-w-0 truncate px-1 text-[10px] font-normal text-muted-foreground/70"
+          className="max-w-[150px] min-w-0 truncate px-1 text-[11px] font-normal text-muted-foreground/70"
           title="Filter not found"
         >
           <span className="font-semibold tabular-nums">{serial}</span> · {filterName}
         </span>
       )}
 
-      {/* Field pill (pushed right, left of unit/hide/delete): the start time field
-          and — for a span — the end field, grouped in ONE bordered control so the
-          start→end relationship is self-contained. kind is derived from having an
-          end field; a point shows just a "+" to add one. The unit select stays
-          OUTSIDE the pill so it can't be mistaken for a span target. */}
+      {/* Line count (on-timeline / matchable). Plain muted text — NOT a bordered
+          pill: it sits right next to the bordered field/unit selects, where a
+          pill would read as another control. Anchors the right-hand cluster. */}
       <span
         className="ml-auto shrink-0 tabular-nums text-[10px] text-muted-foreground"
         title={`${inTl} on the timeline / ${matching} matchable line${matching === 1 ? "" : "s"}`}
       >
-        {inTl}<span className="text-muted-foreground/50">/{matching}</span>
+        {inTl}<span className="opacity-50">/{matching}</span>
       </span>
+
+      {/* Field pill: the start time field and — for a span — the end field, grouped
+          in ONE bordered control so the start→end relationship is self-contained.
+          kind is derived from having an end field; a point shows just a "+" to add
+          one. The unit select stays OUTSIDE the pill so it can't be mistaken for a
+          span target. */}
       <div className="inline-flex items-center gap-0.5 rounded-md border border-input bg-background px-0.5">
         <Select value={tr.timeField} onValueChange={(v) => v != null && onSet({ ...tr, timeField: v })}>
           <SelectTrigger size="xs" className="w-[68px] border-0 bg-transparent shadow-none hover:bg-muted/60 data-[size=xs]:h-5"><SelectValue placeholder="field…" /></SelectTrigger>
@@ -475,7 +469,7 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
           disabled={!canClear}
           onClick={onClearLines}
         >
-          <ListMinus />
+          <ListX />
         </Button>
         <Button
           variant="ghost" size="icon-xs"
@@ -507,7 +501,7 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
             <span className="mi-ico"><ListPlus size={15} /></span>Import matching lines
           </DropdownMenuItem>
           <DropdownMenuItem disabled={!canClear} onClick={onClearLines}>
-            <span className="mi-ico"><ListMinus size={15} /></span>Remove lines from timeline
+            <span className="mi-ico"><ListX size={15} /></span>Remove lines from timeline
           </DropdownMenuItem>
           <DropdownMenuItem onClick={() => onSet({ ...tr, hidden: tr.hidden ? undefined : true })}>
             <span className="mi-ico">{tr.hidden ? <EyeOff size={15} /> : <Eye size={15} />}</span>{tr.hidden ? "Show track" : "Hide track"}
@@ -518,55 +512,6 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
-    </div>
-  );
-}
-
-/** Read-only filter detail shown on hovering a track row's filter chip:
- *  serial + description, the pattern, and the filter's fields (time field marked). */
-function FilterHoverBody({ filter, serial, fields, timeField }: {
-  filter: Filter; serial: string; fields: FieldDef[]; timeField: string;
-}) {
-  const desc = filter.description?.trim();
-  const flags = [
-    !filter.regex && "plain text",
-    filter.exclude && "exclude",
-    filter.caseSensitive && "case-sensitive",
-    !filter.enabled && "disabled",
-  ].filter(Boolean) as string[];
-  return (
-    <div className="flex flex-col gap-2 text-xs">
-      <div className="flex items-baseline gap-1.5">
-        <span className="font-semibold tabular-nums text-muted-foreground">{serial}</span>
-        <span className="min-w-0 break-words font-medium text-foreground">{desc || <span className="italic text-muted-foreground">no description</span>}</span>
-      </div>
-      <div>
-        <div className="mb-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Pattern</div>
-        <code className="block max-h-24 overflow-auto whitespace-pre-wrap break-all rounded bg-muted/60 px-1.5 py-1 font-mono text-[11px] text-foreground">
-          {filter.pattern || <span className="italic text-muted-foreground">(empty)</span>}
-        </code>
-      </div>
-      {fields.length > 0 && (
-        <div>
-          <div className="mb-1 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">Time fields</div>
-          <div className="flex flex-wrap gap-1">
-            {fields.map((d) => (
-              <span
-                key={d.name}
-                className={`inline-flex items-center gap-1 rounded border px-1 py-0.5 text-[10px] ${
-                  d.name === timeField ? "border-foreground/40 bg-accent font-medium text-foreground" : "border-border text-muted-foreground"
-                }`}
-              >
-                {d.name}
-                {d.type && <span className="text-muted-foreground/70">{d.type}</span>}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-      {flags.length > 0 && (
-        <div className="text-[10px] text-muted-foreground">{flags.join(" · ")}</div>
-      )}
     </div>
   );
 }
