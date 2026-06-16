@@ -170,6 +170,11 @@ export function EditModal({ filter, lines, isNew, groups, palette, genSeed, onSa
   const lastBuiltRef = useRef(genSeed ? filter.pattern : "");
   const chipsActive = genTokens !== null && draft.pattern === lastBuiltRef.current;
   const chipNames = useMemo(() => (genTokens ? assignNames(genTokens) : []), [genTokens]);
+  // When a chip turns into a capture, its name input should grab focus so the
+  // user can type the field name straight away. The input only renders once the
+  // chip is in "capture" state, so we stash the index here and let the input's
+  // ref callback focus itself on mount (then clear the request).
+  const focusChipRef = useRef<number | null>(null);
 
   const applyTokens = (next: GenToken[]) => {
     setGenTokens(next);
@@ -177,17 +182,21 @@ export function EditModal({ filter, lines, isNew, groups, palette, genSeed, onSa
     lastBuiltRef.current = p;
     set({ pattern: p });
   };
-  const cycleChip = (i: number) =>
-    genTokens &&
-    applyTokens(genTokens.map((t, k) => {
-      if (k !== i || t.kind === "text") return t;
-      const order: GenState[] = t.kind === "ws" ? ["general", "exact"] : ["general", "capture", "exact"];
-      return { ...t, state: order[(order.indexOf(t.state) + 1) % order.length] };
-    }));
+  const cycleChip = (i: number) => {
+    if (!genTokens) return;
+    const t = genTokens[i];
+    if (!t || t.kind === "text") return;
+    const order: GenState[] = t.kind === "ws" ? ["general", "exact"] : ["general", "capture", "exact"];
+    const next = order[(order.indexOf(t.state) + 1) % order.length];
+    if (next === "capture") focusChipRef.current = i;
+    applyTokens(genTokens.map((x, k) => (k === i ? { ...x, state: next } : x)));
+  };
   const renameChip = (i: number, name: string) =>
     genTokens && applyTokens(genTokens.map((t, k) => (k === i ? { ...t, name } : t)));
-  const setChipState = (i: number, state: GenState) =>
+  const setChipState = (i: number, state: GenState) => {
+    if (state === "capture") focusChipRef.current = i;
     genTokens && applyTokens(genTokens.map((t, k) => (k === i ? { ...t, state } : t)));
+  };
 
   // Drag across chips to select a contiguous run; releasing merges it into one
   // chip. A press-and-release on a single chip leaves a===b, so the regular
@@ -367,6 +376,17 @@ export function EditModal({ filter, lines, isNew, groups, palette, genSeed, onSa
                       {t.state === "capture" && (
                         <input
                           className="gc-name"
+                          // Auto-focus the name input the moment this chip becomes
+                          // a capture (clicking the chip), so the user can name the
+                          // field without a second click. Cleared after focusing so
+                          // it only fires for the chip that just turned to capture.
+                          ref={(el) => {
+                            if (el && focusChipRef.current === i) {
+                              focusChipRef.current = null;
+                              el.focus();
+                              el.select();
+                            }
+                          }}
                           // Bind to the raw user text, not the resolved name, so
                           // the field can be cleared and retyped; the auto name
                           // shows as a placeholder and only lands at build time.

@@ -119,6 +119,19 @@ test("a span track pairs start/end fields from the same line", () => {
   expect(marks[0].end).toBe(42_000_000);
 });
 
+test("a span whose end is before its start drops the end and reports the track", () => {
+  const lines = ["start=42 end=10"];
+  const v = viewOf(lines, [filter("f", "start=(?<a>\\d+)\\s+end=(?<b>\\d+)",
+    [{ name: "a", type: "time" }, { name: "b", type: "time" }])]);
+  const bad = new Set<string>();
+  const tr = track("f", "a", { kind: "span", endField: "b", unit: "ms" });
+  const marks = buildTimeline(v, [1], [tr], bad);
+  // backwards span: rendered as a point (no end), and flagged for a warning.
+  expect(marks[0].t).toBe(42_000_000);
+  expect(marks[0].end).toBeUndefined();
+  expect(bad.has(tr.id)).toBe(true);
+});
+
 test("hidden tracks emit nothing; the mark carries the line's parsed fields", () => {
   const lines = ["00:00:01.000 W42"];
   const v = viewOf(lines, [filter("f", "(?<ts>\\d+:\\d+:\\d+\\.\\d+)\\s+(?<tag>\\w+)",

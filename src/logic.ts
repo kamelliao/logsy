@@ -408,6 +408,12 @@ export function trackFieldsOf(filter: Filter): FieldDef[] {
  */
 export function buildTimeline(
   view: ViewResult, lineNumbers: Iterable<number>, tracks: TimelineSource[],
+  // Optional sink: ids of span tracks whose end time came out BEFORE the start
+  // (an illegal, backwards span). Such ends are dropped (the mark falls back to
+  // a point) so the timeline never has to plot a negative-width span — which
+  // collapses the time domain and froze the canvas. Callers can surface a
+  // warning from this set.
+  badEndTracks?: Set<string>,
 ): EventMark[] {
   const visible = tracks.filter((t) => !t.hidden);
   const out: EventMark[] = [];
@@ -429,7 +435,12 @@ export function buildTimeline(
       let end: number | undefined;
       if (tr.kind === "span" && tr.endField) {
         const e = fields[tr.endField] ? coerceTime(fields[tr.endField].raw, tr.unit) : undefined;
-        if (typeof e === "number") end = e;
+        // Only keep a well-formed span (end >= start). A backwards end is
+        // dropped (render as a point) and reported as illegal.
+        if (typeof e === "number") {
+          if (e < t) badEndTracks?.add(tr.id);
+          else end = e;
+        }
       }
       out.push({ lane: tr.lane, t, end, lineN: n, label: text, color: tr.color, shape: tr.shape, fields });
     }

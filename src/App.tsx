@@ -179,10 +179,13 @@ export function App() {
     [state.compareLinesByFile, file],
   );
   // Events come from the lines the user added to the timeline (like compare).
-  const marks = useMemo(
-    () => buildTimeline(view, timelineLines, tracks),
-    [view, timelineLines, tracks],
-  );
+  // `badEndTracks` flags span tracks whose end field resolved BEFORE the start
+  // (illegal, backwards span) — those ends are dropped; we warn on the row.
+  const { marks, badEndTracks } = useMemo(() => {
+    const bad = new Set<string>();
+    const m = buildTimeline(view, timelineLines, tracks, bad);
+    return { marks: m, badEndTracks: bad };
+  }, [view, timelineLines, tracks]);
   // Field names per filter that may back a timeline TIME field. A field qualifies
   // if its declared type is numeric (int/hex/float/time) OR a sampled matched
   // value looks time-like (covers string-typed groups that actually hold numbers).
@@ -1574,6 +1577,7 @@ export function App() {
         filters={set?.filters ?? []}
         timeFields={timeFieldsByFilter}
         marks={marks}
+        badEndTracks={badEndTracks}
         lineCount={timelineLines.size}
         onSetTrack={setTrack}
         onRemoveTrack={removeTrack}
