@@ -96,6 +96,39 @@ place to look when a large file feels sluggish. `compileAll` and `segments`
 | `Ctrl 0`            | Reset zoom                      |
 | `Esc`               | Close find                      |
 
+## Recovering from a bad state
+
+Logsy remembers your workspace (open files, filters, layout, bookmarks) in the
+webview's `localStorage`. If a corrupt or pathological state ever makes the app
+freeze or crash **on launch**, the UI is unreachable and can't clear itself — so
+two command-line escape hatches run *before* the frontend loads:
+
+```bash
+logsy --reset    # wipe the saved state permanently, then start fresh
+logsy --safe     # start clean for this session WITHOUT touching the saved state
+```
+
+- **`--reset`** clears everything (open files, filter sets, groups, layout,
+  bookmarks). Irreversible — use it when you just want a clean slate.
+- **`--safe`** starts from an empty workspace but neither reads nor writes the
+  saved state, so it stays intact on disk and a normal launch resumes it. Use it
+  to get back in, export your filters, then decide whether to `--reset`.
+
+On Windows the easiest way is a desktop shortcut whose target ends in `--safe`
+(or `--reset`). To pass the flag while developing:
+
+```bash
+bun run tauri dev -- -- --safe   # first -- → cargo, second -- → the app
+```
+
+If even `--reset` won't launch, delete the saved state manually (app closed):
+
+| OS      | Folder to delete                                                              |
+| ------- | ----------------------------------------------------------------------------- |
+| Windows | `%LOCALAPPDATA%\dev.logsy.app\EBWebView\Default\Local Storage`                 |
+| macOS   | `~/Library/WebKit/dev.logsy.app` (or the app's `WebsiteData` folder)          |
+| Linux   | `~/.local/share/dev.logsy.app` (WebKitGTK local storage)                      |
+
 ## Releasing
 
 Releases are automated by GitHub Actions

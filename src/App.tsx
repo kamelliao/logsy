@@ -67,7 +67,16 @@ const FONT_STEP = 1;
 const FONT_MIN = 8;
 const FONT_MAX = 24;
 
+// Safe mode (app launched with `--safe`): the Rust side injects
+// `window.__LOGSY_SAFE_MODE__` before this bundle runs. We then neither read nor
+// write persisted state this session, so a state that freezes/crashes the app on
+// load can be escaped without losing it — the bad state stays on disk and the
+// next normal launch resumes it (use this to export/repair, then restart).
+const SAFE_MODE = typeof window !== "undefined"
+  && Boolean((window as unknown as { __LOGSY_SAFE_MODE__?: boolean }).__LOGSY_SAFE_MODE__);
+
 function loadState(): AppState {
+  if (SAFE_MODE) return normalizeState(initialState());
   try {
     const raw = localStorage.getItem(STATE_KEY);
     if (raw) return normalizeState(JSON.parse(raw) as AppState);
@@ -140,10 +149,19 @@ export function App() {
 
   useEffect(() => { getVersion().then(setAppVersion).catch(() => { /* not under Tauri */ }); }, []);
 
+  // Tell the user when this session is running in safe mode (started with --safe):
+  // their saved workspace is untouched on disk and will return on a normal launch.
+  useEffect(() => {
+    if (SAFE_MODE) {
+      toast.warning("Safe mode: your saved state was not loaded and won't be saved this session. Restart normally to restore it.", { duration: 8000 });
+    }
+  }, []);
+
   // Persist on a short debounce — serializing the whole state synchronously on
   // every edit added a fixed cost to each action on large filter sets. The
   // unload flush (below, after stateRef) covers the trailing edits.
   useEffect(() => {
+    if (SAFE_MODE) return;   // never write over the preserved state in safe mode
     const t = setTimeout(() => {
       try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
     }, 300);
@@ -262,6 +280,7 @@ export function App() {
   // edits made within the debounce window aren't lost.
   useEffect(() => {
     const flush = () => {
+      if (SAFE_MODE) return;   // see SAFE_MODE: don't persist this session
       try { localStorage.setItem(STATE_KEY, JSON.stringify(stateRef.current)); } catch { /* ignore */ }
     };
     window.addEventListener("beforeunload", flush);
@@ -485,6 +504,9 @@ export function App() {
     if (!file || !file.path || linesStore[file.id]) return;
     const { id, path, name } = file;
     let cancelled = false;
+    // Show the loading overlay: the read can be slow (a large file, or one on a
+    // network share), and without feedback the blank workspace looks stuck.
+    setBusy({ name });
     (async () => {
       try {
         const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
@@ -494,9 +516,11 @@ export function App() {
         setLinesVersion((v) => v + 1);
       } catch (e) {
         if (!cancelled) toast.error(`Could not reload ${name}: ${String(e)}`);
+      } finally {
+        if (!cancelled) setBusy(null);
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; setBusy(null); };
   }, [file?.id, file?.path]);
 
   // OS drag-and-drop of files onto the window (Tauri handles this natively).

@@ -1,7 +1,35 @@
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-  tauri::Builder::default()
-    .plugin(tauri_plugin_dialog::init())
+  // Startup escape hatches for when persisted state makes the app freeze/crash on
+  // launch (the UI is then unreachable, so it can't clear its own state).
+  // Both work by injecting a script that runs in the webview BEFORE the app
+  // bundle, so it takes effect even if the bundle would otherwise hang.
+  //   --reset : wipe persisted state permanently, then start fresh.
+  //   --safe  : start from a clean in-memory state for THIS session without
+  //             reading or writing persisted state, so the bad state survives on
+  //             disk for recovery and the next normal launch resumes it.
+  let args: Vec<String> = std::env::args().collect();
+  let reset = args.iter().any(|a| a == "--reset");
+  let safe = args.iter().any(|a| a == "--safe");
+  let mut init_script = String::new();
+  if reset {
+    init_script.push_str("try{localStorage.clear();sessionStorage.clear();}catch(e){}");
+  }
+  if safe {
+    init_script.push_str("window.__LOGSY_SAFE_MODE__=true;");
+  }
+
+  let mut builder = tauri::Builder::default()
+    .plugin(tauri_plugin_dialog::init());
+  if !init_script.is_empty() {
+    builder = builder.plugin(
+      tauri::plugin::Builder::<tauri::Wry>::new("recovery")
+        .js_init_script(init_script)
+        .build(),
+    );
+  }
+
+  builder
     .setup(|app| {
       if cfg!(debug_assertions) {
         app.handle().plugin(
@@ -28,9 +56,21 @@ struct ReadResult {
 /// (UTF-8 / UTF-16 LE / BE) picks the encoding directly; otherwise chardetng
 /// sniffs the bytes (covers UTF-16, Big5, GBK, Shift-JIS, Latin-1, …). Decoding
 /// is lossy: undecodable bytes become U+FFFD instead of failing the open.
+// `async` so Tauri runs it off the main thread, and the blocking file read +
+// decode go through `spawn_blocking` onto a worker thread. A synchronous command
+// runs on the main thread, where a slow read (e.g. a file on a disconnected
+// network share, which can stall for the Windows SMB/IO timeout) would freeze
+// the whole window's event loop. Off-thread, a stalled read leaves the UI
+// responsive and still surfaces as a rejected promise on the JS side.
 #[tauri::command]
-fn read_text_file(path: String) -> Result<ReadResult, String> {
-  let bytes = std::fs::read(&path).map_err(|e| e.to_string())?;
+async fn read_text_file(path: String) -> Result<ReadResult, String> {
+  tauri::async_runtime::spawn_blocking(move || read_text_file_blocking(&path))
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn read_text_file_blocking(path: &str) -> Result<ReadResult, String> {
+  let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
 
   // Pick an encoding. An explicit BOM wins. Otherwise sniff BOM-less UTF-16
   // ourselves before falling back to chardetng: chardetng never guesses UTF-16
@@ -121,9 +161,13 @@ mod tests {
   }
 }
 
+// Async + off-thread for the same reason as `read_text_file`: keep a blocking
+// write to a slow/disconnected path from freezing the main-thread event loop.
 #[tauri::command]
-fn write_text_file(path: String, contents: String) -> Result<(), String> {
-  std::fs::write(&path, contents).map_err(|e| e.to_string())
+async fn write_text_file(path: String, contents: String) -> Result<(), String> {
+  tauri::async_runtime::spawn_blocking(move || std::fs::write(&path, contents).map_err(|e| e.to_string()))
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// Open a URL in the user's default browser. Cross-platform via the OS launcher,
