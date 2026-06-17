@@ -726,6 +726,38 @@ export function App() {
     if (soloFilterId === fid) setSoloFilterId(null);
     setEditing(null);
   };
+  // Batch delete from the filter panel's selection mode. One undoable step (a
+  // single Ctrl+Z brings them all back), and unlike single-row delete it also
+  // drops timeline tracks bound to the removed filters so none are left orphaned.
+  // Always confirms; returns whether it went through so the panel only clears
+  // its selection on success.
+  const deleteFilters = async (ids: string[]): Promise<boolean> => {
+    if (!file || !set || ids.length === 0) return false;
+    const ok = await confirm(
+      `Delete ${ids.length} selected filter${ids.length > 1 ? "s" : ""}? This can be undone with Ctrl+Z.`,
+      { title: "Delete filters?", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel" }
+    );
+    if (!ok) return false;
+    const del = new Set(ids);
+    patchState((s) => {
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
+      g.filters = g.filters.filter((x) => !del.has(x.id));
+      g.order = g.order.filter((id) => !del.has(id));
+      g.sources = (g.sources ?? []).filter((x) => !del.has(x.filterId));
+    });
+    if (soloFilterId && del.has(soloFilterId)) setSoloFilterId(null);
+    setEditing(null);
+    return true;
+  };
+  const setFiltersEnabled = (ids: string[], enabled: boolean) => {
+    if (!file || !set || ids.length === 0) return;
+    const sel = new Set(ids);
+    patchState((s) => {
+      if (!file || !set) return;
+      withSet(s, file.id, set.id).filters.forEach((f) => { if (sel.has(f.id)) f.enabled = enabled; });
+    });
+  };
   const duplicateFilter = (fid: string) => patchState((s) => {
     if (!file || !set) return;
     const g = withSet(s, file.id, set.id);
@@ -1596,6 +1628,8 @@ export function App() {
         onUpdateFilter={updateFilter}
         onAddFilter={openNewFilter}
         onDeleteFilter={deleteFilter}
+        onDeleteFilters={deleteFilters}
+        onSetFiltersEnabled={setFiltersEnabled}
         onDuplicateFilter={duplicateFilter}
         onViewFilterOnly={setSoloFilterId}
         onEditFilter={openEditFilter}
