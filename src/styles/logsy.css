@@ -1231,6 +1231,45 @@ button { font-family: inherit; }
 }
 .filter-row:hover .fr-handle { color: var(--text-3); }
 
+/* ---- batch selection mode ---- */
+/* The selection checkbox takes the grip's slot while selecting. */
+.fr-select { flex: 0 0 auto; width: 15px; display: grid; place-items: center; }
+/* Fills with the app's active blue (#2c6ce6, the --accent-bg / selected-row hue)
+   when the row is selected — consistent with selection elsewhere in the app. */
+.fr-sel-check[data-checked] {
+  background: #2c6ce6 !important;
+  border-color: #2c6ce6 !important;
+}
+/* No text selection while picking rows — a Shift-click range must not also
+   highlight the rows' text. */
+.filter-row.selecting { cursor: pointer; user-select: none; -webkit-user-select: none; }
+.filter-row.selecting:active { cursor: pointer; }
+/* The whole row is one click target: no inner control (enable checkbox + its
+   12px hit-area overlay, colour, ⋮, the selection box itself) may intercept the
+   click — they're all pointer-events:none, so every click reaches the row. */
+.filter-row.selecting button,
+.filter-row.selecting [role="checkbox"],
+.filter-row.selecting .fr-check-wrap { pointer-events: none; }
+.filter-row.selected,
+.filter-row.disabled.selected { background: var(--accent-bg); border-color: var(--accent); }
+
+/* Sticky action bar at the panel foot while selecting. A query container so its
+   buttons can shed their text labels (→ icon-only) when the dock is narrow. */
+.select-bar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 6px;
+  padding: 5px 8px; border-top: 1px solid var(--border);
+  background: var(--panel-bg, #fff);
+  container-type: inline-size;
+}
+.select-bar .sb-all { display: grid; place-items: center; border: none; background: none; padding: 0; cursor: pointer; }
+.select-bar .sb-count { font-size: 12px; color: var(--text-2, var(--text-3)); white-space: nowrap; }
+.select-bar .sb-spacer { flex: 1 1 auto; }
+/* Too narrow for full labels — collapse to icon buttons and a bare count. */
+@container (max-width: 360px) {
+  .select-bar .sb-label { display: none; }
+}
+
 .fr-flags { display: flex; gap: 2px; flex: 0 0 auto; }
 .fr-flag {
   height: calc(var(--filter-row-h, 22px) * 0.636); min-width: calc(var(--filter-row-h, 22px) * 0.727); padding: 0 3px;

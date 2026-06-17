@@ -1,6 +1,6 @@
-import { memo, useState, useMemo, useRef, useEffect, useCallback, CSSProperties, ReactNode } from "react";
+import { memo, useState, useMemo, useRef, useEffect, useCallback, CSSProperties, ReactNode, MouseEvent as ReactMouseEvent } from "react";
 import {
-  Activity, Check, ChevronDown, ChevronRight, Copy, Eye, EyeOff,
+  Activity, Check, CheckSquare, ChevronDown, ChevronRight, Copy, Eye, EyeOff,
   Filter as FilterIcon, FileDown, FilePlus, FolderPlus, GripVertical,
   ListChecks, ListX, MoreVertical, MoreHorizontal, Pencil,
   Plus, Save, Search, Trash2, Upload, X,
@@ -166,8 +166,8 @@ function GroupMenuItems({ onRename, onAddFilter, onSetEnabled, onDelete }: {
   );
 }
 
-function PanelMenuItems({ onAddFilter, onAddGroup, onBulk }: {
-  onAddFilter: () => void; onAddGroup: () => void; onBulk: (action: string) => void;
+function PanelMenuItems({ onAddFilter, onAddGroup, onBulk, onEnterSelect }: {
+  onAddFilter: () => void; onAddGroup: () => void; onBulk: (action: string) => void; onEnterSelect: () => void;
 }) {
   return (
     <>
@@ -176,6 +176,10 @@ function PanelMenuItems({ onAddFilter, onAddGroup, onBulk }: {
       </DropdownMenuItem>
       <DropdownMenuItem onClick={onAddGroup}>
         <span className="mi-ico"><FolderPlus size={15} /></span>New group
+      </DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onClick={onEnterSelect}>
+        <span className="mi-ico"><CheckSquare size={15} /></span>Select filters…
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={() => onBulk("enableAll")}>
@@ -303,6 +307,8 @@ interface RowApi {
   duplicate: (id: string) => void;
   viewOnly: (id: string) => void;
   toggleTrack: (filterId: string, timeField: string) => void;
+  /** Select mode: toggle this row's selection (Shift extends a range). */
+  selectClick: (id: string, e: ReactMouseEvent) => void;
 }
 
 interface FilterRowProps {
@@ -313,6 +319,10 @@ interface FilterRowProps {
   /** Names of this filter's fields already plotted as a timeline track (stable ref). */
   trackedFields: string[];
   searching: boolean;
+  /** Selection mode is active: row-click selects instead of opening the editor. */
+  selectMode: boolean;
+  /** This row is part of the current selection. */
+  selected: boolean;
   api: RowApi;
 }
 
@@ -336,8 +346,9 @@ function sameFilter(a: Filter, b: Filter): boolean {
 // drag — dnd-kit re-renders every sortable subscriber on drag start and again
 // each time the pointer crosses a row — only re-runs the thin shell below,
 // not 100+ of these trees per step.
-const FilterRowCells = memo(function FilterRowCells({ f, index, count, trackedFields, api, dragging }: {
+const FilterRowCells = memo(function FilterRowCells({ f, index, count, trackedFields, api, dragging, selectMode, selected }: {
   f: Filter; index: number; count: number; trackedFields: string[]; api: RowApi; dragging: boolean;
+  selectMode: boolean; selected: boolean;
 }) {
   const onEdit = () => api.edit(f.id);
   const onDelete = () => api.remove(f.id);
@@ -362,16 +373,27 @@ const FilterRowCells = memo(function FilterRowCells({ f, index, count, trackedFi
               render={
                 <div
                   style={{ alignItems: "center" }}
-                  className={"filter-row" + (f.enabled ? "" : " disabled") + (dragging ? " dragging" : "")}
-                  onClick={onEdit}
+                  className={"filter-row" + (f.enabled ? "" : " disabled") + (dragging ? " dragging" : "")
+                    + (selectMode ? " selecting" : "") + (selected ? " selected" : "")}
+                  onClick={selectMode ? (e) => api.selectClick(f.id, e) : onEdit}
                 />
               }
             />
           }
         >
-        <span className="fr-handle" title="Drag to reorder">
-          <GripVertical size={12} />
-        </span>
+        {selectMode ? (
+          // Selection indicator: the same Checkbox primitive, recoloured (see
+          // .fr-sel-check) so it's distinct from the enable toggle beside it.
+          // Presentational only: pointer-events:none (see CSS) so the click
+          // lands on the row, which drives selection.
+          <span className="fr-select">
+            <Checkbox checked={selected} onCheckedChange={() => {}} className="fr-sel-check" />
+          </span>
+        ) : (
+          <span className="fr-handle" title="Drag to reorder">
+            <GripVertical size={12} />
+          </span>
+        )}
 
         {/* Stop clicks here from bubbling to the row (which would open the editor). */}
         <span
@@ -484,17 +506,19 @@ const FilterRowCells = memo(function FilterRowCells({ f, index, count, trackedFi
 }, (prev, next) =>
   sameFilter(prev.f, next.f) && prev.index === next.index && prev.count === next.count
   && prev.trackedFields === next.trackedFields
-  && prev.dragging === next.dragging && prev.api === next.api);
+  && prev.dragging === next.dragging && prev.api === next.api
+  && prev.selectMode === next.selectMode && prev.selected === next.selected);
 
 // Thin sortable shell: just the dnd hook and a wrapper div carrying the drag
 // transform/listeners. This is all that re-renders when dnd-kit's contexts
 // change mid-drag; the memoized cells above are skipped while their props are
 // stable. (memo on the shell itself covers parent-driven re-renders; context
 // updates from inside useSortable bypass it by design.)
-const FilterRow = memo(function FilterRow({ f, index, count, trackedFields, searching, api }: FilterRowProps) {
+const FilterRow = memo(function FilterRow({ f, index, count, trackedFields, searching, selectMode, selected, api }: FilterRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: f.id,
-    disabled: searching,
+    // No reordering while searching or picking a selection — drag listeners off.
+    disabled: searching || selectMode,
     data: { type: "filter", groupId: f.groupId },
   });
   const style: CSSProperties = {
@@ -502,14 +526,15 @@ const FilterRow = memo(function FilterRow({ f, index, count, trackedFields, sear
     transition,
   };
   return (
-    <div ref={setNodeRef} data-filter-id={f.id} style={style} {...attributes} {...(searching ? {} : listeners)}>
-      <FilterRowCells f={f} index={index} count={count} trackedFields={trackedFields} api={api} dragging={isDragging} />
+    <div ref={setNodeRef} data-filter-id={f.id} style={style} {...attributes} {...(searching || selectMode ? {} : listeners)}>
+      <FilterRowCells f={f} index={index} count={count} trackedFields={trackedFields} api={api} dragging={isDragging} selectMode={selectMode} selected={selected} />
     </div>
   );
 }, (prev, next) =>
   sameFilter(prev.f, next.f) && prev.index === next.index && prev.count === next.count
   && prev.trackedFields === next.trackedFields
-  && prev.searching === next.searching && prev.api === next.api);
+  && prev.searching === next.searching && prev.api === next.api
+  && prev.selectMode === next.selectMode && prev.selected === next.selected);
 
 // ---- group ----
 
@@ -680,8 +705,9 @@ function BottomSlot({ active }: { active: boolean }) {
 
 // ---- panel-level right-click zone (wraps the scrollable filter list) ----
 
-function PanelListZone({ onAddFilter, onAddGroup, onBulk, children }: {
-  onAddFilter: () => void; onAddGroup: () => void; onBulk: (action: string) => void; children: ReactNode;
+function PanelListZone({ onAddFilter, onAddGroup, onBulk, onEnterSelect, children }: {
+  onAddFilter: () => void; onAddGroup: () => void; onBulk: (action: string) => void;
+  onEnterSelect: () => void; children: ReactNode;
 }) {
   return (
     <ContextMenu>
@@ -689,7 +715,7 @@ function PanelListZone({ onAddFilter, onAddGroup, onBulk, children }: {
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <PanelMenuItems onAddFilter={onAddFilter} onAddGroup={onAddGroup} onBulk={onBulk} />
+        <PanelMenuItems onAddFilter={onAddFilter} onAddGroup={onAddGroup} onBulk={onBulk} onEnterSelect={onEnterSelect} />
       </ContextMenuContent>
     </ContextMenu>
   );
@@ -750,6 +776,11 @@ interface FilterPanelProps {
   onUpdateFilter: (id: string, patch: Partial<Filter>) => void;
   onAddFilter: (groupId?: string | null) => void;
   onDeleteFilter: (id: string) => void;
+  /** Batch delete the given filter ids in one undoable step; resolves true if it
+   *  went through (false if the user cancelled the confirm). */
+  onDeleteFilters: (ids: string[]) => Promise<boolean>;
+  /** Batch enable/disable the given filter ids in one undoable step. */
+  onSetFiltersEnabled: (ids: string[], enabled: boolean) => void;
   onDuplicateFilter: (id: string) => void;
   onViewFilterOnly: (id: string) => void;
   onEditFilter: (id: string) => void;
@@ -771,11 +802,57 @@ export function FilterPanel({
   file, set, counts, style,
   onSwitchSet, onAddSet, onRenameSet, onDeleteSet, onDuplicateSet, onReorderSet,
   onAddGroup, onRenameGroup, onToggleGroup, onDeleteGroup, onSetGroupEnabled,
-  onUpdateFilter, onAddFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onEditFilter,
+  onUpdateFilter, onAddFilter, onDeleteFilter, onDeleteFilters, onSetFiltersEnabled, onDuplicateFilter, onViewFilterOnly, onEditFilter,
   onToggleTimelineTrack, onApplyLayout, onBulk,
   flashFilterId, flashNonce, onFlashConsumed,
 }: FilterPanelProps) {
   const [search, setSearch] = useState("");
+
+  // ---- batch selection mode ----
+  // Ephemeral UI state (not persisted, not on the undo stack): while active,
+  // a row click toggles its membership in `selected` instead of opening the
+  // editor, and the action bar at the panel's foot drives batch ops.
+  const [selectMode, setSelectMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  // Anchor for Shift-click range selection, and the latest visible row order the
+  // range is computed against (read through a ref so the stable rowApi sees it).
+  const lastClickedRef = useRef<string | null>(null);
+  const visibleIdsRef = useRef<string[]>([]);
+
+  const exitSelect = useCallback(() => {
+    setSelectMode(false);
+    setSelected(new Set());
+    lastClickedRef.current = null;
+  }, []);
+
+  const selectClick = useCallback((id: string, e: ReactMouseEvent) => {
+    const order = visibleIdsRef.current;
+    setSelected((prev) => {
+      const next = new Set(prev);
+      const anchor = lastClickedRef.current;
+      if (e.shiftKey && anchor) {
+        const a = order.indexOf(anchor), b = order.indexOf(id);
+        if (a >= 0 && b >= 0) {
+          const [lo, hi] = a < b ? [a, b] : [b, a];
+          for (let i = lo; i <= hi; i++) next.add(order[i]);
+        } else if (next.has(id)) next.delete(id); else next.add(id);
+      } else if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+    lastClickedRef.current = id;
+  }, []);
+
+  // Esc leaves select mode.
+  useEffect(() => {
+    if (!selectMode) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") exitSelect(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectMode, exitSelect]);
+
+  // Switching set or file would leave the selection pointing at filters that are
+  // no longer on screen — drop it and exit select mode.
+  useEffect(() => { exitSelect(); }, [set.id, file.id, exitSelect]);
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
@@ -881,8 +958,8 @@ export function FilterPanel({
 
   // One identity-stable api object for every row; the latest handlers are read
   // through a ref so the rows' memo never breaks when App re-renders.
-  const rowCbRef = useRef({ onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onToggleTimelineTrack });
-  rowCbRef.current = { onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onToggleTimelineTrack };
+  const rowCbRef = useRef({ onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onToggleTimelineTrack, selectClick });
+  rowCbRef.current = { onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onToggleTimelineTrack, selectClick };
   const rowApi = useMemo<RowApi>(() => ({
     update: (id, patch) => rowCbRef.current.onUpdateFilter(id, patch),
     edit: (id) => rowCbRef.current.onEditFilter(id),
@@ -890,6 +967,7 @@ export function FilterPanel({
     duplicate: (id) => rowCbRef.current.onDuplicateFilter(id),
     viewOnly: (id) => rowCbRef.current.onViewFilterOnly(id),
     toggleTrack: (filterId, timeField) => rowCbRef.current.onToggleTimelineTrack(filterId, timeField),
+    selectClick: (id, e) => rowCbRef.current.selectClick(id, e),
   }), []);
 
   // filterId → its field names already plotted as timeline tracks. Memoized so
@@ -904,8 +982,27 @@ export function FilterPanel({
     return m;
   }, [set.sources]);
 
+  // Flat top-to-bottom order of the rows currently on screen — the axis a
+  // Shift-click range runs along. Members of a collapsed group aren't rendered,
+  // so they're excluded (a range can't reach into hidden rows).
+  const visibleIds = searching
+    ? filtered.map((f) => f.id)
+    : topItems.flatMap((it) =>
+        it.kind === "filter" ? [it.filter.id]
+          : it.group.collapsed ? [] : byGroup(it.group.id).map((f) => f.id));
+  visibleIdsRef.current = visibleIds;
+
+  const selectedCount = selected.size;
+  // Master checkbox doubles as "clear selection": anything selected → clear all;
+  // nothing selected → select every visible row.
+  const toggleSelectAll = () => setSelected((prev) => prev.size > 0 ? new Set() : new Set(visibleIds));
+  const deleteSelected = async () => {
+    if (selectedCount === 0) return;
+    if (await onDeleteFilters([...selected])) exitSelect();
+  };
+
   function renderRow(f: Filter) {
-    return <FilterRow key={f.id} f={f} index={indexById.get(f.id) ?? -1} count={counts[f.id] ?? 0} trackedFields={trackedByFilter.get(f.id) ?? NO_TRACKED_FIELDS} searching={searching} api={rowApi} />;
+    return <FilterRow key={f.id} f={f} index={indexById.get(f.id) ?? -1} count={counts[f.id] ?? 0} trackedFields={trackedByFilter.get(f.id) ?? NO_TRACKED_FIELDS} searching={searching} selectMode={selectMode} selected={selected.has(f.id)} api={rowApi} />;
   }
 
   // ---- drag-and-drop (dnd-kit "multiple lists") ----
@@ -1153,14 +1250,14 @@ export function FilterPanel({
             <MoreHorizontal />
           </DropdownMenuTrigger>
           <DropdownMenuContent side="bottom" align="end">
-            <PanelMenuItems onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk} />
+            <PanelMenuItems onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk} onEnterSelect={() => setSelectMode(true)} />
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
 
       {/* filter list */}
       {filters.length === 0 ? (
-        <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk}>
+        <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk} onEnterSelect={() => setSelectMode(true)}>
           <div className="filter-empty">
             <FilterIcon size={26} style={{ color: "var(--text-3)" }} />
             <div className="fe-title">No filters yet</div>
@@ -1169,7 +1266,7 @@ export function FilterPanel({
         </PanelListZone>
       ) : searching ? (
         <DndContext sensors={sensors} collisionDetection={closestCenter}>
-          <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk}>
+          <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk} onEnterSelect={() => setSelectMode(true)}>
             {filtered.length === 0 ? (
               <div className="filter-empty">
                 <FilterIcon size={26} style={{ color: "var(--text-3)" }} />
@@ -1196,7 +1293,7 @@ export function FilterPanel({
           onDragEnd={handleDragEnd}
           onDragCancel={() => { setDrag(null); resetDnd(); }}
         >
-          <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk}>
+          <PanelListZone onAddFilter={() => onAddFilter()} onAddGroup={handleAddGroup} onBulk={onBulk} onEnterSelect={() => setSelectMode(true)}>
             <TopDropZone>
               <SortableContext items={topIds} strategy={verticalListSortingStrategy}>
                 {topItems.map((it) =>
@@ -1233,6 +1330,39 @@ export function FilterPanel({
             ) : null}
           </DragOverlay>
         </DndContext>
+      )}
+
+      {selectMode && (
+        <div className="select-bar">
+          <span className="sb-all" title={selectedCount > 0 ? "Clear selection" : "Select all"}>
+            <Checkbox checked={selectedCount > 0} onCheckedChange={() => toggleSelectAll()} />
+          </span>
+          <span className="sb-count" title={`${selectedCount} selected`}>
+            {selectedCount} &nbsp;selected
+          </span>
+          <span className="sb-spacer" />
+          <Button
+            size="xs" variant="outline" disabled={selectedCount === 0}
+            title="Enable selected" onClick={() => onSetFiltersEnabled([...selected], true)}
+          >
+            <Eye data-icon="inline-start" /><span className="sb-label">Enable</span>
+          </Button>
+          <Button
+            size="xs" variant="outline" disabled={selectedCount === 0}
+            title="Disable selected" onClick={() => onSetFiltersEnabled([...selected], false)}
+          >
+            <EyeOff data-icon="inline-start" /><span className="sb-label">Disable</span>
+          </Button>
+          <Button
+            size="xs" variant="destructive" disabled={selectedCount === 0}
+            title="Delete selected" onClick={() => void deleteSelected()}
+          >
+            <Trash2 data-icon="inline-start" /><span className="sb-label">Delete</span>
+          </Button>
+          <Button size="xs" title="Done" onClick={exitSelect}>
+            <Check data-icon="inline-start" /><span className="sb-label">Done</span>
+          </Button>
+        </div>
       )}
     </div>
   );
