@@ -639,6 +639,14 @@ button { font-family: inherit; }
 .tlc-tip-h { display: flex; align-items: center; gap: 6px; color: var(--text-3, #8c929b); margin-bottom: 2px; }
 .tlc-tip-lane { font-size: 10px; font-weight: 700; color: var(--text); padding: 0 5px; border-radius: 6px; }
 .tlc-tip-t { font-variant-numeric: tabular-nums; font-weight: 600; }
+/* Span begin/end/dur: labelled rows, value right-aligned (tabular so the
+   columns line up); the dur row picks up the timeline accent so it pops. */
+.tlc-tip-span { display: grid; gap: 1px; font-variant-numeric: tabular-nums; }
+.tlc-tip-srow { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.tlc-tip-sk { color: var(--text-3, #8c929b); }
+.tlc-tip-sv { font-weight: 600; }
+.tlc-tip-srow.dur { margin-top: 1px; }
+.tlc-tip-srow.dur .tlc-tip-sk, .tlc-tip-srow.dur .tlc-tip-sv { color: #2c6ce6; font-weight: 700; }
 .tlc-tip-fields { margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--border); display: grid; gap: 1px; }
 .tlc-tip-field { display: flex; gap: 8px; justify-content: space-between; min-width: 0; }
 .tlc-tip-k { color: var(--text-3, #8c929b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
