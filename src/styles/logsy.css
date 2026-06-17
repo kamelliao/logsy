@@ -808,12 +808,30 @@ button { font-family: inherit; }
   0%, 25% { background: var(--accent-bg); border-color: #2c6ce6; box-shadow: inset 0 0 0 1.5px #2c6ce6; }
   100% { background: #fff; border-color: var(--border); box-shadow: none; }
 }
-/* lines currently in the comparison panel get a subtle marker */
-.log-row.incompare .log-gut { box-shadow: inset 2px 0 0 var(--accent, #2c6ce6); }
-/* lines added to the event timeline get a distinct (teal) gutter marker */
-.log-row.intimeline .log-gut { box-shadow: inset 2px 0 0 var(--tl-accent, #0d9488); }
-/* a line in both: compare bar at 0–2px, timeline bar at 2–4px (later inset on top) */
-.log-row.incompare.intimeline .log-gut { box-shadow: inset 4px 0 0 var(--tl-accent, #0d9488), inset 2px 0 0 var(--accent, #2c6ce6); }
+/* Compare/timeline membership has no persistent row marker — the old blue/teal
+   gutter bars (and a neutral ring that replaced them) read as noise; the hover
+   card below carries membership instead. */
+
+/* logline hover card: one shared fixed-position card (no per-row floating-ui,
+   for scroll perf), driven by row mouse-enter. */
+.logrow-hover {
+  position: fixed; z-index: 70; pointer-events: none; max-width: 300px;
+  background: var(--panel-bg, #fff); border: 1px solid var(--border); border-radius: 7px;
+  box-shadow: 0 6px 20px rgba(0,0,0,0.14); padding: 7px 9px; font-size: 11px; color: var(--text);
+}
+.lrh-head { font-weight: 600; color: var(--text-3, #8c929b); margin-bottom: 4px; font-variant-numeric: tabular-nums; }
+.lrh-label { font-size: 10px; color: var(--text-3, #8c929b); margin-bottom: 2px; }
+.lrh-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.lrh-chip { font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 6px; border: 1px solid; max-width: 170px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrh-badges { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 5px; }
+.lrh-badge { display: inline-flex; align-items: center; gap: 4px; font-size: 10px; font-weight: 600; padding: 1px 7px; border-radius: 6px; }
+.lrh-badge.cmp { background: var(--accent-bg-strong, rgba(44,108,230,0.16)); color: #2c6ce6; }
+.lrh-badge.tl { background: rgba(13,148,136,0.16); color: #0d9488; }
+.lrh-fields { margin-top: 6px; padding-top: 5px; border-top: 1px solid var(--border); display: grid; gap: 1px; }
+.lrh-field { display: flex; justify-content: space-between; gap: 10px; }
+.lrh-k { color: var(--text-3, #8c929b); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrh-v { font-variant-numeric: tabular-nums; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lrh-more { color: var(--text-3, #8c929b); font-size: 10px; margin-top: 2px; }
 
 .match-map {
   flex: 0 0 14px; width: 14px;

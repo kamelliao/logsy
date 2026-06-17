@@ -138,6 +138,21 @@ export function LogView({
   // so a new bookmark isn't created (and an existing one isn't changed) on dismiss.
   const [markerDraft, setMarkerDraft] = useState<{ icon: MarkerIcon; note: string; isNew: boolean } | null>(null);
 
+  // One shared logline hover card (line n + screen anchor). A single element —
+  // never a per-row HoverCard — so it can't regress virtualized scroll perf.
+  const [hover, setHover] = useState<{ n: number; x: number; y: number } | null>(null);
+  const hoverTimer = useRef<number | null>(null);
+  const clearHover = () => {
+    if (hoverTimer.current !== null) { window.clearTimeout(hoverTimer.current); hoverTimer.current = null; }
+    setHover((h) => (h === null ? h : null));
+  };
+  const armHover = (e: React.MouseEvent, n: number) => {
+    if (dragStartRiRef.current !== null) return; // don't pop a card mid drag-select
+    const x = e.clientX, y = e.clientY;
+    if (hoverTimer.current !== null) window.clearTimeout(hoverTimer.current);
+    hoverTimer.current = window.setTimeout(() => setHover({ n, x, y }), 350);
+  };
+
   // Markers indexed by line number for O(1) gutter lookups.
   const markerMap = useMemo(() => new Map(markers.map((m) => [m.n, m])), [markers]);
 
@@ -855,18 +870,13 @@ export function LogView({
             ref={scrollRef}
             onMouseDown={() => setSelMenu(null)}
             onMouseUp={handleMouseUp}
+            onScroll={clearHover}
             style={{ overflowY: "auto", overflowX: "auto" }}
           >
             <div className="log-inner" style={{ minWidth: minW, height: totalSize, position: "relative" }}>
               {virtualItems.map((vItem) => {
                 const r = visible[vItem.index];
                 const w = r.winner;
-                // Tooltip lists every matched highlight filter by serial (winner
-                // first), e.g. "Matched filters: #1, #3, #5".
-                const matched = w ? view.matchedFiltersFor(r.n) : [];
-                const matchTitle = matched.length
-                  ? `Matched filter${matched.length > 1 ? "s" : ""}: ${matched.map((f) => `#${filterSerial.get(f.id) ?? "?"}`).join(", ")}`
-                  : undefined;
                 const dim = viewMode === "all" && view.hasHighlights && !w;
                 const sel = selectedLines.has(r.n);
                 const mk = markerMap.get(r.n);
@@ -887,13 +897,13 @@ export function LogView({
                     style={{ position: "absolute", top: 0, left: 0, width: "100%", transform: `translateY(${vItem.start}px)` }}
                   >
                     <div
-                      className={"log-row" + (w ? " matched" : "") + (dim ? " dim" : "") + (sel ? " selected" : "") + (canExpand ? " expandable" : "") + (compareLines.has(r.n) ? " incompare" : "") + (timelineLines.has(r.n) ? " intimeline" : "")}
+                      className={"log-row" + (w ? " matched" : "") + (dim ? " dim" : "") + (sel ? " selected" : "") + (canExpand ? " expandable" : "")}
                       style={rowStyle}
-                      title={matchTitle}
-                      onMouseDown={(e) => handleRowMouseDown(e, vItem.index)}
-                      onMouseEnter={() => handleRowMouseEnter(vItem.index)}
+                      onMouseDown={(e) => { clearHover(); handleRowMouseDown(e, vItem.index); }}
+                      onMouseEnter={(e) => { handleRowMouseEnter(vItem.index); armHover(e, r.n); }}
+                      onMouseLeave={clearHover}
                       onClick={(e) => onRowClick(e, vItem.index, r.n)}
-                      onContextMenu={(e) => onRowContextMenu(e, vItem.index, r.n)}
+                      onContextMenu={(e) => { clearHover(); onRowContextMenu(e, vItem.index, r.n); }}
                     >
                       {/* sticky left rail: marker + chevron + line number stay
                           pinned to the left edge while the row scrolls right */}
@@ -1023,6 +1033,60 @@ export function LogView({
               <div className="menu-item" onClick={() => { onRemoveFromTimeline(inTl); setRowMenu(null); }}>
                 <span className="mi-ico"><Activity size={14} /></span>
                 {inTl.length > 1 ? `Remove ${inTl.length} lines from timeline` : "Remove from timeline"}
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
+      {/* logline hover card — one shared element, anchored at the cursor; only
+          shown when there's something to say (matches, panel membership, or
+          parsed fields), so raw unmatched lines stay quiet. */}
+      {hover && (() => {
+        const n = hover.n;
+        const matched = view.matchedFiltersFor(n);
+        const inCmp = compareLines.has(n);
+        const inTl = timelineLines.has(n);
+        const fields = view.fieldsFor(n);
+        const fieldEntries = fields ? Object.entries(fields) : [];
+        if (!matched.length && !inCmp && !inTl && !fieldEntries.length) return null;
+        const cardW = 300;
+        const flipLeft = hover.x > window.innerWidth - (cardW + 16);
+        const flipUp = hover.y > window.innerHeight / 2;
+        const pos: CSSProperties = {
+          maxWidth: cardW,
+          left: flipLeft ? undefined : hover.x + 14,
+          right: flipLeft ? window.innerWidth - hover.x + 14 : undefined,
+          top: flipUp ? undefined : hover.y + 14,
+          bottom: flipUp ? window.innerHeight - hover.y + 14 : undefined,
+        };
+        return (
+          <div className="logrow-hover" style={pos}>
+            <div className="lrh-head">Line {n}</div>
+            {matched.length > 0 && (
+              <div>
+                <div className="lrh-label">Matched</div>
+                <div className="lrh-chips">
+                  {matched.map((f) => (
+                    <span key={f.id} className="lrh-chip" style={{ background: f.bgColor, color: f.textColor, borderColor: f.textColor }}>
+                      #{filterSerial.get(f.id) ?? "?"}{f.description ? ` ${f.description}` : ""}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+            {(inCmp || inTl) && (
+              <div className="lrh-badges">
+                {inCmp && <span className="lrh-badge cmp"><Columns3 size={11} /> In Compare</span>}
+                {inTl && <span className="lrh-badge tl"><Activity size={11} /> In Timeline</span>}
+              </div>
+            )}
+            {fieldEntries.length > 0 && (
+              <div className="lrh-fields">
+                {fieldEntries.slice(0, 5).map(([k, v]) => (
+                  <div className="lrh-field" key={k}><span className="lrh-k">{k}</span><span className="lrh-v">{v.raw}</span></div>
+                ))}
+                {fieldEntries.length > 5 && <div className="lrh-more">+{fieldEntries.length - 5} more</div>}
               </div>
             )}
           </div>
