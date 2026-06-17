@@ -56,6 +56,34 @@ function importSources(raw: unknown): TimelineSource[] {
 }
 
 /**
+ * Give every group and filter in an imported document a fresh id, rewiring
+ * `groupId`, the top-level `order`, and timeline source bindings to match.
+ * Required before *appending* an import into a set that may already contain the
+ * original ids (loading the same file twice, or two files that share ids):
+ * duplicate ids would corrupt group membership, source bindings and React keys.
+ * Mirrors the id-remap used by `duplicateSet`, plus source bindings.
+ */
+export function remapImportIds(b: ImportedFilters): ImportedFilters {
+  const groupMap = new Map(b.groups.map((grp) => [grp.id, uid("grp")] as const));
+  const filMap = new Map(b.filters.map((fl) => [fl.id, uid("f")] as const));
+  return {
+    groups: b.groups.map((grp) => ({ ...grp, id: groupMap.get(grp.id)! })),
+    filters: b.filters.map((fl) => ({
+      ...fl,
+      id: filMap.get(fl.id)!,
+      groupId: fl.groupId ? groupMap.get(fl.groupId) ?? null : null,
+      fields: fl.fields ? fl.fields.map((x) => ({ ...x })) : undefined,
+    })),
+    order: b.order.map((id) => groupMap.get(id) ?? filMap.get(id)).filter((x): x is string => !!x),
+    // A track binds to a filter by id; drop tracks whose filter didn't come
+    // along, and give the rest fresh ids + remapped bindings.
+    sources: b.sources
+      .filter((s) => filMap.has(s.filterId))
+      .map((s) => ({ ...s, id: uid("tlt"), filterId: filMap.get(s.filterId)! })),
+  };
+}
+
+/**
  * Parse an already-JSON-parsed filters file into a set's filters/groups/order.
  * Returns null when the data isn't a recognizable filter document.
  */

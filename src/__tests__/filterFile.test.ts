@@ -1,5 +1,6 @@
 import { test, expect } from "bun:test";
-import { exportPayload, buildGroupFromImport } from "../filterFile";
+import { exportPayload, buildGroupFromImport, remapImportIds } from "../filterFile";
+import type { ImportedFilters } from "../filterFile";
 import { makeFilter } from "../data";
 import type { Filter, FilterGroup, FilterSet } from "../types";
 
@@ -66,6 +67,48 @@ test("round-trip preserves timeline tracks and de-dupes by filterId:timeField", 
     { id: "tl1", filterId: f.id, timeField: "a", lane: "req", kind: "span", endField: "b", unit: "ms", color: "#abc", collapsed: undefined, hidden: undefined },
     { id: "tl3", filterId: "other", timeField: "a", lane: "ok", kind: "point", endField: undefined, unit: "ns", color: undefined, collapsed: undefined, hidden: undefined },
   ]);
+});
+
+// --- append: id remap -------------------------------------------------------
+
+test("remapImportIds gives fresh ids and rewires groupId, order, and sources", () => {
+  const built = buildGroupFromImport({
+    groups: [{ id: "g1", name: "Boot", collapsed: false }],
+    filters: [
+      { id: "f1", pattern: "mount", groupId: "g1" },
+      { id: "f2", pattern: "loose", groupId: null },
+    ],
+    order: ["f2", "g1"],
+    sources: [
+      { id: "tl1", filterId: "f1", timeField: "a", lane: "req", kind: "point", unit: "ms" },
+      { id: "tl-orphan", filterId: "gone", timeField: "a", lane: "x", kind: "point", unit: "ms" },
+    ],
+  })!;
+  const out = remapImportIds(built);
+
+  // Every id is regenerated — none of the originals survive.
+  const oldIds = new Set(["g1", "f1", "f2", "tl1", "tl-orphan", "gone"]);
+  expect(out.groups[0].id).not.toBe("g1");
+  out.filters.forEach((f) => expect(oldIds.has(f.id)).toBe(false));
+  out.sources.forEach((s) => expect(oldIds.has(s.id)).toBe(false));
+
+  // groupId still points at the (now-renamed) group.
+  const newG = out.groups[0].id;
+  const grouped = out.filters.find((f) => f.pattern === "mount")!;
+  const loose = out.filters.find((f) => f.pattern === "loose")!;
+  expect(grouped.groupId).toBe(newG);
+  expect(loose.groupId).toBeNull();
+
+  // order references the remapped loose-filter id then the remapped group id.
+  expect(out.order).toEqual([loose.id, newG]);
+
+  // The track binding to f1 is remapped; the orphan (filter not imported) drops.
+  expect(out.sources).toHaveLength(1);
+  expect(out.sources[0].filterId).toBe(grouped.id);
+
+  // Field definitions are deep-copied, not shared with the source.
+  const src: ImportedFilters = built;
+  expect(out.filters[0]).not.toBe(src.filters[0]);
 });
 
 // --- legacy format ----------------------------------------------------------

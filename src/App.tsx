@@ -39,7 +39,7 @@ function parseTatFilters(
   return { filters, groups: [], order: filters.map((f) => f.id), sources: [] };
 }
 
-import { buildGroupFromImport, exportPayload } from "./filterFile";
+import { buildGroupFromImport, exportPayload, remapImportIds } from "./filterFile";
 import { compileAll, computeView, buildTimeline, laneColor, guessUnit, isTimeLike } from "./logic";
 import { tokenize, buildPattern } from "./lib/generalize";
 import { Sidebar } from "./components/Sidebar";
@@ -815,12 +815,15 @@ export function App() {
     else await saveFiltersAs();
   };
 
-  // Load a filter file from a known path into the current set (replacing its
-  // contents). Confirms first when the set isn't empty. Used by both the
-  // "Load Filters" dialog and the Recent Filter Files menu.
-  const loadFilterFromPath = async (path: string) => {
+  // Load a filter file from a known path into the current set. `mode` is either
+  // "replace" (swap the whole set, the default) or "append" (merge the import in
+  // as additional filters/groups beside the existing ones). Replace confirms
+  // first when the set isn't empty; append is additive and undoable, so it
+  // doesn't. Used by the "Load Filters"/"Append Filters" dialogs and the Recent
+  // Filter Files menu.
+  const loadFilterFromPath = async (path: string, mode: "replace" | "append" = "replace") => {
     if (!file || !set) return;
-    if (set.filters.length > 0) {
+    if (mode === "replace" && set.filters.length > 0) {
       const ok = await confirm(
         "Loading will replace every filter and group in the current set. This can't be undone.",
         { title: "Replace current filters?", kind: "warning", okLabel: "Replace", cancelLabel: "Cancel" }
@@ -837,6 +840,26 @@ export function App() {
     try { built = buildGroupFromImport(JSON.parse(text)); } catch { /* not JSON — try TAT below */ }
     if (!built) { built = parseTatFilters(text); foreign = !!built; } // TextAnalysisTool.NET (.tat)
     if (!built) { toast.error("That file isn't Logsy or TextAnalysisTool.NET filters."); return; }
+
+    if (mode === "append") {
+      // Fresh ids so the merged-in filters/groups/tracks never collide with what
+      // the set already holds. Leave filePath/savedSnapshot untouched: appending
+      // dirties the set (Save Filter re-enables) without retargeting the save.
+      const add = remapImportIds(built);
+      patchState((s) => {
+        if (!file || !set) return;
+        const g = withSet(s, file.id, set.id);
+        g.filters.push(...add.filters);
+        g.groups.push(...add.groups);
+        g.order.push(...add.order);
+        g.sources = [...(g.sources ?? []), ...add.sources];
+        normalizeState(s);
+      });
+      if (!foreign) pushRecent("recentFilterFiles", path);
+      toast.success("Filters appended");
+      return;
+    }
+
     patchState((s) => {
       if (!file || !set) return;
       const g = withSet(s, file.id, set.id);
@@ -870,6 +893,15 @@ export function App() {
     await loadFilterFromPath(path);
   };
 
+  // "Append filters": pick a file, then merge it into the current set without
+  // replacing what's already there.
+  const appendFilters = async () => {
+    if (!file || !set) return;
+    const path = await open({ multiple: false, filters: OPEN_DIALOG_FILTERS });
+    if (typeof path !== "string") return;
+    await loadFilterFromPath(path, "append");
+  };
+
   // ---------- bulk ----------
   const bulk = (action: string) => {
     if (action === "enableAll")   patchState((s) => { if (file && set) withSet(s, file.id, set.id).filters.forEach((f) => (f.enabled = true)); });
@@ -878,6 +910,7 @@ export function App() {
     else if (action === "save")   void saveFilters();
     else if (action === "saveAs") void saveFiltersAs();
     else if (action === "import") void importFilters();
+    else if (action === "append") void appendFilters();
   };
 
   // ---------- compare panel ----------
@@ -1463,6 +1496,7 @@ export function App() {
     File: [
       { label: "Open…", key: "Ctrl O", action: () => void openFiles() },
       { label: "Load Filters…", disabled: !set, action: () => void importFilters() },
+      { label: "Append Filters…", disabled: !set, action: () => void appendFilters() },
       { label: "Save Filter", disabled: saveFilterDisabled, action: () => void saveFilters() },
       { label: "Save Filter As…", disabled: !set, action: () => void saveFiltersAs() },
       { sep: true },

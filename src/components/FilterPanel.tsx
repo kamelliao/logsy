@@ -1,7 +1,7 @@
 import { memo, useState, useMemo, useRef, useEffect, useCallback, CSSProperties, ReactNode } from "react";
 import {
   Activity, Check, ChevronDown, ChevronRight, Copy, Eye, EyeOff,
-  Filter as FilterIcon, FileDown, FolderPlus, GripVertical,
+  Filter as FilterIcon, FileDown, FilePlus, FolderPlus, GripVertical,
   ListChecks, ListX, MoreVertical, MoreHorizontal, Pencil,
   Plus, Save, Search, Trash2, Upload, X,
 } from "lucide-react";
@@ -193,6 +193,9 @@ function PanelMenuItems({ onAddFilter, onAddGroup, onBulk }: {
       </DropdownMenuItem>
       <DropdownMenuItem onClick={() => onBulk("import")}>
         <span className="mi-ico"><Upload size={15} /></span>Import filters…
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={() => onBulk("append")}>
+        <span className="mi-ico"><FilePlus size={15} /></span>Append filters…
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onClick={() => onBulk("clear")}>
