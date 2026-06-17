@@ -994,8 +994,10 @@ export function FilterPanel({
 
   const selectedCount = selected.size;
   // Master checkbox doubles as "clear selection": anything selected → clear all;
-  // nothing selected → select every visible row.
-  const toggleSelectAll = () => setSelected((prev) => prev.size > 0 ? new Set() : new Set(visibleIds));
+  // nothing selected → select every filter in the set. Note this spans ALL
+  // filters, not just `visibleIds` — rows inside a collapsed group must be
+  // selected too (visibleIds is only the axis for Shift-click ranges).
+  const toggleSelectAll = () => setSelected((prev) => prev.size > 0 ? new Set() : new Set(filters.map((f) => f.id)));
   const deleteSelected = async () => {
     if (selectedCount === 0) return;
     if (await onDeleteFilters([...selected])) exitSelect();
