@@ -1,6 +1,6 @@
 import { memo, useState, useMemo, useRef, useEffect, useCallback, CSSProperties, ReactNode } from "react";
 import {
-  Activity, ChevronDown, ChevronRight, Copy, Eye, EyeOff,
+  Activity, Check, ChevronDown, ChevronRight, Copy, Eye, EyeOff,
   Filter as FilterIcon, FileDown, FolderPlus, GripVertical,
   ListChecks, ListX, MoreVertical, MoreHorizontal, Pencil,
   Plus, Save, Search, Trash2, Upload, X,
@@ -52,16 +52,30 @@ import {
   ContextMenuTrigger,
 } from "./ui/context-menu";
 
+// Shared empty array so rows whose filter has no tracks all get the same
+// reference — keeps FilterRow's memo from breaking on every panel render.
+const NO_TRACKED_FIELDS: string[] = [];
+
 // ---- shared menu item groups ----
 // Rendered inside both the "⋮" dropdown and the right-click context menu.
 // (base-ui's ContextMenu reuses the same MenuItem/Separator parts, so these
 // fragments work in either popup.)
 
-function RowMenuItems({ onEdit, onViewOnly, onDuplicate, onDelete, timeFields, onAddTrack }: {
+function RowMenuItems({ onEdit, onViewOnly, onDuplicate, onDelete, timeFields, trackedFields, onToggleTrack }: {
   onEdit: () => void; onViewOnly: () => void; onDuplicate: () => void; onDelete: () => void;
   /** Numeric fields of this filter that can back a timeline track. */
-  timeFields: FieldDef[]; onAddTrack: (field: string) => void;
+  timeFields: FieldDef[];
+  /** Names of this filter's fields already plotted as a timeline track. */
+  trackedFields: string[];
+  onToggleTrack: (field: string) => void;
 }) {
+  // Timeline items behave like checkboxes: a ✓ marks a tracked field, and
+  // clicking toggles it (add when off, remove when on).
+  const isTracked = (name: string) => trackedFields.includes(name);
+  // Single-field item: the leading icon doubles as the tracked indicator.
+  const singleTracked = timeFields.length === 1 && isTracked(timeFields[0].name);
+  // Sub-trigger: ✓ when every usable field is already a track.
+  const allTracked = timeFields.length > 0 && timeFields.every((d) => isTracked(d.name));
   return (
     <>
       <DropdownMenuItem onClick={onEdit}>
@@ -77,18 +91,20 @@ function RowMenuItems({ onEdit, onViewOnly, onDuplicate, onDelete, timeFields, o
         <>
           <DropdownMenuSeparator />
           {timeFields.length === 1 ? (
-            <DropdownMenuItem onClick={() => onAddTrack(timeFields[0].name)}>
-              <span className="mi-ico"><Activity size={15} /></span>Add to timeline track
+            <DropdownMenuItem onClick={() => onToggleTrack(timeFields[0].name)}>
+              <span className="mi-ico">{singleTracked ? <Check size={15} /> : <Activity size={15} />}</span>
+              {singleTracked ? "Remove from timeline track" : "Add to timeline track"}
             </DropdownMenuItem>
           ) : (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
-                <span className="mi-ico"><Activity size={15} /></span>Add to timeline track
+                <span className="mi-ico">{allTracked ? <Check size={15} /> : <Activity size={15} />}</span>
+                Timeline tracks
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
                 {timeFields.map((d) => (
-                  <DropdownMenuItem key={d.name} onClick={() => onAddTrack(d.name)}>
-                    <span />{d.name}
+                  <DropdownMenuItem key={d.name} onClick={() => onToggleTrack(d.name)}>
+                    <span className="mi-ico">{isTracked(d.name) ? <Check size={15} /> : null}</span>{d.name}
                   </DropdownMenuItem>
                 ))}
               </DropdownMenuSubContent>
@@ -283,7 +299,7 @@ interface RowApi {
   remove: (id: string) => void;
   duplicate: (id: string) => void;
   viewOnly: (id: string) => void;
-  addTrack: (filterId: string, timeField: string) => void;
+  toggleTrack: (filterId: string, timeField: string) => void;
 }
 
 interface FilterRowProps {
@@ -291,6 +307,8 @@ interface FilterRowProps {
   /** 0-based position in the set; shown as a 1-based "#N" serial (matches the timeline). */
   index: number;
   count: number;
+  /** Names of this filter's fields already plotted as a timeline track (stable ref). */
+  trackedFields: string[];
   searching: boolean;
   api: RowApi;
 }
@@ -315,15 +333,15 @@ function sameFilter(a: Filter, b: Filter): boolean {
 // drag — dnd-kit re-renders every sortable subscriber on drag start and again
 // each time the pointer crosses a row — only re-runs the thin shell below,
 // not 100+ of these trees per step.
-const FilterRowCells = memo(function FilterRowCells({ f, index, count, api, dragging }: {
-  f: Filter; index: number; count: number; api: RowApi; dragging: boolean;
+const FilterRowCells = memo(function FilterRowCells({ f, index, count, trackedFields, api, dragging }: {
+  f: Filter; index: number; count: number; trackedFields: string[]; api: RowApi; dragging: boolean;
 }) {
   const onEdit = () => api.edit(f.id);
   const onDelete = () => api.remove(f.id);
   const onDuplicate = () => api.duplicate(f.id);
   const onViewOnly = () => api.viewOnly(f.id);
   const timeFields = trackFieldsOf(f);
-  const onAddTrack = (field: string) => api.addTrack(f.id, field);
+  const onToggleTrack = (field: string) => api.toggleTrack(f.id, field);
 
   const flags: { t: string; title: string }[] = [];
   if (f.caseSensitive) flags.push({ t: "Aa", title: "Case sensitive" });
@@ -415,13 +433,13 @@ const FilterRowCells = memo(function FilterRowCells({ f, index, count, api, drag
               <MoreVertical />
             </DropdownMenuTrigger>
             <DropdownMenuContent side="bottom" align="end">
-              <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} timeFields={timeFields} onAddTrack={onAddTrack} />
+              <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} timeFields={timeFields} trackedFields={trackedFields} onToggleTrack={onToggleTrack} />
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
         </HoverCardTrigger>
         <ContextMenuContent>
-          <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} timeFields={timeFields} onAddTrack={onAddTrack} />
+          <RowMenuItems onEdit={onEdit} onViewOnly={onViewOnly} onDuplicate={onDuplicate} onDelete={onDelete} timeFields={timeFields} trackedFields={trackedFields} onToggleTrack={onToggleTrack} />
         </ContextMenuContent>
       </ContextMenu>
 
@@ -462,6 +480,7 @@ const FilterRowCells = memo(function FilterRowCells({ f, index, count, api, drag
   );
 }, (prev, next) =>
   sameFilter(prev.f, next.f) && prev.index === next.index && prev.count === next.count
+  && prev.trackedFields === next.trackedFields
   && prev.dragging === next.dragging && prev.api === next.api);
 
 // Thin sortable shell: just the dnd hook and a wrapper div carrying the drag
@@ -469,7 +488,7 @@ const FilterRowCells = memo(function FilterRowCells({ f, index, count, api, drag
 // change mid-drag; the memoized cells above are skipped while their props are
 // stable. (memo on the shell itself covers parent-driven re-renders; context
 // updates from inside useSortable bypass it by design.)
-const FilterRow = memo(function FilterRow({ f, index, count, searching, api }: FilterRowProps) {
+const FilterRow = memo(function FilterRow({ f, index, count, trackedFields, searching, api }: FilterRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: f.id,
     disabled: searching,
@@ -481,11 +500,12 @@ const FilterRow = memo(function FilterRow({ f, index, count, searching, api }: F
   };
   return (
     <div ref={setNodeRef} data-filter-id={f.id} style={style} {...attributes} {...(searching ? {} : listeners)}>
-      <FilterRowCells f={f} index={index} count={count} api={api} dragging={isDragging} />
+      <FilterRowCells f={f} index={index} count={count} trackedFields={trackedFields} api={api} dragging={isDragging} />
     </div>
   );
 }, (prev, next) =>
   sameFilter(prev.f, next.f) && prev.index === next.index && prev.count === next.count
+  && prev.trackedFields === next.trackedFields
   && prev.searching === next.searching && prev.api === next.api);
 
 // ---- group ----
@@ -730,8 +750,8 @@ interface FilterPanelProps {
   onDuplicateFilter: (id: string) => void;
   onViewFilterOnly: (id: string) => void;
   onEditFilter: (id: string) => void;
-  /** Append a timeline track bound to (filterId, timeField). */
-  onAddTimelineTrack: (filterId: string, timeField: string) => void;
+  /** Toggle a timeline track bound to (filterId, timeField): add if absent, remove if present. */
+  onToggleTimelineTrack: (filterId: string, timeField: string) => void;
   /** Commit a whole-group drag arrangement in one undoable step. */
   onApplyLayout: (model: FilterLayout) => void;
   onBulk: (action: string) => void;
@@ -749,7 +769,7 @@ export function FilterPanel({
   onSwitchSet, onAddSet, onRenameSet, onDeleteSet, onDuplicateSet, onReorderSet,
   onAddGroup, onRenameGroup, onToggleGroup, onDeleteGroup, onSetGroupEnabled,
   onUpdateFilter, onAddFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onEditFilter,
-  onAddTimelineTrack, onApplyLayout, onBulk,
+  onToggleTimelineTrack, onApplyLayout, onBulk,
   flashFilterId, flashNonce, onFlashConsumed,
 }: FilterPanelProps) {
   const [search, setSearch] = useState("");
@@ -858,19 +878,31 @@ export function FilterPanel({
 
   // One identity-stable api object for every row; the latest handlers are read
   // through a ref so the rows' memo never breaks when App re-renders.
-  const rowCbRef = useRef({ onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onAddTimelineTrack });
-  rowCbRef.current = { onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onAddTimelineTrack };
+  const rowCbRef = useRef({ onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onToggleTimelineTrack });
+  rowCbRef.current = { onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onToggleTimelineTrack };
   const rowApi = useMemo<RowApi>(() => ({
     update: (id, patch) => rowCbRef.current.onUpdateFilter(id, patch),
     edit: (id) => rowCbRef.current.onEditFilter(id),
     remove: (id) => rowCbRef.current.onDeleteFilter(id),
     duplicate: (id) => rowCbRef.current.onDuplicateFilter(id),
     viewOnly: (id) => rowCbRef.current.onViewFilterOnly(id),
-    addTrack: (filterId, timeField) => rowCbRef.current.onAddTimelineTrack(filterId, timeField),
+    toggleTrack: (filterId, timeField) => rowCbRef.current.onToggleTimelineTrack(filterId, timeField),
   }), []);
 
+  // filterId → its field names already plotted as timeline tracks. Memoized so
+  // each row gets a stable array ref (its memo compares trackedFields by identity).
+  const trackedByFilter = useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const s of set.sources ?? []) {
+      const list = m.get(s.filterId);
+      if (list) list.push(s.timeField);
+      else m.set(s.filterId, [s.timeField]);
+    }
+    return m;
+  }, [set.sources]);
+
   function renderRow(f: Filter) {
-    return <FilterRow key={f.id} f={f} index={indexById.get(f.id) ?? -1} count={counts[f.id] ?? 0} searching={searching} api={rowApi} />;
+    return <FilterRow key={f.id} f={f} index={indexById.get(f.id) ?? -1} count={counts[f.id] ?? 0} trackedFields={trackedByFilter.get(f.id) ?? NO_TRACKED_FIELDS} searching={searching} api={rowApi} />;
   }
 
   // ---- drag-and-drop (dnd-kit "multiple lists") ----

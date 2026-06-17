@@ -81,6 +81,18 @@ cheap, bounded pieces (badge, gutter, orphan hint). Also rejected earlier: a
 full-text line list (duplicates the log), a "timeline-only" log-view filter (can't
 *add* not-yet lines), and minimap ticks (deferred).
 
+### v2.8 refinements (2026-06-17)
+- **Filter-row timeline menu is now a checkbox toggle.** Each usable field shows a
+  ✓ (`Check` icon) when it's already plotted as a track; clicking toggles it — adds
+  when off, removes when on. Single-field rows flip the label between *Add to
+  timeline track* / *Remove from timeline track*; multi-field rows use a *Timeline
+  tracks* submenu with a ✓ per field (sub-trigger shows ✓ only when all are tracked).
+  The old "Track already exists" toast is gone (re-clicking now removes). Wiring:
+  `FilterPanel` derives a memoized `filterId → tracked field names` map from
+  `set.sources` and threads a stable `trackedFields` array into each row's menu;
+  App's `addTrack` became `toggleTimelineTrack` (`onAddTimelineTrack` →
+  `onToggleTimelineTrack`).
+
 ### v2.7 refinements (2026-06-14)
 - **`+ Add track` button removed.** It was the lowest-context of the three add
   paths — a mini filter picker rebuilding a selection the user already has in the
