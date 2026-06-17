@@ -984,15 +984,17 @@ export function App() {
   // *what* to plot; it does NOT pull lines in (that would conflate "define a
   // measure" with "load data" and could flood the canvas). The track row carries
   // an explicit "import matching lines" button instead (onImportTrackLines).
-  const addTrack = (filterId: string, timeField: string) => {
+  // Toggle a timeline track for (filter, time field): the filter-row menu shows a
+  // ✓ when it's plotted, so clicking a checked field removes it and an unchecked
+  // one adds it — a plain checkbox, no "already exists" dead-end.
+  const toggleTimelineTrack = (filterId: string, timeField: string) => {
     if (!file || !set) return;
-    // A track's identity is (filter, time field); adding the same pair again is a
-    // no-op, so tell the user why nothing happened instead of failing silently.
+    // Track identity is (filter, time field).
     if ((set.sources ?? []).some((x) => x.filterId === filterId && x.timeField === timeField)) {
-      const idx = set.filters.findIndex((f) => f.id === filterId);
-      toast(`Track already exists`, {
-        description: `Filter ${idx >= 0 ? `#${idx + 1}` : ""} already plots "${timeField}".`,
-        position: "bottom-right",
+      patchState((s) => {
+        if (!file || !set) return;
+        const g = withSet(s, file.id, set.id);
+        g.sources = (g.sources ?? []).filter((x) => !(x.filterId === filterId && x.timeField === timeField));
       });
       return;
     }
@@ -1004,7 +1006,7 @@ export function App() {
       if (!file || !set) return;
       const g = withSet(s, file.id, set.id);
       const list = [...(g.sources ?? [])];
-      // Track identity is (filterId, timeField); don't add a duplicate.
+      // Guard the race where the same pair was added between checks.
       if (list.some((x) => x.filterId === filterId && x.timeField === timeField)) return;
       const idx = g.filters.findIndex((f) => f.id === filterId);
       list.push(buildTrack(filterId, timeField, idx, list.length, sample));
@@ -1539,7 +1541,7 @@ export function App() {
         onDuplicateFilter={duplicateFilter}
         onViewFilterOnly={setSoloFilterId}
         onEditFilter={openEditFilter}
-        onAddTimelineTrack={addTrack}
+        onToggleTimelineTrack={toggleTimelineTrack}
         onApplyLayout={applyLayout}
         onBulk={bulk}
         flashFilterId={filterFlash?.id ?? null}
