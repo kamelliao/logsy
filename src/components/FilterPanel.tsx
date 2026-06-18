@@ -1,6 +1,6 @@
 import { memo, useState, useMemo, useRef, useEffect, useCallback, CSSProperties, ReactNode, MouseEvent as ReactMouseEvent } from "react";
 import {
-  Activity, Check, CheckSquare, ChevronDown, ChevronRight, Copy, Eye, EyeOff,
+  ChartGantt, Check, CheckSquare, ChevronDown, ChevronRight, Copy, Eye, EyeOff,
   Filter as FilterIcon, FileDown, FilePlus, FolderPlus, GripVertical,
   ListChecks, ListX, MoreVertical, MoreHorizontal, Pencil,
   Plus, Save, Search, Trash2, Upload, X,
@@ -92,13 +92,13 @@ function RowMenuItems({ onEdit, onViewOnly, onDuplicate, onDelete, timeFields, t
           <DropdownMenuSeparator />
           {timeFields.length === 1 ? (
             <DropdownMenuItem onClick={() => onToggleTrack(timeFields[0].name)}>
-              <span className="mi-ico">{singleTracked ? <Check size={15} /> : <Activity size={15} />}</span>
+              <span className="mi-ico">{singleTracked ? <Check size={15} /> : <ChartGantt size={15} />}</span>
               {singleTracked ? "Remove from timeline track" : "Add to timeline track"}
             </DropdownMenuItem>
           ) : (
             <DropdownMenuSub>
               <DropdownMenuSubTrigger>
-                <span className="mi-ico">{allTracked ? <Check size={15} /> : <Activity size={15} />}</span>
+                <span className="mi-ico">{allTracked ? <Check size={15} /> : <ChartGantt size={15} />}</span>
                 Timeline tracks
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
@@ -369,7 +369,9 @@ const FilterRowCells = memo(function FilterRowCells({ f, index, count, trackedFi
         {/* The row div is, at once, the right-click target and the hover-card
             trigger — base-ui merges the nested render props onto the single
             div. (The dnd-sortable node is the shell wrapping this.) */}
+        {/* Snappier than the 600ms default so the detail card feels responsive on hover. */}
         <HoverCardTrigger
+          delay={150}
           render={
             <ContextMenuTrigger
               render={
@@ -416,7 +418,6 @@ const FilterRowCells = memo(function FilterRowCells({ f, index, count, trackedFi
 
         <button
           className="fr-color"
-          title="Edit color"
           style={{ background: f.bgColor, borderColor: f.textColor }}
           onPointerDown={(e) => e.stopPropagation()}
         />
@@ -425,15 +426,16 @@ const FilterRowCells = memo(function FilterRowCells({ f, index, count, trackedFi
           <span className="fr-serial" title={`Filter #${index + 1}`}>#{index + 1}</span>
         )}
 
-        {/* no per-cell titles — the row's hover card carries the full detail,
-            so hovering the truncated pattern reveals everything, not just it */}
-        <div className="fr-pattern">
-          {f.pattern || <span className="placeholder">untitled filter</span>}
-        </div>
-
-        <div className="fr-desc">
-          {f.description}
-        </div>
+        {/* Description-first: when a filter has a description it's the primary
+            label and the pattern lives in the hover card; otherwise show the
+            pattern. No per-cell titles — the hover card carries full detail. */}
+        {f.description ? (
+          <div className="fr-pattern">{f.description}</div>
+        ) : (
+          <div className="fr-pattern">
+            {f.pattern || <span className="placeholder">untitled filter</span>}
+          </div>
+        )}
 
         {f.fields && f.fields.length > 0 && (
           <div className="fr-flags">
@@ -739,8 +741,11 @@ function FilterRowOverlay({ f, index, count }: { f: Filter; index: number; count
       <span className="fr-check-wrap"><Checkbox checked={f.enabled} onCheckedChange={() => {}} /></span>
       <button className="fr-color" style={{ background: f.bgColor, borderColor: f.textColor }} />
       {index >= 0 && <span className="fr-serial">#{index + 1}</span>}
-      <div className="fr-pattern">{f.pattern || <span className="placeholder">untitled filter</span>}</div>
-      <div className="fr-desc">{f.description}</div>
+      {f.description ? (
+        <div className="fr-pattern">{f.description}</div>
+      ) : (
+        <div className="fr-pattern">{f.pattern || <span className="placeholder">untitled filter</span>}</div>
+      )}
       {flags.length > 0 && <div className="fr-flags">{flags.map((t, i) => <span key={i} className="fr-flag">{t}</span>)}</div>}
       {f.exclude && <span className="fr-flag ex"><EyeOff size={12} /></span>}
       <div className={"fr-count" + (f.exclude ? " ex" : "")}><b>{count.toLocaleString()}</b><span className="fr-hits">&nbsp;hits</span></div>
@@ -802,6 +807,8 @@ interface FilterPanelProps {
   /** Called once a flash request has been consumed, so it doesn't replay on a
    *  later remount (panel open/close, dock switch). */
   onFlashConsumed?: () => void;
+  /** Bumps to focus + select the filter search box (Ctrl+Shift+L). */
+  focusSearchNonce?: number;
 }
 
 export function FilterPanel({
@@ -810,9 +817,10 @@ export function FilterPanel({
   onAddGroup, onRenameGroup, onToggleGroup, onDeleteGroup, onSetGroupEnabled,
   onUpdateFilter, onAddFilter, onDeleteFilter, onDeleteFilters, onSetFiltersEnabled, onDuplicateFilter, onViewFilterOnly, onEditFilter,
   onToggleTimelineTrack, onApplyLayout, onBulk,
-  flashFilterId, flashNonce, onFlashConsumed,
+  flashFilterId, flashNonce, onFlashConsumed, focusSearchNonce,
 }: FilterPanelProps) {
   const [search, setSearch] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
 
   // ---- batch selection mode ----
   // Ephemeral UI state (not persisted, not on the undo stack): while active,
@@ -854,6 +862,13 @@ export function FilterPanel({
     setSelectMode(true);
     selectClick(id, e);
   }, [selectClick]);
+
+  // Focus + select the search box when App bumps the nonce (Ctrl+Shift+L). The
+  // panel is already revealed by selectPanelTab before the bump lands.
+  useEffect(() => {
+    if (!focusSearchNonce) return;
+    requestAnimationFrame(() => { searchInputRef.current?.focus(); searchInputRef.current?.select(); });
+  }, [focusSearchNonce]);
 
   // Esc leaves select mode.
   useEffect(() => {
@@ -926,7 +941,11 @@ export function FilterPanel({
   const filters = set.filters;
   const groups = set.groups;
   const searching = !!q;
-  const filtered = q ? filters.filter((f) => f.pattern.toLowerCase().includes(q)) : filters;
+  // Match the pattern OR the description, so filters named only by their
+  // description are still findable.
+  const filtered = q
+    ? filters.filter((f) => f.pattern.toLowerCase().includes(q) || (f.description ?? "").toLowerCase().includes(q))
+    : filters;
 
   // Section / filter metadata lookups (stable across a drag — only order moves).
   const groupById = new Map(groups.map((s) => [s.id, s] as const));
@@ -1245,6 +1264,7 @@ export function FilterPanel({
         <div className="search-box">
           <Search size={15} />
           <input
+            ref={searchInputRef}
             placeholder="Search filters…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}

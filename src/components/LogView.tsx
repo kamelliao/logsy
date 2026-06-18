@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "react";
-import { Activity, ArrowDown, ArrowUp, Bookmark, ChevronDown, ChevronRight, Columns3, Copy, Download, Eye, Filter, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bookmark, ChartGantt, ChevronDown, ChevronRight, Columns3, Copy, Download, Eye, FileText, Filter, Search, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { LogFile, ViewResult, FieldValue, Marker, MarkerIcon, Filter as FilterCfg } from "../types";
@@ -19,9 +19,14 @@ function charWidth(fontSize: number): number {
   return _charWCache.get(fontSize)!;
 }
 
-function buildFindRe(q: string): RegExp | null {
+// Build the find regex. `regex` treats the query as a regex source (otherwise it
+// matches literally); `caseSensitive` drops the `i` flag. Returns null for an
+// empty query *or* an invalid regex source — callers tell the two apart via the
+// query length (see `findInvalid`).
+function buildFindRe(q: string, regex: boolean, caseSensitive: boolean): RegExp | null {
   if (!q) return null;
-  try { return new RegExp(escapeRegex(q), "gi"); } catch { return null; }
+  const flags = caseSensitive ? "g" : "gi";
+  try { return new RegExp(regex ? q : escapeRegex(q), flags); } catch { return null; }
 }
 
 // Highlights find hits only. Filter matches used to get their matched text
@@ -126,6 +131,9 @@ export function LogView({
   const mapCanvasRef = useRef<HTMLCanvasElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
+  // Find options: `.*` treats the query as a regex, `Aa` makes it case-sensitive.
+  const [findRegex, setFindRegex] = useState(false);
+  const [findCase, setFindCase] = useState(false);
   const [current, setCurrent] = useState(0);
   const [selMenu, setSelMenu] = useState<{ x: number; y: number; text: string } | null>(null);
   const [rowMenu, setRowMenu] = useState<{ x: number; y: number; n: number } | null>(null);
@@ -226,7 +234,13 @@ export function LogView({
     overscan: 12,
   });
 
-  const findRe = useMemo(() => (findOpen ? buildFindRe(query) : null), [query, findOpen]);
+  const findRe = useMemo(
+    () => (findOpen ? buildFindRe(query, findRegex, findCase) : null),
+    [query, findOpen, findRegex, findCase],
+  );
+  // Regex mode with a non-empty query that failed to compile: flag it so the bar
+  // can say "Invalid regex" instead of a misleading "0 / 0".
+  const findInvalid = findOpen && findRegex && query.length > 0 && findRe === null;
 
   const hits = useMemo(() => {
     if (!findRe) return [];
@@ -670,6 +684,36 @@ export function LogView({
     return true;
   }
 
+  // Toggle a bookmark on a line from the keyboard: instant add (default icon, no
+  // note) / remove — the note+icon editor stays a click/right-click away.
+  function toggleBookmarkAt(n: number) {
+    if (markerMap.has(n)) onRemoveMarker(n);
+    else onSetMarker(n, "bookmark", "");
+  }
+
+  // Jump to the next (dir +1) / previous (dir −1) bookmarked line among the
+  // currently-visible rows, relative to the single selected line (or the ends
+  // when nothing is selected). Wraps around. Selects + centers the target.
+  function navMarker(dir: 1 | -1) {
+    const marked = visible.filter((r) => markerMap.has(r.n)).map((r) => r.n); // ascending (visible is in line order)
+    if (!marked.length) return;
+    const ref = selectedLines.size === 1 ? [...selectedLines][0] : null;
+    let target: number;
+    if (ref == null) {
+      target = dir === 1 ? marked[0] : marked[marked.length - 1];
+    } else if (dir === 1) {
+      target = marked.find((n) => n > ref) ?? marked[0];
+    } else {
+      const before = marked.filter((n) => n < ref);
+      target = before.length ? before[before.length - 1] : marked[marked.length - 1];
+    }
+    const idx = visible.findIndex((r) => r.n === target);
+    if (idx < 0) return;
+    setSelectedLines(new Set([target]));
+    setAnchorRi(idx);
+    rowVirtualizer.scrollToIndex(idx, { align: "center" });
+  }
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       const tag = (e.target as HTMLElement)?.tagName;
@@ -695,11 +739,22 @@ export function LogView({
       } else if (e.key === "ArrowLeft" && selectedLines.size === 1) {
         const n = [...selectedLines][0];
         setExpandedLines((s) => { const x = new Set(s); x.delete(n); return x; });
+      } else if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D")) {
+        // Bookmark keys: Ctrl+D toggle · Ctrl+, prev · Ctrl+. next (, . are the
+        // < > keys, so prev/next sit adjacent and stay on the home row).
+        e.preventDefault();
+        if (selectedLines.size === 1) toggleBookmarkAt([...selectedLines][0]);
+      } else if ((e.ctrlKey || e.metaKey) && e.key === ",") {
+        e.preventDefault();
+        navMarker(-1);
+      } else if ((e.ctrlKey || e.metaKey) && e.key === ".") {
+        e.preventDefault();
+        navMarker(1);
       }
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedLines, visible, showLineNumbers]);
+  }, [selectedLines, visible, showLineNumbers, markerMap]);
 
   function exportView() {
     const text = visible.map((r) => String(r.n).padStart(8) + "  " + r.text).join("\n");
@@ -753,7 +808,7 @@ export function LogView({
       {/* header */}
       <div className="logview-bar">
         <div className="lv-title">
-          <Search size={15} style={{ color: "#4f8cff" }} />
+          <FileText size={15} style={{ color: "#4f8cff" }} />
           {file.name}
           {file.encoding && (
             <Tooltip>
@@ -777,6 +832,7 @@ export function LogView({
           {" / " + view.rows.length.toLocaleString() + " lines"}
           {view.hasHighlights && <span>{"  ·  "}<b>{matchedCount.toLocaleString()}</b>{" matched"}</span>}
           {hiddenByExclude > 0 && <span style={{ color: "var(--error)" }}>{"  ·  " + hiddenByExclude.toLocaleString() + " excluded"}</span>}
+          {selectedLines.size > 0 && <span className="lv-sel">{"  ·  "}<b>{selectedLines.size.toLocaleString()}</b>{" selected"}</span>}
         </div>
         <div className="lv-actions">
           <Tooltip>
@@ -829,8 +885,30 @@ export function LogView({
               if (e.key === "Escape") onCloseFind();
             }}
           />
-          <span className="find-count">
-            {hits.length ? `${Math.min(current + 1, hits.length)} / ${hits.length}` : query ? "0 / 0" : ""}
+          <div className="find-opts">
+            <Tooltip>
+              <TooltipTrigger render={
+                <button
+                  className={"find-opt" + (findCase ? " active" : "")}
+                  aria-pressed={findCase}
+                  onClick={() => setFindCase((v) => !v)}
+                />
+              }>Aa</TooltipTrigger>
+              <TooltipContent>Match case</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger render={
+                <button
+                  className={"find-opt" + (findRegex ? " active" : "")}
+                  aria-pressed={findRegex}
+                  onClick={() => setFindRegex((v) => !v)}
+                />
+              }>.*</TooltipTrigger>
+              <TooltipContent>Use regular expression</TooltipContent>
+            </Tooltip>
+          </div>
+          <span className={"find-count" + (findInvalid ? " invalid" : "")}>
+            {findInvalid ? "Invalid regex" : hits.length ? `${Math.min(current + 1, hits.length)} / ${hits.length}` : query ? "0 / 0" : ""}
           </span>
           <div className="find-divider" />
           <div className="find-nav">
@@ -1025,13 +1103,13 @@ export function LogView({
             )}
             {parsed.length > 0 && notInTl.length > 0 && (
               <div className="menu-item" onClick={() => { onAddToTimeline(notInTl); setRowMenu(null); }}>
-                <span className="mi-ico"><Activity size={14} /></span>
+                <span className="mi-ico"><ChartGantt size={14} /></span>
                 {notInTl.length > 1 ? `Add ${notInTl.length} lines to timeline` : "Add to timeline"}
               </div>
             )}
             {inTl.length > 0 && (
               <div className="menu-item" onClick={() => { onRemoveFromTimeline(inTl); setRowMenu(null); }}>
-                <span className="mi-ico"><Activity size={14} /></span>
+                <span className="mi-ico"><ChartGantt size={14} /></span>
                 {inTl.length > 1 ? `Remove ${inTl.length} lines from timeline` : "Remove from timeline"}
               </div>
             )}
@@ -1078,7 +1156,7 @@ export function LogView({
             {(inCmp || inTl) && (
               <div className="lrh-badges">
                 {inCmp && <span className="lrh-badge cmp"><Columns3 size={11} /> In Compare</span>}
-                {inTl && <span className="lrh-badge tl"><Activity size={11} /> In Timeline</span>}
+                {inTl && <span className="lrh-badge tl"><ChartGantt size={11} /> In Timeline</span>}
               </div>
             )}
             {fieldEntries.length > 0 && (

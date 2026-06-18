@@ -5,7 +5,7 @@ import { tinykeys } from "tinykeys";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { save, open, confirm } from "@tauri-apps/plugin-dialog";
+import { save, open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import type { AppState, LogFile, FilterSet, FilterGroup, Filter, FilterLayout, MarkerIcon, TimelineSource } from "./types";
 import {
@@ -54,6 +54,7 @@ import { TimelinePanel } from "./components/TimelinePanel";
 import { MenuPopup, type MenuItem } from "./components/MenuPopup";
 import { AboutModal } from "./components/AboutModal";
 import { ShortcutsModal } from "./components/ShortcutsModal";
+import { useConfirm } from "./components/ConfirmDialog";
 import { Button } from "./components/ui/button";
 import { Toaster } from "./components/ui/sonner";
 import { TooltipProvider } from "./components/ui/tooltip";
@@ -146,6 +147,10 @@ export function App() {
   const gotoInputRef = useRef<HTMLInputElement>(null);
   // "View this filter only" — ephemeral focus on a single filter's matches.
   const [soloFilterId, setSoloFilterId] = useState<string | null>(null);
+  // App-styled confirm() replacement (see useConfirm) + a bump to focus the
+  // filter panel's search box from a keyboard shortcut.
+  const [appConfirm, confirmNode] = useConfirm();
+  const [focusSearchNonce, setFocusSearchNonce] = useState(0);
 
   useEffect(() => { getVersion().then(setAppVersion).catch(() => { /* not under Tauri */ }); }, []);
 
@@ -275,6 +280,10 @@ export function App() {
   // patchState / undo without stale closures.
   const stateRef = useRef(state);
   stateRef.current = state;
+  // Latest appConfirm, for the once-mounted drag-drop listener (which can't close
+  // over a fresh handler each render).
+  const appConfirmRef = useRef(appConfirm);
+  appConfirmRef.current = appConfirm;
 
   // Flush the debounced persist when the window goes away (reload / close), so
   // edits made within the debounce window aren't lost.
@@ -380,10 +389,11 @@ export function App() {
   // Closing a log discards its workspace (filters, sets) — confirm first.
   const deleteFile = async (fid: string) => {
     const f = stateRef.current.files.find((x) => x.id === fid);
-    const ok = await confirm(
-      `Close "${f?.name ?? "this log"}"? Its filters in this workspace will be discarded.`,
-      { title: "Close log?", kind: "warning", okLabel: "Close", cancelLabel: "Cancel" }
-    );
+    const ok = await appConfirm({
+      title: "Close log?",
+      message: `Close "${f?.name ?? "this log"}"? Its filters in this workspace will be discarded.`,
+      okLabel: "Close", cancelLabel: "Cancel", danger: true,
+    });
     if (!ok) return;
     patchState((s) => {
       s.files = s.files.filter((x) => x.id !== fid);
@@ -555,10 +565,11 @@ export function App() {
               // workspace (replace the active file in place, keeping its filters)
               // rather than spawning a new file entry.
               if (stateRef.current.files.length > 0) {
-                const ok = await confirm(
-                  `A log is already open. Replace it with the dropped file${paths.length > 1 ? "s" : ""}?`,
-                  { title: "Replace current log?", kind: "warning", okLabel: "Replace", cancelLabel: "Cancel" }
-                );
+                const ok = await appConfirmRef.current({
+                  title: "Replace current log?",
+                  message: `A log is already open. Replace it with the dropped file${paths.length > 1 ? "s" : ""}?`,
+                  okLabel: "Replace", cancelLabel: "Cancel", danger: true,
+                });
                 if (!ok) return;
                 await replaceActiveFileRef.current(paths[0]);
                 // Any extra dropped files open as additional entries.
@@ -591,10 +602,11 @@ export function App() {
     const g = file.sets.find((x) => x.id === gid);
     // Confirm only when the set actually holds filters (empty sets delete freely).
     if (g && g.filters.length > 0) {
-      const ok = await confirm(
-        `Delete the "${g.name}" filter set and its ${g.filters.length} filter${g.filters.length > 1 ? "s" : ""}?`,
-        { title: "Delete filter set?", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel" }
-      );
+      const ok = await appConfirm({
+        title: "Delete filter set?",
+        message: `Delete the "${g.name}" filter set and its ${g.filters.length} filter${g.filters.length > 1 ? "s" : ""}?`,
+        okLabel: "Delete", cancelLabel: "Cancel", danger: true,
+      });
       if (!ok) return;
     }
     patchState((s) => {
@@ -733,10 +745,11 @@ export function App() {
   // its selection on success.
   const deleteFilters = async (ids: string[]): Promise<boolean> => {
     if (!file || !set || ids.length === 0) return false;
-    const ok = await confirm(
-      `Delete ${ids.length} selected filter${ids.length > 1 ? "s" : ""}? This can be undone with Ctrl+Z.`,
-      { title: "Delete filters?", kind: "warning", okLabel: "Delete", cancelLabel: "Cancel" }
-    );
+    const ok = await appConfirm({
+      title: "Delete filters?",
+      message: `Delete ${ids.length} selected filter${ids.length > 1 ? "s" : ""}? This can be undone with Ctrl+Z.`,
+      okLabel: "Delete", cancelLabel: "Cancel", danger: true,
+    });
     if (!ok) return false;
     const del = new Set(ids);
     patchState((s) => {
@@ -856,10 +869,11 @@ export function App() {
   const loadFilterFromPath = async (path: string, mode: "replace" | "append" = "replace") => {
     if (!file || !set) return;
     if (mode === "replace" && set.filters.length > 0) {
-      const ok = await confirm(
-        "Loading will replace every filter and group in the current set. This can't be undone.",
-        { title: "Replace current filters?", kind: "warning", okLabel: "Replace", cancelLabel: "Cancel" }
-      );
+      const ok = await appConfirm({
+        title: "Replace current filters?",
+        message: "Loading will replace every filter and group in the current set. This can't be undone.",
+        okLabel: "Replace", cancelLabel: "Cancel", danger: true,
+      });
       if (!ok) return;
     }
     let text: string;
@@ -1267,6 +1281,9 @@ export function App() {
     if (resolveActiveTab(s) === tab && !s.filterCollapsed) return;
     startPanelTransition(() => setState((st) => ({ ...st, activePanelTab: tab, filterCollapsed: false })));
   };
+  // Reveal the Filters tab and focus its search box (Ctrl+Shift+L). The nonce
+  // bump tells FilterPanel to focus even when the tab was already open.
+  const focusFilterSearch = () => { selectPanelTab("filters"); setFocusSearchNonce((n) => n + 1); };
   // Compare and Timeline, when popped, share ONE dock beside Filters. Popping a
   // panel out focuses it as the active tab in that shared dock and expands it;
   // Filters takes over the main tab area if the popped panel was active there.
@@ -1465,6 +1482,11 @@ export function App() {
   // Focus the go-to input once the dialog opens.
   useEffect(() => { if (gotoOpen) requestAnimationFrame(() => gotoInputRef.current?.focus()); }, [gotoOpen]);
 
+  // Latest handlers for the once-mounted keydown listener below, so it never
+  // calls a stale closure (openNewFilter reads `set`, etc.).
+  const shortcutRef = useRef({ openNewFilter, focusFilterSearch });
+  shortcutRef.current = { openNewFilter, focusFilterSearch };
+
   // Ctrl+B (toggle filter panel), Ctrl+G (go to line) and Ctrl+R (reload) on a
   // plain keydown listener — robust regardless of focus or keymap quirks. Kept
   // off tinykeys so there's exactly one handler (no double-toggle).
@@ -1481,7 +1503,12 @@ export function App() {
         if (k === "y" || e.shiftKey) redo(); else undo();
         return;
       }
-      if (e.shiftKey) return;
+      if (e.shiftKey) {
+        // Ctrl+Shift+N: new filter · Ctrl+Shift+L: focus the filter search box.
+        if (k === "n") { e.preventDefault(); shortcutRef.current.openNewFilter(); }
+        else if (k === "l") { e.preventDefault(); shortcutRef.current.focusFilterSearch(); }
+        return;
+      }
       if (k === "b") { e.preventDefault(); toggleFilterCollapsed(); }
       else if (k === "g") { e.preventDefault(); openGoto(); }
       else if (k === "r") { e.preventDefault(); location.reload(); }
@@ -1549,7 +1576,7 @@ export function App() {
     View: [
       { label: "Show filter panel", checked: !state.filterCollapsed, key: "Ctrl B", disabled: !file, action: toggleFilterCollapsed },
       { sep: true },
-      { label: "Show only filtered lines", checked: fileViewMode === "matches", key: "Ctrl H",
+      { label: "Show only matched lines", checked: fileViewMode === "matches", key: "Ctrl H",
         action: () => setViewMode(fileViewMode === "matches" ? "all" : "matches") },
       { label: "Show line numbers", checked: showLineNumbers, action: toggleLineNumbers },
       { sep: true },
@@ -1639,6 +1666,7 @@ export function App() {
         flashFilterId={filterFlash?.id ?? null}
         flashNonce={filterFlash?.nonce ?? 0}
         onFlashConsumed={() => setFilterFlash(null)}
+        focusSearchNonce={focusSearchNonce}
       />
     );
     const compareBody = (
@@ -2097,6 +2125,9 @@ export function App() {
 
         {/* keyboard shortcuts dialog */}
         {shortcutsOpen && <ShortcutsModal onClose={() => setShortcutsOpen(false)} />}
+
+        {/* app-styled confirmations (replaces native confirm()) */}
+        {confirmNode}
 
         <Toaster />
       </div>
