@@ -47,6 +47,14 @@ const SECTIONS: Section[] = [
     ],
   },
   {
+    title: "Filters",
+    rows: [
+      { keys: ["Ctrl", "Click"], label: "Select filters (enter selection mode)" },
+      { keys: ["Shift", "Click"], label: "Extend the selection by range" },
+      { keys: ["Esc"], label: "Leave selection mode" },
+    ],
+  },
+  {
     title: "Timeline",
     rows: [
       { keys: ["W", "S"], label: "Zoom in / out" },
