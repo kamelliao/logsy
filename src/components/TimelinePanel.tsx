@@ -1,7 +1,7 @@
 import { useCallback, useState, useRef, useEffect, CSSProperties } from "react";
 import {
   Eye, EyeOff, GripVertical, Trash2, Plus, ListPlus, ListX, MoveRight, X,
-  Circle, Square, Triangle, Diamond, ChartNoAxesGantt, ChevronDown, ChevronUp,
+  Circle, Square, Triangle, Diamond, ChartGantt, ChevronDown, ChevronUp,
   AlertTriangle, MoreHorizontal,
 } from "lucide-react";
 import {
@@ -264,7 +264,7 @@ export function TimelinePanel({
             scrollers and shows a double scrollbar. Give it a plain flex:1 box. */}
         {tracks.length === 0 ? (
           <div className="min-h-0 flex-1">
-            <PanelEmpty icon={<ChartNoAxesGantt size={22} />} title="No tracks yet">
+            <PanelEmpty icon={<ChartGantt size={22} />} title="No tracks yet">
               <ol className="mt-1 space-y-1.5 text-left text-xs text-muted-foreground">
                 <li>
                   <span className="mr-1 font-semibold text-foreground tabular-nums">1.</span>

@@ -323,6 +323,10 @@ button { font-family: inherit; }
 }
 .lv-title { flex: 0 1 auto; min-width: 0; overflow: hidden; }
 .lv-stat b { color: var(--text-2); font-weight: 600; }
+/* Live selection count — brand-blue so it reads as an active, transient state
+   distinct from the neutral line/match totals beside it. */
+.lv-stat .lv-sel { color: #2c6ce6; }
+.lv-stat .lv-sel b { color: #2c6ce6; }
 
 /* Header action cluster — small, tightly packed icon buttons that sit flush
    with the compact stat/encoding chips on the left. */
@@ -1024,6 +1028,21 @@ button { font-family: inherit; }
 .findbar .find-nav { display: flex; gap: 2px; }
 .find-divider { width: 1px; height: 20px; background: var(--border); }
 
+/* Find option toggles (Aa / .*) — small monospace pills that light up brand-blue
+   when on, mirroring the header's .lv-toggle.active. */
+.findbar .find-opts { display: flex; gap: 2px; }
+.findbar .find-opt {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 22px; height: 22px; padding: 0 4px;
+  border: none; border-radius: 5px; background: transparent;
+  font: inherit; font-size: 12px; font-family: "Cascadia Code","Cascadia Mono",ui-monospace,Consolas,monospace;
+  color: var(--text-3); cursor: pointer;
+}
+.findbar .find-opt:hover { background: rgba(0,0,0,0.07); color: var(--text); }
+.findbar .find-opt.active { background: var(--accent-bg); color: #2c6ce6; }
+.findbar .find-opt.active:hover { background: var(--accent-bg-strong); color: #2c6ce6; }
+.findbar .find-count.invalid { color: var(--error); }
+
 /* ---- resizable handle (replaces hdivider / vdivider) ---- */
 .resizable-handle {
   position: relative;
@@ -1688,6 +1707,9 @@ button { font-family: inherit; }
   cursor: grab;
 }
 .modal-head:active { cursor: grabbing; }
+/* App-styled confirm dialog (see useConfirm): narrower than the editor modal. */
+.confirm-modal { width: 400px; min-width: 0; }
+.confirm-msg { font-size: 13.5px; line-height: 1.55; color: var(--text-2, var(--text)); }
 .modal-head .mh-title { font-size: 15.5px; font-weight: 600; }
 .modal-head .mh-x { margin-left: auto; }
 /* body scrolls; header and footer stay pinned */

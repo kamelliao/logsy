@@ -49,6 +49,8 @@ const SECTIONS: Section[] = [
   {
     title: "Filters",
     rows: [
+      { keys: ["Ctrl", "Shift", "N"], label: "New filter" },
+      { keys: ["Ctrl", "Shift", "L"], label: "Focus filter search" },
       { keys: ["Ctrl", "Click"], label: "Select filters (enter selection mode)" },
       { keys: ["Shift", "Click"], label: "Extend the selection by range" },
       { keys: ["Esc"], label: "Leave selection mode" },
@@ -77,6 +79,14 @@ const SECTIONS: Section[] = [
       { keys: ["Space"], label: "Toggle parsed fields" },
       { keys: ["→"], label: "Expand parsed fields" },
       { keys: ["←"], label: "Collapse parsed fields" },
+    ],
+  },
+  {
+    title: "Bookmarks",
+    rows: [
+      { keys: ["Ctrl", "D"], label: "Toggle bookmark on the selected line" },
+      { keys: ["Ctrl", "."], label: "Next bookmark" },
+      { keys: ["Ctrl", ","], label: "Previous bookmark" },
     ],
   },
 ];
