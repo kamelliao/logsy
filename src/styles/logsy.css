@@ -1627,8 +1627,14 @@ button { font-family: inherit; }
 .menu-item:hover { background: var(--row-hover); }
 .menu-item.danger { color: var(--error); }
 .menu-item.danger:hover { background: #fdecec; }
+/* "Remove from compare/timeline" — reversible un-staging, NOT data loss, so it
+   gets a soft amber (between neutral and the red reserved for real deletes). The
+   Minus glyph carries the add/remove direction; amber reinforces it. */
+.menu-item.mi-remove { color: #a15c00; }
+.menu-item.mi-remove:hover { background: #fbf2e3; }
 .menu-item .mi-ico { color: var(--text-3); display: grid; place-items: center; width: 15px; }
 .menu-item.danger .mi-ico { color: var(--error); }
+.menu-item.mi-remove .mi-ico { color: #c07d12; }
 /* regex fragment preview on the right of a menu row (chip state menu) */
 .menu-item .mi-frag {
   margin-left: auto; padding-left: 16px;

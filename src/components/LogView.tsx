@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "react";
-import { ArrowDown, ArrowUp, Bookmark, ChartGantt, ChevronDown, ChevronRight, Columns3, Copy, Download, Eye, FileText, Filter, Search, Sparkles, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowUp, Bookmark, ChartGantt, ChevronDown, ChevronRight, Columns3, Copy, Download, Eye, FileText, Filter, Minus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { LogFile, ViewResult, FieldValue, Marker, MarkerIcon, Filter as FilterCfg } from "../types";
@@ -1096,8 +1096,8 @@ export function LogView({
               )
             )}
             {inCmp.length > 0 && (
-              <div className="menu-item" onClick={() => { onRemoveFromCompare(inCmp); setRowMenu(null); }}>
-                <span className="mi-ico"><Columns3 size={14} /></span>
+              <div className="menu-item mi-remove" onClick={() => { onRemoveFromCompare(inCmp); setRowMenu(null); }}>
+                <span className="mi-ico"><Minus size={14} /></span>
                 {inCmp.length > 1 ? `Remove ${inCmp.length} lines from compare` : "Remove from compare"}
               </div>
             )}
@@ -1108,8 +1108,8 @@ export function LogView({
               </div>
             )}
             {inTl.length > 0 && (
-              <div className="menu-item" onClick={() => { onRemoveFromTimeline(inTl); setRowMenu(null); }}>
-                <span className="mi-ico"><ChartGantt size={14} /></span>
+              <div className="menu-item mi-remove" onClick={() => { onRemoveFromTimeline(inTl); setRowMenu(null); }}>
+                <span className="mi-ico"><Minus size={14} /></span>
                 {inTl.length > 1 ? `Remove ${inTl.length} lines from timeline` : "Remove from timeline"}
               </div>
             )}
