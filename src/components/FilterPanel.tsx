@@ -309,6 +309,8 @@ interface RowApi {
   toggleTrack: (filterId: string, timeField: string) => void;
   /** Select mode: toggle this row's selection (Shift extends a range). */
   selectClick: (id: string, e: ReactMouseEvent) => void;
+  /** Ctrl/Cmd-click on a row (outside select mode): enter select mode on it. */
+  beginSelect: (id: string, e: ReactMouseEvent) => void;
 }
 
 interface FilterRowProps {
@@ -375,7 +377,11 @@ const FilterRowCells = memo(function FilterRowCells({ f, index, count, trackedFi
                   style={{ alignItems: "center" }}
                   className={"filter-row" + (f.enabled ? "" : " disabled") + (dragging ? " dragging" : "")
                     + (selectMode ? " selecting" : "") + (selected ? " selected" : "")}
-                  onClick={selectMode ? (e) => api.selectClick(f.id, e) : onEdit}
+                  onClick={
+                    selectMode
+                      ? (e) => api.selectClick(f.id, e)
+                      : (e) => (e.ctrlKey || e.metaKey ? api.beginSelect(f.id, e) : onEdit())
+                  }
                 />
               }
             />
@@ -842,6 +848,13 @@ export function FilterPanel({
     lastClickedRef.current = id;
   }, []);
 
+  // Ctrl/Cmd-click a row while not in select mode: enter it and select that row.
+  // selectClick toggles, so on the (empty) first selection it adds.
+  const beginSelect = useCallback((id: string, e: ReactMouseEvent) => {
+    setSelectMode(true);
+    selectClick(id, e);
+  }, [selectClick]);
+
   // Esc leaves select mode.
   useEffect(() => {
     if (!selectMode) return;
@@ -958,8 +971,8 @@ export function FilterPanel({
 
   // One identity-stable api object for every row; the latest handlers are read
   // through a ref so the rows' memo never breaks when App re-renders.
-  const rowCbRef = useRef({ onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onToggleTimelineTrack, selectClick });
-  rowCbRef.current = { onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onToggleTimelineTrack, selectClick };
+  const rowCbRef = useRef({ onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onToggleTimelineTrack, selectClick, beginSelect });
+  rowCbRef.current = { onUpdateFilter, onEditFilter, onDeleteFilter, onDuplicateFilter, onViewFilterOnly, onToggleTimelineTrack, selectClick, beginSelect };
   const rowApi = useMemo<RowApi>(() => ({
     update: (id, patch) => rowCbRef.current.onUpdateFilter(id, patch),
     edit: (id) => rowCbRef.current.onEditFilter(id),
@@ -968,6 +981,7 @@ export function FilterPanel({
     viewOnly: (id) => rowCbRef.current.onViewFilterOnly(id),
     toggleTrack: (filterId, timeField) => rowCbRef.current.onToggleTimelineTrack(filterId, timeField),
     selectClick: (id, e) => rowCbRef.current.selectClick(id, e),
+    beginSelect: (id, e) => rowCbRef.current.beginSelect(id, e),
   }), []);
 
   // filterId → its field names already plotted as timeline tracks. Memoized so
