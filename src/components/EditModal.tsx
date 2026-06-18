@@ -6,7 +6,18 @@ import {
   tokenize, buildPattern, assignNames, generalPattern, mergeTokens, splitToken,
   type GenToken, type GenState,
 } from "../lib/generalize";
+import { reparsePattern } from "../lib/reparse";
 import { TEXT_SWATCHES, BG_SWATCHES } from "../data";
+
+/** First line matching `re` (early-exit), or null. Used to dress reconstructed
+ *  chips with real sample text when reopening the builder on an existing filter. */
+function firstMatchingLine(lines: string[], re: RegExp): string | null {
+  for (const l of lines) {
+    re.lastIndex = 0;
+    if (re.test(l)) return l;
+  }
+  return null;
+}
 
 
 const FIELD_TYPES: FieldType[] = ["string", "int", "hex", "float", "time"];
@@ -165,9 +176,27 @@ export function EditModal({ filter, lines, isNew, groups, palette, genSeed, onSa
     setPreviewOpen((o) => { localStorage.setItem("logsy.matchPreviewOpen", o ? "0" : "1"); return !o; });
 
   // --- token chips ("Filter as pattern…") ---------------------------------
-  const [genTokens, setGenTokens] = useState<GenToken[] | null>(() => (genSeed ? tokenize(genSeed) : null));
+  // New filters created via "Filter as pattern…" arrive with genSeed. Editing an
+  // existing regex filter has no seed, so we reconstruct the chips from its
+  // pattern (reparsePattern) and dress them with real text from the first
+  // matching line — letting the builder reopen on a filter built earlier. The
+  // reconstruction returns null for any pattern outside the builder's grammar
+  // (hand-edited or foreign regex), in which case no builder is shown.
+  // Mount-once: reading props in a [] useMemo is intentional here.
+  const initialGen = useMemo(() => {
+    if (genSeed) return { tokens: tokenize(genSeed), built: filter.pattern };
+    if (!isNew && filter.regex && filter.pattern.trim()) {
+      const c = compile(filter);
+      const line = c.ok && c.re ? firstMatchingLine(lines, c.re) : null;
+      const tokens = reparsePattern(filter.pattern, line, c.ok && c.re ? c.re.flags : "");
+      if (tokens) return { tokens, built: filter.pattern };
+    }
+    return { tokens: null as GenToken[] | null, built: "" };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [genTokens, setGenTokens] = useState<GenToken[] | null>(initialGen.tokens);
   // The last pattern the chips produced; a mismatch means manual edits.
-  const lastBuiltRef = useRef(genSeed ? filter.pattern : "");
+  const lastBuiltRef = useRef(initialGen.built);
   const chipsActive = genTokens !== null && draft.pattern === lastBuiltRef.current;
   const chipNames = useMemo(() => (genTokens ? assignNames(genTokens) : []), [genTokens]);
   // When a chip turns into a capture, its name input should grab focus so the
