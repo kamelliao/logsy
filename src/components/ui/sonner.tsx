@@ -5,7 +5,7 @@ function Toaster({ ...props }: ToasterProps) {
   return (
     <Sonner
       theme="light"
-      position="bottom-center"
+      position="bottom-right"
       icons={{
         success: <CircleCheck size={16} />,
         error: <OctagonX size={16} />,
