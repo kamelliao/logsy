@@ -887,11 +887,6 @@ button { font-family: inherit; }
 .mp-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
 
 /* ---- bookmarks tab ---- */
-.bm-empty {
-  flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; justify-content: center;
-  color: var(--text-2); text-align: center; gap: 2px; padding: 16px;
-  font-size: calc(var(--log-font-size, 12.5px) * 0.96);
-}
 .bm-wrap { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
 .bm-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 4px 0; }
 

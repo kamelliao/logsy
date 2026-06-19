@@ -2,6 +2,7 @@ import { useMemo, useState, type CSSProperties } from "react";
 import { Bookmark, Plus, Trash2 } from "lucide-react";
 import type { Marker, MarkerIcon } from "../types";
 import { MARKER_ICONS, MarkerGlyph, markerColor } from "./markers";
+import { PanelEmpty } from "./PanelEmpty";
 
 interface BookmarksPanelProps {
   markers: Marker[];
@@ -30,11 +31,9 @@ export function BookmarksPanel({ markers, lineText, onJump, onSetNote, onRemove,
 
   if (!markers.length) {
     return (
-      <div className="bm-empty">
-        <Bookmark size={22} style={{ color: "var(--text-3)", marginBottom: 6 }} />
-        <div>No bookmarks yet.</div>
-        <div style={{ fontSize: "0.92em" }}>Click a line's gutter (left of the number) to add one.</div>
-      </div>
+      <PanelEmpty icon={<Bookmark size={22} />} title="No bookmarks yet">
+        <p>Click a line's gutter (left of the line number) to add one.</p>
+      </PanelEmpty>
     );
   }
 

@@ -1122,11 +1122,8 @@ export function App() {
     const lines = winnerLines(tr.filterId, tr.timeField);
     if (lines.length) {
       addToTimeline(lines);
-      // toast.success(`${lines.length} line${lines.length === 1 ? "" : "s"} imported`, {
-      //   description: `For track "${tr.lane}".`, position: "bottom-right",
-      // });
     } else {
-      toast(`No matching lines`, { description: `Nothing matches "${tr.lane}" yet.`, position: "bottom-right" });
+      toast(`No matching lines`, { description: `Nothing matches "${tr.lane}" yet.` });
     }
   };
   // Track row "clear lines": remove just this track's matching lines.
@@ -1191,7 +1188,6 @@ export function App() {
     const serials = specs.map((x) => `#${set.filters.findIndex((f) => f.id === x.fid) + 1}`).join(", ");
     toast.success(specs.length > 1 ? `${specs.length} tracks added` : `Track added`, {
       description: `For filter${specs.length > 1 ? "s" : ""} ${serials}.`,
-      position: "bottom-right",
     });
   };
   // "Add all matching lines" (timeline panel, when tracks exist but no lines yet):
