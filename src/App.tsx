@@ -36,7 +36,6 @@ import { Workspace } from "@/components/Workspace";
 import { Titlebar } from "@/components/Titlebar";
 import { GotoDialog } from "@/components/GotoDialog";
 import { Overlays } from "@/components/Overlays";
-import { useUndoableState } from "@/hooks/useUndoableState";
 import { useFontZoom } from "@/hooks/useFontZoom";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useMenuDefs } from "@/hooks/useMenuDefs";
@@ -47,24 +46,36 @@ import { useTimeline } from "@/hooks/useTimeline";
 import { useBookmarks } from "@/hooks/useBookmarks";
 import { useStore } from "@/store";
 import { activeFile } from "@/state/selectors";
+import { SAFE_MODE } from "@/state/persistence";
 import { useShallow } from "zustand/react/shallow";
 
 const MENUS = ["File", "Edit", "View", "Filters", "Help"] as const;
 const DOCS_URL = "https://github.com/kamelliao/logsy#readme";
 
 export function App() {
-  const {
-    state,
-    setState,
-    stateRef,
-    patchState,
-    undo,
-    redo,
-    canUndo,
-    canRedo,
-    pushRecent,
-    clearRecent,
-  } = useUndoableState();
+  // Workspace state + undo/redo come straight from the store now.
+  const state = useStore((s) => s.doc);
+  const canUndo = useStore((s) => s.canUndo);
+  const canRedo = useStore((s) => s.canRedo);
+  const { setState, patchState, undo, redo, clearRecent } = useStore(
+    useShallow((s) => ({
+      setState: s.setDoc,
+      patchState: s.patchState,
+      undo: s.undo,
+      redo: s.redo,
+      clearRecent: s.clearRecent,
+    })),
+  );
+
+  // Safe mode (launched with --safe): the saved workspace is untouched on disk and
+  // won't be saved this session. Tell the user once; a normal launch restores it.
+  useEffect(() => {
+    if (SAFE_MODE)
+      toast.warning(
+        "Safe mode: your saved state was not loaded and won't be saved this session. Restart normally to restore it.",
+        { duration: 8000 },
+      );
+  }, []);
   const editing = useStore((s) => s.editing);
   const setEditing = useStore((s) => s.setEditing);
   // A request to scroll+flash a filter row (e.g. clicking a Compare group header).
@@ -136,14 +147,7 @@ export function App() {
     deleteFile,
     openFiles,
     loadPaths,
-  } = useLogFiles({
-    patchState,
-    setState,
-    stateRef,
-    pushRecent,
-    appConfirm,
-    file,
-  });
+  } = useLogFiles({ file });
 
   const compiled = useMemo(
     () => compileAll(set?.filters ?? []),

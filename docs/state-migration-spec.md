@@ -275,8 +275,22 @@ Deps`** — the injection of `patchState`/`setState`/`stateRef` is gone, which w
    hook. `selectPanelTab` stays a Dep — a genuine UI collaborator, not the document
    smell. Verified: tsc unchanged (8 pre-existing), 79/79 tests, vite build green
    (one pre-existing `buildCsv` exhaustive-deps warning left as-is).
-6. **`documentSlice` + retire `useUndoableState`.** `useLogFiles` keeps IO only.
-   Delete the adapter from phase 1.
+6. **[DONE] `documentSlice` + retire `useUndoableState`.** `files`/`activeFileId`/
+   recents already live in the store's `doc`, so there was no new slice to write —
+   this phase retired the phase-1 adapter. App now reads `state`/`setState`/
+   `patchState`/`undo`/`redo`/`canUndo`/`canRedo`/`clearRecent` from the store via
+   selectors (reactive `state`/`canUndo`/`canRedo`; a `useShallow` block for the
+   stable actions); the SAFE_MODE toast moved to an App effect. `useLogFiles` Deps
+   `{patchState,setState,stateRef,pushRecent,appConfirm,file}` → `{file}`: it pulls
+   `patchState`/`setDoc`/`pushRecent` from the store, a module-level `getDoc()`
+   (`useStore.getState().doc`) replaces `stateRef.current`, and the confirm dialog
+   comes from the bound store runtime — so the IO + transient state (linesStore,
+   busy, dragOver, transitions, drag-drop listener) is all that's left in the hook.
+   `useUndoableState.ts` deleted. **Every document-injection `Deps` is now gone**;
+   the only Deps left carry genuine runtime inputs (`file`/`view`/`set`/
+   `selectPanelTab`). Verified: tsc unchanged (8 pre-existing), 79/79 tests, vite
+   build green (one pre-existing `lines` exhaustive-deps warning left as-is —
+   adding `file` would wrongly recompute on every edit).
 7. **`useMenuDefs` de-prop.** Read store directly; this collapses the 30-arg signature.
 8. **Cleanup:** delete `state/persistence.ts` undo/persist code now in the store;
    update the architecture memo.
