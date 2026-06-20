@@ -13,9 +13,18 @@
 // So a literal run can never be mistaken for a general form.
 
 import { escapeRegex } from "@/lib/engine";
-import { GenToken, GenKind, buildPattern, generalPattern } from "@/lib/generalize";
+import {
+  GenToken,
+  GenKind,
+  buildPattern,
+  generalPattern,
+} from "@/lib/generalize";
 
-interface Seg { kind: GenKind; raw: string; len: number; }
+interface Seg {
+  kind: GenKind;
+  raw: string;
+  len: number;
+}
 
 // Match one generalized run at src[p]. `raw` is a synthetic value chosen so
 // generalPattern() reproduces the matched string exactly (verified by the caller
@@ -25,22 +34,30 @@ function matchGeneral(src: string, p: number): Seg | null {
   let m: RegExpExecArray | null;
 
   // 0x[0-9A-Fa-f]+  (generalPattern always emits lowercase "0x")
-  if ((m = /^0x\[0-9A-Fa-f\]\+/.exec(s))) return { kind: "hex", raw: "0x0", len: m[0].length };
+  if ((m = /^0x\[0-9A-Fa-f\]\+/.exec(s)))
+    return { kind: "hex", raw: "0x0", len: m[0].length };
   // [0-9A-Fa-f]+
-  if ((m = /^\[0-9A-Fa-f\]\+/.exec(s))) return { kind: "hex", raw: "0", len: m[0].length };
+  if ((m = /^\[0-9A-Fa-f\]\+/.exec(s)))
+    return { kind: "hex", raw: "0", len: m[0].length };
 
   // Numeric structure: \d+ (sep \d+)* with sep ∈ { : , \. }. A ':' or ',' marks
   // a timestamp (tokenize's time rule requires a colon); a lone '\.' is a float;
   // a lone '\d+' is an int.
   if ((m = /^\\d\+(?:(?::|,|\\\.)\\d\+)*/.exec(s))) {
     const g = m[0];
-    if (/[:,]/.test(g)) return { kind: "time", raw: g.replace(/\\d\+/g, "0").replace(/\\\./g, "."), len: g.length };
+    if (/[:,]/.test(g))
+      return {
+        kind: "time",
+        raw: g.replace(/\\d\+/g, "0").replace(/\\\./g, "."),
+        len: g.length,
+      };
     if (g.includes("\\.")) return { kind: "float", raw: "0.0", len: g.length };
     return { kind: "int", raw: "0", len: g.length };
   }
 
-  if ((m = /^\\s\+/.exec(s))) return { kind: "ws", raw: " ", len: m[0].length };     // \s+
-  if ((m = /^\.\+/.exec(s))) return { kind: "merged", raw: "x", len: m[0].length };  // .+  (parts unrecoverable)
+  if ((m = /^\\s\+/.exec(s))) return { kind: "ws", raw: " ", len: m[0].length }; // \s+
+  if ((m = /^\.\+/.exec(s)))
+    return { kind: "merged", raw: "x", len: m[0].length }; // .+  (parts unrecoverable)
   return null;
 }
 
@@ -49,7 +66,12 @@ export function parsePattern(src: string): GenToken[] | null {
   const out: GenToken[] = [];
   let i = 0;
   let lit = "";
-  const flush = () => { if (lit) { out.push({ raw: lit, kind: "text", state: "exact" }); lit = ""; } };
+  const flush = () => {
+    if (lit) {
+      out.push({ raw: lit, kind: "text", state: "exact" });
+      lit = "";
+    }
+  };
 
   while (i < src.length) {
     // (?<name> general )
@@ -64,10 +86,21 @@ export function parsePattern(src: string): GenToken[] | null {
     }
     // bare general run
     const g = matchGeneral(src, i);
-    if (g) { flush(); out.push({ raw: g.raw, kind: g.kind, state: "general" }); i += g.len; continue; }
+    if (g) {
+      flush();
+      out.push({ raw: g.raw, kind: g.kind, state: "general" });
+      i += g.len;
+      continue;
+    }
     // one escaped-literal character
-    if (src[i] === "\\") { if (i + 1 >= src.length) return null; lit += src[i + 1]; i += 2; }
-    else { lit += src[i]; i += 1; }
+    if (src[i] === "\\") {
+      if (i + 1 >= src.length) return null;
+      lit += src[i + 1];
+      i += 2;
+    } else {
+      lit += src[i];
+      i += 1;
+    }
   }
   flush();
 
@@ -81,16 +114,29 @@ export function parsePattern(src: string): GenToken[] | null {
  * one match yields every token's span. Best-effort: if the probe fails to match
  * or the swap would change buildPattern's output, the tokens are left untouched.
  */
-export function realizeRaws(tokens: GenToken[], line: string, flags: string): GenToken[] {
+export function realizeRaws(
+  tokens: GenToken[],
+  line: string,
+  flags: string,
+): GenToken[] {
   const before = buildPattern(tokens);
   const probe = tokens
-    .map((t, i) => `(?<g${i}>${t.state === "exact" ? escapeRegex(t.raw) : generalPattern(t)})`)
+    .map(
+      (t, i) =>
+        `(?<g${i}>${t.state === "exact" ? escapeRegex(t.raw) : generalPattern(t)})`,
+    )
     .join("");
   let groups: Record<string, [number, number] | undefined> | undefined;
   try {
     const m = new RegExp(probe, flags.replace(/[gd]/g, "") + "d").exec(line);
-    groups = (m as { indices?: { groups?: Record<string, [number, number] | undefined> } } | null)?.indices?.groups;
-  } catch { return tokens; }
+    groups = (
+      m as {
+        indices?: { groups?: Record<string, [number, number] | undefined> };
+      } | null
+    )?.indices?.groups;
+  } catch {
+    return tokens;
+  }
   if (!groups) return tokens;
 
   const next = tokens.map((t, i) => {
@@ -103,7 +149,11 @@ export function realizeRaws(tokens: GenToken[], line: string, flags: string): Ge
 }
 
 /** Convenience: parse + (optionally) realize raws from a matching sample line. */
-export function reparsePattern(pattern: string, line: string | null, flags = ""): GenToken[] | null {
+export function reparsePattern(
+  pattern: string,
+  line: string | null,
+  flags = "",
+): GenToken[] | null {
   const toks = parsePattern(pattern);
   if (!toks || !line) return toks;
   return realizeRaws(toks, line, flags);

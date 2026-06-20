@@ -13,7 +13,12 @@ export function AboutModal({ version, onClose }: AboutModalProps) {
   return (
     <div className="about-overlay" onMouseDown={onClose}>
       <div className="about-box" onMouseDown={(e) => e.stopPropagation()}>
-        <Button variant="ghost" size="icon" className="about-x" onClick={onClose}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="about-x"
+          onClick={onClose}
+        >
           <X size={18} />
         </Button>
         <div className="about-head">
@@ -24,7 +29,9 @@ export function AboutModal({ version, onClose }: AboutModalProps) {
           </div>
         </div>
         <div className="about-copy-container">
-          <div className="about-copy">Copyright © {new Date().getFullYear()} {AUTHOR}</div>
+          <div className="about-copy">
+            Copyright © {new Date().getFullYear()} {AUTHOR}
+          </div>
           <div className="about-copy">Licensed under GPLv3.</div>
         </div>
       </div>

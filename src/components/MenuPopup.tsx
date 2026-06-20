@@ -22,7 +22,9 @@ interface MenuPopupProps {
 
 /** A floating menu list with hover submenus, toggle indicators and disabled rows. */
 export function MenuPopup({ items, x, y, onClose }: MenuPopupProps) {
-  const [sub, setSub] = useState<{ i: number; x: number; y: number } | null>(null);
+  const [sub, setSub] = useState<{ i: number; x: number; y: number } | null>(
+    null,
+  );
   // Reserve a left check column for every row when the list contains any toggle,
   // so labels stay aligned whether or not a given row is checkable.
   const hasChecks = items.some((it) => it.checked !== undefined);
@@ -61,16 +63,23 @@ export function MenuPopup({ items, x, y, onClose }: MenuPopupProps) {
             }}
           >
             {hasChecks && (
-              <span className="mi-check">{item.checked ? <Check size={14} /> : null}</span>
+              <span className="mi-check">
+                {item.checked ? <Check size={14} /> : null}
+              </span>
             )}
             <span className="mi-label">{item.label}</span>
             {item.key && <span className="mi-key">{item.key}</span>}
             {item.submenu && <ChevronRight size={14} className="mi-sub" />}
           </div>
-        )
+        ),
       )}
       {sub != null && items[sub.i]?.submenu && (
-        <MenuPopup items={items[sub.i].submenu!} x={sub.x} y={sub.y} onClose={onClose} />
+        <MenuPopup
+          items={items[sub.i].submenu!}
+          x={sub.x}
+          y={sub.y}
+          onClose={onClose}
+        />
       )}
     </div>
   );

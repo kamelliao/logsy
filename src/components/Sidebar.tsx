@@ -3,8 +3,16 @@ import { ChevronRight, FilePlus, PanelLeft, Settings, X } from "lucide-react";
 import type { AppState, FileIcon, LogFile } from "@/types";
 import { FILE_ICONS, FileGlyph } from "@/components/fileIcons";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface FileItemProps {
   file: LogFile;
@@ -16,7 +24,15 @@ interface FileItemProps {
   onSetIcon: (icon: FileIcon) => void;
 }
 
-function FileItem({ file, active, canDelete, collapsed, onSelect, onDelete, onSetIcon }: FileItemProps) {
+function FileItem({
+  file,
+  active,
+  canDelete,
+  collapsed,
+  onSelect,
+  onDelete,
+  onSetIcon,
+}: FileItemProps) {
   // Right-click context menu, anchored at the cursor.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -25,48 +41,73 @@ function FileItem({ file, active, canDelete, collapsed, onSelect, onDelete, onSe
     function down(e: MouseEvent) {
       if (!(e.target as HTMLElement).closest(".file-menu")) setMenu(null);
     }
-    function esc(e: KeyboardEvent) { if (e.key === "Escape") setMenu(null); }
+    function esc(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenu(null);
+    }
     document.addEventListener("mousedown", down);
     document.addEventListener("keydown", esc);
-    return () => { document.removeEventListener("mousedown", down); document.removeEventListener("keydown", esc); };
+    return () => {
+      document.removeEventListener("mousedown", down);
+      document.removeEventListener("keydown", esc);
+    };
   }, [menu]);
 
   return (
     <>
       <Tooltip>
-        <TooltipTrigger render={
-          <div
-            className={"file-item" + (active ? " active" : "")}
-            onClick={onSelect}
-            onContextMenu={(e) => { e.preventDefault(); setMenu({ x: e.clientX, y: e.clientY }); }}
-          />
-        }>
-          <span className="file-ico"><FileGlyph icon={file.icon} size={16} /></span>
+        <TooltipTrigger
+          render={
+            <div
+              className={"file-item" + (active ? " active" : "")}
+              onClick={onSelect}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                setMenu({ x: e.clientX, y: e.clientY });
+              }}
+            />
+          }
+        >
+          <span className="file-ico">
+            <FileGlyph icon={file.icon} size={16} />
+          </span>
           <span className="file-name">{file.name}</span>
           <span className="file-lines">{file.lineCount.toLocaleString()}</span>
           {canDelete && (
             <button
               className="file-x"
               title="Close file"
-              onClick={(e) => { e.stopPropagation(); onDelete(); }}
+              onClick={(e) => {
+                e.stopPropagation();
+                onDelete();
+              }}
             >
               <X size={13} />
             </button>
           )}
         </TooltipTrigger>
-        <TooltipContent side={collapsed ? "right" : "top"}>{file.name}</TooltipContent>
+        <TooltipContent side={collapsed ? "right" : "top"}>
+          {file.name}
+        </TooltipContent>
       </Tooltip>
 
       {menu && (
-        <div className="menu-pop file-menu" style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 200 }}>
+        <div
+          className="menu-pop file-menu"
+          style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 200 }}
+        >
           <div className="menu-section">Icon</div>
           <div className="file-icon-grid">
             {FILE_ICONS.map(({ id, label, Icon }) => (
               <button
                 key={id}
-                className={"fi-pick" + ((file.icon ?? "file") === id ? " on" : "")}
+                className={
+                  "fi-pick" + ((file.icon ?? "file") === id ? " on" : "")
+                }
                 title={label}
-                onClick={() => { setMenu(null); onSetIcon(id); }}
+                onClick={() => {
+                  setMenu(null);
+                  onSetIcon(id);
+                }}
               >
                 <Icon size={15} />
               </button>
@@ -75,9 +116,15 @@ function FileItem({ file, active, canDelete, collapsed, onSelect, onDelete, onSe
           <div className="menu-sep" />
           <div
             className="menu-item danger"
-            onClick={() => { setMenu(null); onDelete(); }}
+            onClick={() => {
+              setMenu(null);
+              onDelete();
+            }}
           >
-            <span className="mi-ico"><X size={14} /></span> Close file
+            <span className="mi-ico">
+              <X size={14} />
+            </span>{" "}
+            Close file
           </div>
         </div>
       )}
@@ -104,10 +151,20 @@ interface SidebarProps {
 }
 
 export function Sidebar({
-  state, collapsed, openScreen, onToggleCollapse, onSelectFile,
-  onOpenFile, onDeleteFile, onSetFileIcon,
-  onSetPanelPos, onSetMapColorMode, onSetMapWidth, onSetFontWeight,
-  onSetTimelineIconSize, onManagePalette,
+  state,
+  collapsed,
+  openScreen,
+  onToggleCollapse,
+  onSelectFile,
+  onOpenFile,
+  onDeleteFile,
+  onSetFileIcon,
+  onSetPanelPos,
+  onSetMapColorMode,
+  onSetMapWidth,
+  onSetFontWeight,
+  onSetTimelineIconSize,
+  onManagePalette,
 }: SidebarProps) {
   return (
     <div className={"sidebar" + (collapsed ? " collapsed" : "")}>
@@ -134,27 +191,51 @@ export function Sidebar({
             onSetIcon={(icon) => onSetFileIcon(f.id, icon)}
           />
         ))}
-        <div className="new-tab" onClick={onOpenFile} title="Open a log file (Ctrl O)">
+        <div
+          className="new-tab"
+          onClick={onOpenFile}
+          title="Open a log file (Ctrl O)"
+        >
           <FilePlus size={16} />
           <span>Open File</span>
         </div>
       </div>
       <div className="sidebar-bottom">
         <Popover>
-          <PopoverTrigger render={
-            <div className="settings-row" role="button">
-              <Settings size={16} />
-              <span>Settings</span>
-              {!collapsed && <span className="gear" />}
-            </div>
-          } />
+          <PopoverTrigger
+            render={
+              <div className="settings-row" role="button">
+                <Settings size={16} />
+                <span>Settings</span>
+                {!collapsed && <span className="gear" />}
+              </div>
+            }
+          />
           <PopoverContent>
-            <div style={{ fontWeight: 600, fontSize: 13, padding: "2px 4px 6px" }}>Settings</div>
+            <div
+              style={{ fontWeight: 600, fontSize: 13, padding: "2px 4px 6px" }}
+            >
+              Settings
+            </div>
             <div className="sp-row">
               Filter panel
               <div className="seg" style={{ marginLeft: 8 }}>
-                <button className={(state.panelPos ?? "bottom") === "bottom" ? "on" : ""} onClick={() => onSetPanelPos("bottom")}>Bottom</button>
-                <button className={(state.panelPos ?? "bottom") === "right" ? "on" : ""} onClick={() => onSetPanelPos("right")}>Right</button>
+                <button
+                  className={
+                    (state.panelPos ?? "bottom") === "bottom" ? "on" : ""
+                  }
+                  onClick={() => onSetPanelPos("bottom")}
+                >
+                  Bottom
+                </button>
+                <button
+                  className={
+                    (state.panelPos ?? "bottom") === "right" ? "on" : ""
+                  }
+                  onClick={() => onSetPanelPos("right")}
+                >
+                  Right
+                </button>
               </div>
             </div>
             <div className="sp-row">
@@ -164,23 +245,55 @@ export function Sidebar({
             <div className="sp-row">
               Match map color
               <div className="seg" style={{ marginLeft: 8 }}>
-                <button className={(state.mapColorMode ?? "bg") === "bg" ? "on" : ""} onClick={() => onSetMapColorMode("bg")}>BG</button>
-                <button className={(state.mapColorMode ?? "bg") === "text" ? "on" : ""} onClick={() => onSetMapColorMode("text")}>Text</button>
+                <button
+                  className={(state.mapColorMode ?? "bg") === "bg" ? "on" : ""}
+                  onClick={() => onSetMapColorMode("bg")}
+                >
+                  BG
+                </button>
+                <button
+                  className={
+                    (state.mapColorMode ?? "bg") === "text" ? "on" : ""
+                  }
+                  onClick={() => onSetMapColorMode("text")}
+                >
+                  Text
+                </button>
               </div>
             </div>
             <div className="sp-row">
               Match map width
               <div className="seg" style={{ marginLeft: 8 }}>
-                {[{ label: "S", value: 12 }, { label: "M", value: 16 }, { label: "L", value: 20 }].map(({ label, value }) => (
-                  <button key={label} className={(state.mapWidth ?? 20) === value ? "on" : ""} onClick={() => onSetMapWidth(value)}>{label}</button>
+                {[
+                  { label: "S", value: 12 },
+                  { label: "M", value: 16 },
+                  { label: "L", value: 20 },
+                ].map(({ label, value }) => (
+                  <button
+                    key={label}
+                    className={(state.mapWidth ?? 20) === value ? "on" : ""}
+                    onClick={() => onSetMapWidth(value)}
+                  >
+                    {label}
+                  </button>
                 ))}
               </div>
             </div>
             <div className="sp-row">
               Log font weight
               <div className="seg" style={{ marginLeft: 8 }}>
-                {[{ label: "Light", value: 300 }, { label: "Regular", value: 400 }, { label: "Medium", value: 500 }].map(({ label, value }) => (
-                  <button key={label} className={(state.fontWeight ?? 400) === value ? "on" : ""} onClick={() => onSetFontWeight(value)}>{label}</button>
+                {[
+                  { label: "Light", value: 300 },
+                  { label: "Regular", value: 400 },
+                  { label: "Medium", value: 500 },
+                ].map(({ label, value }) => (
+                  <button
+                    key={label}
+                    className={(state.fontWeight ?? 400) === value ? "on" : ""}
+                    onClick={() => onSetFontWeight(value)}
+                  >
+                    {label}
+                  </button>
                 ))}
               </div>
             </div>
@@ -188,13 +301,28 @@ export function Sidebar({
               Timeline icon size
               <div className="seg" style={{ marginLeft: 8 }}>
                 {(["S", "M", "L"] as const).map((sz) => (
-                  <button key={sz} className={(state.timelineIconSize ?? "M") === sz ? "on" : ""} onClick={() => onSetTimelineIconSize(sz)}>{sz}</button>
+                  <button
+                    key={sz}
+                    className={
+                      (state.timelineIconSize ?? "M") === sz ? "on" : ""
+                    }
+                    onClick={() => onSetTimelineIconSize(sz)}
+                  >
+                    {sz}
+                  </button>
                 ))}
               </div>
             </div>
             <div className="sp-sep" />
-            <div className="sp-row sp-row-link" onClick={onManagePalette} role="button" tabIndex={0}
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onManagePalette(); }}>
+            <div
+              className="sp-row sp-row-link"
+              onClick={onManagePalette}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") onManagePalette();
+              }}
+            >
               Color palette
               <ChevronRight size={14} style={{ color: "var(--text-3)" }} />
             </div>

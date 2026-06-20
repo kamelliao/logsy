@@ -44,7 +44,11 @@ test("recognizes both hex forms and whitespace", () => {
 
 test("a merged capture (.+) round-trips as a merged chip", () => {
   const raw = tokenize("wifi connect failed");
-  const toks = [raw[0], raw[1], { raw: "x", kind: "merged", state: "capture", name: "msg" } as GenToken];
+  const toks = [
+    raw[0],
+    raw[1],
+    { raw: "x", kind: "merged", state: "capture", name: "msg" } as GenToken,
+  ];
   const pattern = buildPattern(toks); // wifi\s+(?<msg>.+)
   const back = roundTrips(pattern);
   expect(back[2].kind).toBe("merged");
@@ -59,10 +63,10 @@ test("literal text with regex metacharacters is not mistaken for a general form"
 // --- bail-out on foreign / hand-edited regex --------------------------------
 
 test("returns null for regex outside the builder grammar", () => {
-  expect(parsePattern("\\w+")).toBeNull();        // \w isn't an emitted form
-  expect(parsePattern("foo(bar)?")).toBeNull();   // unescaped group + quantifier
-  expect(parsePattern("\\d+|\\w")).toBeNull();     // alternation
-  expect(parsePattern("a.*b")).toBeNull();         // bare .* (only .+ is emitted)
+  expect(parsePattern("\\w+")).toBeNull(); // \w isn't an emitted form
+  expect(parsePattern("foo(bar)?")).toBeNull(); // unescaped group + quantifier
+  expect(parsePattern("\\d+|\\w")).toBeNull(); // alternation
+  expect(parsePattern("a.*b")).toBeNull(); // bare .* (only .+ is emitted)
 });
 
 // --- realizeRaws: dress chips with real sample text -------------------------

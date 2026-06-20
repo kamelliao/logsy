@@ -1,6 +1,12 @@
 import { useMemo } from "react";
 import { toast } from "sonner";
-import type { AppState, LogFile, FilterSet, ViewResult, TimelineSource } from "@/types";
+import type {
+  AppState,
+  LogFile,
+  FilterSet,
+  ViewResult,
+  TimelineSource,
+} from "@/types";
 import { buildTimeline, laneColor, guessUnit, isTimeLike } from "@/lib/engine";
 import { withSet } from "@/state/selectors";
 import type { PanelTab } from "@/hooks/useDockLayout";
@@ -11,7 +17,10 @@ interface Deps {
   set: FilterSet | null;
   state: AppState;
   setState: React.Dispatch<React.SetStateAction<AppState>>;
-  patchState: (fn: (s: AppState) => void, opts?: { undoable?: boolean; coalesce?: string }) => void;
+  patchState: (
+    fn: (s: AppState) => void,
+    opts?: { undoable?: boolean; coalesce?: string },
+  ) => void;
   selectPanelTab: (tab: PanelTab) => void;
 }
 
@@ -21,13 +30,21 @@ interface Deps {
  * helpers the panel and filter-row menu need (which fields can back a time
  * axis, per-track stats, orphaned lines).
  */
-export function useTimeline({ view, file, set, state, setState, patchState, selectPanelTab }: Deps) {
+export function useTimeline({
+  view,
+  file,
+  set,
+  state,
+  setState,
+  patchState,
+  selectPanelTab,
+}: Deps) {
   // Timeline tracks: a user-owned, ordered list (no auto-derivation).
   const tracks = useMemo(() => set?.sources ?? [], [set?.sources]);
   // Lines the user added to the timeline. Persisted per file (survives reload),
   // keyed by file id so a file switch naturally shows that file's own set.
   const timelineLines = useMemo(
-    () => new Set(file ? state.timelineLinesByFile?.[file.id] ?? [] : []),
+    () => new Set(file ? (state.timelineLinesByFile?.[file.id] ?? []) : []),
     [state.timelineLinesByFile, file],
   );
   // Events come from the lines the user added to the timeline (like compare).
@@ -45,12 +62,22 @@ export function useTimeline({ view, file, set, state, setState, patchState, sele
   // string-typed field; recomputed when the view or filters change.
   const timeFieldsByFilter = useMemo(() => {
     const result = new Map<string, Set<string>>();
-    const providers = (set?.filters ?? []).filter((f) => f.fields && f.fields.length);
+    const providers = (set?.filters ?? []).filter(
+      (f) => f.fields && f.fields.length,
+    );
     if (!providers.length) return result;
-    const NUMERIC: Record<string, boolean> = { int: true, hex: true, float: true, time: true };
+    const NUMERIC: Record<string, boolean> = {
+      int: true,
+      hex: true,
+      float: true,
+      time: true,
+    };
     const needsSample = new Set<string>();
     for (const f of providers) {
-      result.set(f.id, new Set(f.fields!.filter((d) => NUMERIC[d.type]).map((d) => d.name)));
+      result.set(
+        f.id,
+        new Set(f.fields!.filter((d) => NUMERIC[d.type]).map((d) => d.name)),
+      );
       if (f.fields!.some((d) => !NUMERIC[d.type])) needsSample.add(f.id);
     }
     if (needsSample.size) {
@@ -65,7 +92,9 @@ export function useTimeline({ view, file, set, state, setState, patchState, sele
       }
       for (const fid of needsSample) {
         const have = result.get(fid)!;
-        const strFields = providers.find((p) => p.id === fid)!.fields!.filter((d) => !NUMERIC[d.type]);
+        const strFields = providers
+          .find((p) => p.id === fid)!
+          .fields!.filter((d) => !NUMERIC[d.type]);
         for (const n of sampleLines.get(fid)!) {
           const fl = view.fieldsFor(n);
           if (!fl) continue;
@@ -84,26 +113,37 @@ export function useTimeline({ view, file, set, state, setState, patchState, sele
   // so they go through plain setState into `timelineLinesByFile[file.id]`.
   const mutateTimeline = (fn: (cur: Set<number>) => void) =>
     setState((s) => {
-      const fid = (s.files.find((f) => f.id === s.activeFileId) ?? s.files[0])?.id;
+      const fid = (s.files.find((f) => f.id === s.activeFileId) ?? s.files[0])
+        ?.id;
       if (!fid) return s;
       const cur = new Set(s.timelineLinesByFile?.[fid] ?? []);
       fn(cur);
-      return { ...s, timelineLinesByFile: { ...(s.timelineLinesByFile ?? {}), [fid]: [...cur] } };
+      return {
+        ...s,
+        timelineLinesByFile: {
+          ...(s.timelineLinesByFile ?? {}),
+          [fid]: [...cur],
+        },
+      };
     });
-  const addToTimeline = (ns: number[]) => mutateTimeline((c) => ns.forEach((n) => c.add(n)));
-  const removeFromTimeline = (ns: number[]) => mutateTimeline((c) => ns.forEach((n) => c.delete(n)));
+  const addToTimeline = (ns: number[]) =>
+    mutateTimeline((c) => ns.forEach((n) => c.add(n)));
+  const removeFromTimeline = (ns: number[]) =>
+    mutateTimeline((c) => ns.forEach((n) => c.delete(n)));
   // Global clear: drop every line from the timeline (tracks stay). Mirrors
   // `clearCompare` — the panel's dock-head "Clear" action.
   const clearTimeline = () => mutateTimeline((c) => c.clear());
   // Tracks are a document edit → undoable; persisted on the set, keyed by id.
-  const setTrack = (tr: TimelineSource) => patchState((s) => {
-    if (!file || !set) return;
-    const g = withSet(s, file.id, set.id);
-    const list = [...(g.sources ?? [])];
-    const i = list.findIndex((x) => x.id === tr.id);
-    if (i >= 0) list[i] = tr; else list.push(tr);
-    g.sources = list;
-  });
+  const setTrack = (tr: TimelineSource) =>
+    patchState((s) => {
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
+      const list = [...(g.sources ?? [])];
+      const i = list.findIndex((x) => x.id === tr.id);
+      if (i >= 0) list[i] = tr;
+      else list.push(tr);
+      g.sources = list;
+    });
   // All visible lines for which `filterId` is the first-match winner AND that
   // expose `timeField` — exactly the lines that will produce a mark on this track.
   const winnerLines = (filterId: string, timeField: string): number[] => {
@@ -117,10 +157,21 @@ export function useTimeline({ view, file, set, state, setState, patchState, sele
   // A fresh TimelineSource for (filter, field). `order` = the filter's serial
   // (lane label, e.g. "#3:ts"); `colorIdx` = position in the track list (palette).
   // `sample` lets the default unit be inferred from a real value's shape.
-  const buildTrack = (filterId: string, timeField: string, order: number, colorIdx: number, sample?: string): TimelineSource => ({
-    id: "tlt_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
-    filterId, timeField, lane: `#${order + 1}:${timeField}`,
-    kind: "point", unit: guessUnit(timeField, sample), color: laneColor(colorIdx),
+  const buildTrack = (
+    filterId: string,
+    timeField: string,
+    order: number,
+    colorIdx: number,
+    sample?: string,
+  ): TimelineSource => ({
+    id:
+      "tlt_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    filterId,
+    timeField,
+    lane: `#${order + 1}:${timeField}`,
+    kind: "point",
+    unit: guessUnit(timeField, sample),
+    color: laneColor(colorIdx),
   });
   // Toggle a timeline track for (filter, time field): the filter-row menu shows a
   // ✓ when it's plotted, so clicking a checked field removes it and an unchecked
@@ -130,24 +181,35 @@ export function useTimeline({ view, file, set, state, setState, patchState, sele
   const toggleTimelineTrack = (filterId: string, timeField: string) => {
     if (!file || !set) return;
     // Track identity is (filter, time field).
-    if ((set.sources ?? []).some((x) => x.filterId === filterId && x.timeField === timeField)) {
+    if (
+      (set.sources ?? []).some(
+        (x) => x.filterId === filterId && x.timeField === timeField,
+      )
+    ) {
       patchState((s) => {
         if (!file || !set) return;
         const g = withSet(s, file.id, set.id);
-        g.sources = (g.sources ?? []).filter((x) => !(x.filterId === filterId && x.timeField === timeField));
+        g.sources = (g.sources ?? []).filter(
+          (x) => !(x.filterId === filterId && x.timeField === timeField),
+        );
       });
       return;
     }
     // Sample the field's first matched value so the default unit can be inferred
     // from its shape (a plain number ⇒ seconds), not just the field name.
     const lines = winnerLines(filterId, timeField);
-    const sample = lines.length ? view.fieldsFor(lines[0])?.[timeField]?.raw : undefined;
+    const sample = lines.length
+      ? view.fieldsFor(lines[0])?.[timeField]?.raw
+      : undefined;
     patchState((s) => {
       if (!file || !set) return;
       const g = withSet(s, file.id, set.id);
       const list = [...(g.sources ?? [])];
       // Guard the race where the same pair was added between checks.
-      if (list.some((x) => x.filterId === filterId && x.timeField === timeField)) return;
+      if (
+        list.some((x) => x.filterId === filterId && x.timeField === timeField)
+      )
+        return;
       const idx = g.filters.findIndex((f) => f.id === filterId);
       list.push(buildTrack(filterId, timeField, idx, list.length, sample));
       g.sources = list;
@@ -160,7 +222,9 @@ export function useTimeline({ view, file, set, state, setState, patchState, sele
     if (lines.length) {
       addToTimeline(lines);
     } else {
-      toast(`No matching lines`, { description: `Nothing matches "${tr.lane}" yet.` });
+      toast(`No matching lines`, {
+        description: `Nothing matches "${tr.lane}" yet.`,
+      });
     }
   };
   // Track row "clear lines": remove just this track's matching lines.
@@ -186,7 +250,9 @@ export function useTimeline({ view, file, set, state, setState, patchState, sele
   // case. Surfaced as a bounded hint in the timeline panel.
   const orphanLines = useMemo(() => {
     const plotted = new Set(marks.map((mk) => mk.lineN));
-    return [...timelineLines].filter((n) => !plotted.has(n)).sort((a, b) => a - b);
+    return [...timelineLines]
+      .filter((n) => !plotted.has(n))
+      .sort((a, b) => a - b);
   }, [marks, timelineLines]);
   // LogView "Add to timeline": add the lines, then bridge the common dead-end —
   // if any added line's first-match filter has no track yet, create one so the
@@ -215,17 +281,23 @@ export function useTimeline({ view, file, set, state, setState, patchState, sele
       const g = withSet(s, file.id, set.id);
       const list = [...(g.sources ?? [])];
       for (const { fid, fld } of specs) {
-        if (list.some((x) => x.filterId === fid && x.timeField === fld)) continue;
+        if (list.some((x) => x.filterId === fid && x.timeField === fld))
+          continue;
         const idx = g.filters.findIndex((f) => f.id === fid);
         list.push(buildTrack(fid, fld, idx, list.length));
       }
       g.sources = list;
     });
     selectPanelTab("timeline");
-    const serials = specs.map((x) => `#${set.filters.findIndex((f) => f.id === x.fid) + 1}`).join(", ");
-    toast.success(specs.length > 1 ? `${specs.length} tracks added` : `Track added`, {
-      description: `For filter${specs.length > 1 ? "s" : ""} ${serials}.`,
-    });
+    const serials = specs
+      .map((x) => `#${set.filters.findIndex((f) => f.id === x.fid) + 1}`)
+      .join(", ");
+    toast.success(
+      specs.length > 1 ? `${specs.length} tracks added` : `Track added`,
+      {
+        description: `For filter${specs.length > 1 ? "s" : ""} ${serials}.`,
+      },
+    );
   };
   // "Add all matching lines" (timeline panel, when tracks exist but no lines yet):
   // pull every visible track's matching lines onto the timeline in one go.
@@ -238,21 +310,37 @@ export function useTimeline({ view, file, set, state, setState, patchState, sele
     }
     if (all.size) addToTimeline([...all]);
   };
-  const removeTrack = (id: string) => patchState((s) => {
-    if (!file || !set) return;
-    const g = withSet(s, file.id, set.id);
-    g.sources = (g.sources ?? []).filter((x) => x.id !== id);
-  });
-  const reorderTracks = (ids: string[]) => patchState((s) => {
-    if (!file || !set) return;
-    const g = withSet(s, file.id, set.id);
-    const by = new Map((g.sources ?? []).map((x) => [x.id, x]));
-    g.sources = ids.map((id) => by.get(id)!).filter(Boolean);
-  });
+  const removeTrack = (id: string) =>
+    patchState((s) => {
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
+      g.sources = (g.sources ?? []).filter((x) => x.id !== id);
+    });
+  const reorderTracks = (ids: string[]) =>
+    patchState((s) => {
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
+      const by = new Map((g.sources ?? []).map((x) => [x.id, x]));
+      g.sources = ids.map((id) => by.get(id)!).filter(Boolean);
+    });
 
   return {
-    tracks, timelineLines, marks, badEndTracks, timeFieldsByFilter, orphanLines, trackLineStats,
-    removeFromTimeline, clearTimeline, setTrack, removeTrack, reorderTracks,
-    importTrackLines, clearTrackLines, addAllMatchingLines, addLinesToTimeline, toggleTimelineTrack,
+    tracks,
+    timelineLines,
+    marks,
+    badEndTracks,
+    timeFieldsByFilter,
+    orphanLines,
+    trackLineStats,
+    removeFromTimeline,
+    clearTimeline,
+    setTrack,
+    removeTrack,
+    reorderTracks,
+    importTrackLines,
+    clearTrackLines,
+    addAllMatchingLines,
+    addLinesToTimeline,
+    toggleTimelineTrack,
   };
 }

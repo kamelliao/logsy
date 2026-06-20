@@ -1,4 +1,11 @@
-import type { Filter, FilterGroup, FilterSet, TimelineSource, TimeUnit, EventShape } from "@/types";
+import type {
+  Filter,
+  FilterGroup,
+  FilterSet,
+  TimelineSource,
+  TimeUnit,
+  EventShape,
+} from "@/types";
 import { makeFilter, uid, filterFromTatAttrs } from "@/lib/defaults";
 import { guessUnit } from "@/lib/engine";
 
@@ -10,9 +17,20 @@ export function parseTatFilters(text: string): ImportedFilters | null {
   const doc = new DOMParser().parseFromString(text, "application/xml");
   if (doc.getElementsByTagName("parsererror").length) return null;
   if (doc.documentElement?.tagName !== "TextAnalysisTool.NET") return null;
-  const attrs = ["text", "description", "enabled", "excluding", "case_sensitive", "regex", "foreColor", "backColor"];
+  const attrs = [
+    "text",
+    "description",
+    "enabled",
+    "excluding",
+    "case_sensitive",
+    "regex",
+    "foreColor",
+    "backColor",
+  ];
   const filters = Array.from(doc.getElementsByTagName("filter")).map((el) =>
-    filterFromTatAttrs(Object.fromEntries(attrs.map((k) => [k, el.getAttribute(k)])))
+    filterFromTatAttrs(
+      Object.fromEntries(attrs.map((k) => [k, el.getAttribute(k)])),
+    ),
   );
   return { filters, groups: [], order: filters.map((f) => f.id), sources: [] };
 }
@@ -33,11 +51,20 @@ export interface ImportedFilters {
  * Keeps the full structure — filters, groups, top-level order and timeline
  * sources — so a load round-trips back to the same arrangement.
  */
-export function exportPayload(g: Pick<FilterSet, "name" | "groups" | "order" | "filters" | "sources">): string {
+export function exportPayload(
+  g: Pick<FilterSet, "name" | "groups" | "order" | "filters" | "sources">,
+): string {
   return JSON.stringify(
-    { version: 1, name: g.name, groups: g.groups, order: g.order, filters: g.filters, sources: g.sources ?? [] },
+    {
+      version: 1,
+      name: g.name,
+      groups: g.groups,
+      order: g.order,
+      filters: g.filters,
+      sources: g.sources ?? [],
+    },
     null,
-    2
+    2,
   );
 }
 
@@ -48,7 +75,8 @@ function importSources(raw: unknown): TimelineSource[] {
   const seen = new Set<string>();
   for (const s of raw as any[]) {
     // A track needs both a filter binding and a field; de-dupe by the pair.
-    if (!s || typeof s.filterId !== "string" || typeof s.timeField !== "string") continue;
+    if (!s || typeof s.filterId !== "string" || typeof s.timeField !== "string")
+      continue;
     const key = s.filterId + ":" + s.timeField;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -59,7 +87,10 @@ function importSources(raw: unknown): TimelineSource[] {
       timeField: s.timeField,
       lane: typeof s.lane === "string" ? s.lane : s.timeField,
       kind,
-      endField: kind === "span" && typeof s.endField === "string" ? s.endField : undefined,
+      endField:
+        kind === "span" && typeof s.endField === "string"
+          ? s.endField
+          : undefined,
       unit: TIME_UNITS.includes(s.unit) ? s.unit : guessUnit(s.timeField),
       color: typeof s.color === "string" ? s.color : undefined,
       shape: SHAPES.includes(s.shape) ? s.shape : undefined,
@@ -79,22 +110,30 @@ function importSources(raw: unknown): TimelineSource[] {
  * Mirrors the id-remap used by `duplicateSet`, plus source bindings.
  */
 export function remapImportIds(b: ImportedFilters): ImportedFilters {
-  const groupMap = new Map(b.groups.map((grp) => [grp.id, uid("grp")] as const));
+  const groupMap = new Map(
+    b.groups.map((grp) => [grp.id, uid("grp")] as const),
+  );
   const filMap = new Map(b.filters.map((fl) => [fl.id, uid("f")] as const));
   return {
     groups: b.groups.map((grp) => ({ ...grp, id: groupMap.get(grp.id)! })),
     filters: b.filters.map((fl) => ({
       ...fl,
       id: filMap.get(fl.id)!,
-      groupId: fl.groupId ? groupMap.get(fl.groupId) ?? null : null,
+      groupId: fl.groupId ? (groupMap.get(fl.groupId) ?? null) : null,
       fields: fl.fields ? fl.fields.map((x) => ({ ...x })) : undefined,
     })),
-    order: b.order.map((id) => groupMap.get(id) ?? filMap.get(id)).filter((x): x is string => !!x),
+    order: b.order
+      .map((id) => groupMap.get(id) ?? filMap.get(id))
+      .filter((x): x is string => !!x),
     // A track binds to a filter by id; drop tracks whose filter didn't come
     // along, and give the rest fresh ids + remapped bindings.
     sources: b.sources
       .filter((s) => filMap.has(s.filterId))
-      .map((s) => ({ ...s, id: uid("tlt"), filterId: filMap.get(s.filterId)! })),
+      .map((s) => ({
+        ...s,
+        id: uid("tlt"),
+        filterId: filMap.get(s.filterId)!,
+      })),
   };
 }
 
@@ -104,32 +143,54 @@ export function remapImportIds(b: ImportedFilters): ImportedFilters {
  */
 export function buildGroupFromImport(data: unknown): ImportedFilters | null {
   // Full structure: { filters, groups?, order? }.
-  if (data && typeof data === "object" && !Array.isArray(data) && Array.isArray((data as any).filters)) {
+  if (
+    data &&
+    typeof data === "object" &&
+    !Array.isArray(data) &&
+    Array.isArray((data as any).filters)
+  ) {
     const d = data as any;
     const rawGroups = Array.isArray(d.groups) ? d.groups : [];
     const groups: FilterGroup[] = rawGroups
       .filter((s: any) => s && typeof s.id === "string")
-      .map((s: any) => ({ id: s.id, name: typeof s.name === "string" ? s.name : "Group", collapsed: !!s.collapsed }));
+      .map((s: any) => ({
+        id: s.id,
+        name: typeof s.name === "string" ? s.name : "Group",
+        collapsed: !!s.collapsed,
+      }));
     const validGroupIds = new Set(groups.map((s) => s.id));
     const filters: Filter[] = d.filters.map((x: any) => {
-      const f = makeFilter(typeof x?.pattern === "string" ? x.pattern : "", x ?? {});
+      const f = makeFilter(
+        typeof x?.pattern === "string" ? x.pattern : "",
+        x ?? {},
+      );
       if (typeof x?.id === "string") f.id = x.id;
       const gid = typeof x?.groupId === "string" ? x.groupId : null;
       f.groupId = gid && validGroupIds.has(gid) ? gid : null;
       return f;
     });
-    const order: string[] = Array.isArray(d.order) ? d.order.filter((id: any) => typeof id === "string") : [];
+    const order: string[] = Array.isArray(d.order)
+      ? d.order.filter((id: any) => typeof id === "string")
+      : [];
     const sources = importSources(d.sources);
     return { filters, groups, order, sources };
   }
   // Legacy: a flat array of filters.
   if (Array.isArray(data)) {
     const filters = data.map((x: any) => {
-      const f = makeFilter(typeof x?.pattern === "string" ? x.pattern : "", x ?? {});
+      const f = makeFilter(
+        typeof x?.pattern === "string" ? x.pattern : "",
+        x ?? {},
+      );
       if (typeof x?.id === "string") f.id = x.id;
       return f;
     });
-    return { filters, groups: [], order: filters.map((f) => f.id), sources: [] };
+    return {
+      filters,
+      groups: [],
+      order: filters.map((f) => f.id),
+      sources: [],
+    };
   }
   return null;
 }

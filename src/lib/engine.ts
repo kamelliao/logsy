@@ -1,6 +1,15 @@
 import type {
-  Filter, CompiledFilter, ViewResult, ViewRow, Segment,
-  FieldType, FieldDef, FieldValue, TimeUnit, TimelineSource, EventMark,
+  Filter,
+  CompiledFilter,
+  ViewResult,
+  ViewRow,
+  Segment,
+  FieldType,
+  FieldDef,
+  FieldValue,
+  TimeUnit,
+  TimelineSource,
+  EventMark,
 } from "@/types";
 
 export function escapeRegex(s: string): string {
@@ -8,7 +17,8 @@ export function escapeRegex(s: string): string {
 }
 
 export function compile(f: Filter): CompiledFilter {
-  if (!f.pattern || !f.pattern.length) return { f, re: null, ok: true, empty: true };
+  if (!f.pattern || !f.pattern.length)
+    return { f, re: null, ok: true, empty: true };
   try {
     const src = f.regex ? f.pattern : escapeRegex(f.pattern);
     const flags = f.caseSensitive ? "g" : "gi";
@@ -18,7 +28,10 @@ export function compile(f: Filter): CompiledFilter {
     // says "Invalid regular expression: /…/gi: reason" (echoing the whole
     // source); JSC (bun tests) says "Invalid regular expression: reason".
     const msg = (e as Error).message;
-    const m = /^Invalid regular expression: (?:\/[\s\S]*\/[a-z]*: )?([\s\S]+)$/.exec(msg);
+    const m =
+      /^Invalid regular expression: (?:\/[\s\S]*\/[a-z]*: )?([\s\S]+)$/.exec(
+        msg,
+      );
     return { f, re: null, ok: false, err: m ? m[1] : msg };
   }
 }
@@ -57,11 +70,16 @@ export function segments(text: string, re: RegExp | null): Segment[] {
 
 // --- Edit-modal live preview ------------------------------------------------
 
-export interface MatchSample { n: number; text: string }
+export interface MatchSample {
+  n: number;
+  text: string;
+}
 
 /** One pass over the file: total match count plus the first `limit` hits. */
 export function scanMatches(
-  lines: string[], re: RegExp, limit = 200,
+  lines: string[],
+  re: RegExp,
+  limit = 200,
 ): { count: number; samples: MatchSample[] } {
   let count = 0;
   const samples: MatchSample[] = [];
@@ -74,7 +92,11 @@ export function scanMatches(
   return { count, samples };
 }
 
-export interface GroupSegment { t: string; hit: boolean; group?: number }
+export interface GroupSegment {
+  t: string;
+  hit: boolean;
+  group?: number;
+}
 
 /**
  * Like `segments`, but spans belonging to a named capture group carry that
@@ -82,7 +104,11 @@ export interface GroupSegment { t: string; hit: boolean; group?: number }
  * field. `re` must be compiled with the `d` (indices) flag. Overlapping named
  * groups paint in pattern order, so an inner (later) group wins.
  */
-export function groupSegments(text: string, re: RegExp, groupOrder: string[]): GroupSegment[] {
+export function groupSegments(
+  text: string,
+  re: RegExp,
+  groupOrder: string[],
+): GroupSegment[] {
   if (!text.length) return [{ t: text, hit: false }];
   // Per-character paint: 0 = plain, 1 = hit, 2+k = named group k.
   const paint = new Uint16Array(text.length);
@@ -108,7 +134,13 @@ export function groupSegments(text: string, re: RegExp, groupOrder: string[]): G
     if (i < text.length && paint[i] === paint[start]) continue;
     const p = paint[start];
     const t = text.slice(start, i);
-    out.push(p === 0 ? { t, hit: false } : p === 1 ? { t, hit: true } : { t, hit: true, group: p - 2 });
+    out.push(
+      p === 0
+        ? { t, hit: false }
+        : p === 1
+          ? { t, hit: true }
+          : { t, hit: true, group: p - 2 },
+    );
     start = i;
   }
   return out;
@@ -156,7 +188,10 @@ function parseTime(raw: string): number {
 
 /** Nanoseconds per whole unit, for normalizing plain-number time fields. */
 const NS_PER: Record<Exclude<TimeUnit, "hms">, number> = {
-  s: 1e9, ms: 1e6, us: 1e3, ns: 1,
+  s: 1e9,
+  ms: 1e6,
+  us: 1e3,
+  ns: 1,
 };
 
 /**
@@ -181,14 +216,26 @@ export function coerceTime(raw: string, unit?: TimeUnit): number | string {
 }
 
 /** Coerce raw matched text per field type; fall back to the raw string on NaN. */
-export function coerceValue(raw: string, type: FieldType, unit?: TimeUnit): number | string {
+export function coerceValue(
+  raw: string,
+  type: FieldType,
+  unit?: TimeUnit,
+): number | string {
   let v: number;
   switch (type) {
-    case "int":   v = parseInt(raw, 10); break;
-    case "hex":   v = parseInt(raw.replace(/^0x/i, ""), 16); break;
-    case "float": v = parseFloat(raw); break;
-    case "time":  return coerceTime(raw, unit);
-    default:      return raw;
+    case "int":
+      v = parseInt(raw, 10);
+      break;
+    case "hex":
+      v = parseInt(raw.replace(/^0x/i, ""), 16);
+      break;
+    case "float":
+      v = parseFloat(raw);
+      break;
+    case "time":
+      return coerceTime(raw, unit);
+    default:
+      return raw;
   }
   return Number.isNaN(v) ? raw : v;
 }
@@ -220,13 +267,18 @@ export function guessUnit(name: string, sample?: string): TimeUnit {
  * the pattern is unreliable because real numeric patterns use quantifiers, char
  * classes, escapes, and hex (`\d+`, `[0-9]{2}`, `0x[0-9a-f]+`).
  */
-const TIME_LIKE_RE = /^\s*(?:0[xX][0-9a-fA-F]+|[+-]?\d+(?:[.,]\d+)?|\d{1,3}(?::\d{2}){1,2}(?:[.,]\d+)?)\s*$/;
+const TIME_LIKE_RE =
+  /^\s*(?:0[xX][0-9a-fA-F]+|[+-]?\d+(?:[.,]\d+)?|\d{1,3}(?::\d{2}){1,2}(?:[.,]\d+)?)\s*$/;
 export function isTimeLike(raw: string): boolean {
   return TIME_LIKE_RE.test(raw);
 }
 
 /** Extract a compiled structural filter's named groups from a line, coerced by type. */
-function extractFields(re: RegExp, defs: FieldDef[], line: string): Record<string, FieldValue> {
+function extractFields(
+  re: RegExp,
+  defs: FieldDef[],
+  line: string,
+): Record<string, FieldValue> {
   re.lastIndex = 0;
   const m = re.exec(line);
   const groups = m?.groups ?? {};
@@ -248,7 +300,10 @@ function extractFields(re: RegExp, defs: FieldDef[], line: string): Record<strin
 // that re-run is O(lines × filters) and takes seconds at 100+ filters on a
 // large log.
 
-interface MatchBits { bits: Uint8Array; count: number }
+interface MatchBits {
+  bits: Uint8Array;
+  count: number;
+}
 const matchCache = new WeakMap<readonly string[], Map<string, MatchBits>>();
 // Per-file LRU cap. Bit sets cost lines/8 bytes each, so even 300 entries on a
 // million-line log stay under ~40 MB.
@@ -256,7 +311,10 @@ const MATCH_CACHE_MAX = 300;
 
 function matchBitsFor(lines: string[], re: RegExp): MatchBits {
   let perFile = matchCache.get(lines);
-  if (!perFile) { perFile = new Map(); matchCache.set(lines, perFile); }
+  if (!perFile) {
+    perFile = new Map();
+    matchCache.set(lines, perFile);
+  }
   const key = re.source + " " + re.flags;
   const hit = perFile.get(key);
   if (hit) {
@@ -268,15 +326,22 @@ function matchBitsFor(lines: string[], re: RegExp): MatchBits {
   let count = 0;
   for (let i = 0; i < lines.length; i++) {
     re.lastIndex = 0;
-    if (re.test(lines[i])) { bits[i >> 3] |= 1 << (i & 7); count++; }
+    if (re.test(lines[i])) {
+      bits[i >> 3] |= 1 << (i & 7);
+      count++;
+    }
   }
   const entry = { bits, count };
   perFile.set(key, entry);
-  if (perFile.size > MATCH_CACHE_MAX) perFile.delete(perFile.keys().next().value!);
+  if (perFile.size > MATCH_CACHE_MAX)
+    perFile.delete(perFile.keys().next().value!);
   return entry;
 }
 
-export function computeView(lines: string[], compiled: CompiledFilter[]): ViewResult {
+export function computeView(
+  lines: string[],
+  compiled: CompiledFilter[],
+): ViewResult {
   // Every filter with a usable regex. List order is significant: the colour
   // winner and field provider go to the first match in this order.
   const usable = compiled.filter((c) => c.re && !c.empty && c.ok);
@@ -322,7 +387,10 @@ export function computeView(lines: string[], compiled: CompiledFilter[]): ViewRe
       for (let k = 0; k < 8; k++) {
         if (!(v & (1 << k))) continue;
         const i = (b << 3) + k;
-        if (isExclude) { excludedArr[i] = 1; continue; }
+        if (isExclude) {
+          excludedArr[i] = 1;
+          continue;
+        }
         winnerIdx[i] = u;
         if (hasFields) fieldsIdx[i] = u;
       }
@@ -338,7 +406,10 @@ export function computeView(lines: string[], compiled: CompiledFilter[]): ViewRe
     if (excluded) excludedCount++;
     else if (winner) matchedCount++;
     rows[i] = {
-      n: i + 1, text: lines[i], winner, excluded,
+      n: i + 1,
+      text: lines[i],
+      winner,
+      excluded,
       fieldsFromId: fieldsIdx[i] >= 0 ? usable[fieldsIdx[i]].f.id : undefined,
     };
   }
@@ -359,7 +430,8 @@ export function computeView(lines: string[], compiled: CompiledFilter[]): ViewRe
     const i = n - 1;
     if (i < 0 || i >= lines.length) return [];
     const out: Filter[] = [];
-    const byte = i >> 3, bit = 1 << (i & 7);
+    const byte = i >> 3,
+      bit = 1 << (i & 7);
     for (let u = 0; u < usable.length; u++) {
       const c = usable[u];
       if (!c.f.enabled || c.f.exclude) continue;
@@ -368,7 +440,16 @@ export function computeView(lines: string[], compiled: CompiledFilter[]): ViewRe
     return out;
   };
 
-  return { rows, counts, hasHighlights, hasExcludes, matchedCount, excludedCount, fieldsFor, matchedFiltersFor };
+  return {
+    rows,
+    counts,
+    hasHighlights,
+    hasExcludes,
+    matchedCount,
+    excludedCount,
+    fieldsFor,
+    matchedFiltersFor,
+  };
 }
 
 // --- Timeline: extract events from the lines the user added ----------------
@@ -380,7 +461,14 @@ export function computeView(lines: string[], compiled: CompiledFilter[]): ViewRe
 
 /** Palette for auto-assigned lane colors (light tints, matched in the canvas). */
 const LANE_COLORS = [
-  "#dbeafe", "#dcfce7", "#fef9c3", "#fce7f3", "#e0e7ff", "#ffedd5", "#ccfbf1", "#fee2e2",
+  "#dbeafe",
+  "#dcfce7",
+  "#fef9c3",
+  "#fce7f3",
+  "#e0e7ff",
+  "#ffedd5",
+  "#ccfbf1",
+  "#fee2e2",
 ];
 
 /** Next auto palette color for a new track, given how many tracks exist already. */
@@ -407,7 +495,9 @@ export function trackFieldsOf(filter: Filter): FieldDef[] {
  * that one first-matched filter.
  */
 export function buildTimeline(
-  view: ViewResult, lineNumbers: Iterable<number>, tracks: TimelineSource[],
+  view: ViewResult,
+  lineNumbers: Iterable<number>,
+  tracks: TimelineSource[],
   // Optional sink: ids of span tracks whose end time came out BEFORE the start
   // (an illegal, backwards span). Such ends are dropped (the mark falls back to
   // a point) so the timeline never has to plot a negative-width span — which
@@ -434,7 +524,9 @@ export function buildTimeline(
       if (typeof t !== "number") continue;
       let end: number | undefined;
       if (tr.kind === "span" && tr.endField) {
-        const e = fields[tr.endField] ? coerceTime(fields[tr.endField].raw, tr.unit) : undefined;
+        const e = fields[tr.endField]
+          ? coerceTime(fields[tr.endField].raw, tr.unit)
+          : undefined;
         // Only keep a well-formed span (end >= start). A backwards end is
         // dropped (render as a point) and reported as illegal.
         if (typeof e === "number") {
@@ -442,7 +534,16 @@ export function buildTimeline(
           else end = e;
         }
       }
-      out.push({ lane: tr.lane, t, end, lineN: n, label: text, color: tr.color, shape: tr.shape, fields });
+      out.push({
+        lane: tr.lane,
+        t,
+        end,
+        lineN: n,
+        label: text,
+        color: tr.color,
+        shape: tr.shape,
+        fields,
+      });
     }
   }
   return out;

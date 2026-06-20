@@ -1,6 +1,6 @@
-import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area"
+import { ScrollArea as ScrollAreaPrimitive } from "@base-ui/react/scroll-area";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 function ScrollArea({
   className,
@@ -10,9 +10,9 @@ function ScrollArea({
   viewportProps,
   ...props
 }: ScrollAreaPrimitive.Root.Props & {
-  orientation?: "vertical" | "horizontal" | "both"
-  viewportClassName?: string
-  viewportProps?: ScrollAreaPrimitive.Viewport.Props
+  orientation?: "vertical" | "horizontal" | "both";
+  viewportClassName?: string;
+  viewportProps?: ScrollAreaPrimitive.Viewport.Props;
 }) {
   return (
     <ScrollAreaPrimitive.Root
@@ -40,7 +40,7 @@ function ScrollArea({
       )}
       <ScrollAreaPrimitive.Corner data-slot="scroll-area-corner" />
     </ScrollAreaPrimitive.Root>
-  )
+  );
 }
 
 function ScrollBar({
@@ -60,7 +60,7 @@ function ScrollBar({
         className="scroll-area-thumb"
       />
     </ScrollAreaPrimitive.Scrollbar>
-  )
+  );
 }
 
-export { ScrollArea, ScrollBar }
+export { ScrollArea, ScrollBar };

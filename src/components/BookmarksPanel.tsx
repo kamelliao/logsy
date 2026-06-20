@@ -15,7 +15,14 @@ interface BookmarksPanelProps {
 }
 
 /** The Bookmarks tab body: a jump-list of every marker in the active file. */
-export function BookmarksPanel({ markers, lineText, onJump, onSetNote, onRemove, onClearAll }: BookmarksPanelProps) {
+export function BookmarksPanel({
+  markers,
+  lineText,
+  onJump,
+  onSetNote,
+  onRemove,
+  onClearAll,
+}: BookmarksPanelProps) {
   // Which row's note is in edit mode; null = all rows show their read state.
   const [editing, setEditing] = useState<number | null>(null);
   // Icon filter: "all" shows every marker, otherwise only the chosen glyph.
@@ -40,7 +47,8 @@ export function BookmarksPanel({ markers, lineText, onJump, onSetNote, onRemove,
   // The active filter may point at an icon that no longer exists (last one of
   // its kind removed); fall back to showing everything in that case.
   const effective = filter !== "all" && counts.has(filter) ? filter : "all";
-  const shown = effective === "all" ? markers : markers.filter((m) => m.icon === effective);
+  const shown =
+    effective === "all" ? markers : markers.filter((m) => m.icon === effective);
 
   return (
     <div className="bm-wrap">
@@ -65,7 +73,11 @@ export function BookmarksPanel({ markers, lineText, onJump, onSetNote, onRemove,
             </button>
           ))}
         </div>
-        <button className="bm-clear" onClick={onClearAll} title="Remove all bookmarks">
+        <button
+          className="bm-clear"
+          onClick={onClearAll}
+          title="Remove all bookmarks"
+        >
           Clear all
         </button>
       </div>
@@ -76,10 +88,22 @@ export function BookmarksPanel({ markers, lineText, onJump, onSetNote, onRemove,
           const isEditing = editing === m.n;
           const hasNote = m.note.trim().length > 0;
           return (
-            <div key={m.n} className="bm-row" style={{ ["--mk" as string]: markerColor(m.icon) } as CSSProperties}>
+            <div
+              key={m.n}
+              className="bm-row"
+              style={
+                { ["--mk" as string]: markerColor(m.icon) } as CSSProperties
+              }
+            >
               <span className="bm-strip" />
-              <button className="bm-jump" title="Jump to this line" onClick={() => onJump(m.n)}>
-                <span className="bm-ico"><MarkerGlyph icon={m.icon} /></span>
+              <button
+                className="bm-jump"
+                title="Jump to this line"
+                onClick={() => onJump(m.n)}
+              >
+                <span className="bm-ico">
+                  <MarkerGlyph icon={m.icon} />
+                </span>
                 <span className="bm-line">{m.n}</span>
               </button>
               <div className="bm-content">
@@ -90,28 +114,44 @@ export function BookmarksPanel({ markers, lineText, onJump, onSetNote, onRemove,
                     value={m.note}
                     autoFocus
                     onChange={(e) => onSetNote(m.n, e.target.value)}
-                    onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditing(null); }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === "Escape")
+                        setEditing(null);
+                    }}
                     onBlur={() => setEditing(null)}
                   />
                 ) : hasNote ? (
-                  <button className="bm-title" title="Edit note" onClick={() => setEditing(m.n)}>
+                  <button
+                    className="bm-title"
+                    title="Edit note"
+                    onClick={() => setEditing(m.n)}
+                  >
                     {m.note}
                   </button>
                 ) : null}
                 <button
-                  className={"bm-preview" + (hasNote || isEditing ? " muted" : "")}
+                  className={
+                    "bm-preview" + (hasNote || isEditing ? " muted" : "")
+                  }
                   title={text ? "Jump to this line" : undefined}
                   onClick={() => onJump(m.n)}
                 >
                   {text || <span className="bm-noline">(line {m.n})</span>}
                 </button>
                 {!hasNote && !isEditing && (
-                  <button className="bm-addnote" onClick={() => setEditing(m.n)}>
+                  <button
+                    className="bm-addnote"
+                    onClick={() => setEditing(m.n)}
+                  >
                     <Plus size={12} /> note
                   </button>
                 )}
               </div>
-              <button className="bm-del" title="Remove bookmark" onClick={() => onRemove(m.n)}>
+              <button
+                className="bm-del"
+                title="Remove bookmark"
+                onClick={() => onRemove(m.n)}
+              >
                 <Trash2 size={14} />
               </button>
             </div>

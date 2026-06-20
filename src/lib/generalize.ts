@@ -5,7 +5,14 @@
 
 import { escapeRegex } from "@/lib/engine";
 
-export type GenKind = "text" | "ws" | "int" | "float" | "hex" | "time" | "merged";
+export type GenKind =
+  | "text"
+  | "ws"
+  | "int"
+  | "float"
+  | "hex"
+  | "time"
+  | "merged";
 
 /** exact = escaped literal · general = type pattern · capture = named group. */
 export type GenState = "exact" | "general" | "capture";
@@ -44,7 +51,10 @@ export function tokenize(raw: string): GenToken[] {
   let i = 0;
   let lit = "";
   const flushLit = () => {
-    if (lit) { out.push({ raw: lit, kind: "text", state: "exact" }); lit = ""; }
+    if (lit) {
+      out.push({ raw: lit, kind: "text", state: "exact" });
+      lit = "";
+    }
   };
   outer: while (i < raw.length) {
     const rest = raw.slice(i);
@@ -68,19 +78,32 @@ export function tokenize(raw: string): GenToken[] {
 export function generalPattern(t: GenToken): string {
   switch (t.kind) {
     // Keep the timestamp's separators/structure, generalize only digit runs.
-    case "time": return escapeRegex(t.raw).replace(/\d+/g, "\\d+");
-    case "hex": return /^0[xX]/.test(t.raw) ? "0x[0-9A-Fa-f]+" : "[0-9A-Fa-f]+";
-    case "float": return "\\d+\\.\\d+";
-    case "int": return "\\d+";
-    case "ws": return "\\s+";
+    case "time":
+      return escapeRegex(t.raw).replace(/\d+/g, "\\d+");
+    case "hex":
+      return /^0[xX]/.test(t.raw) ? "0x[0-9A-Fa-f]+" : "[0-9A-Fa-f]+";
+    case "float":
+      return "\\d+\\.\\d+";
+    case "int":
+      return "\\d+";
+    case "ws":
+      return "\\s+";
     // A merged run mixes kinds, so the only honest generalization is "anything".
-    case "merged": return ".+";
-    default: return escapeRegex(t.raw);
+    case "merged":
+      return ".+";
+    default:
+      return escapeRegex(t.raw);
   }
 }
 
 const DEFAULT_NAMES: Record<GenKind, string> = {
-  time: "ts", hex: "hex", int: "num", float: "val", text: "txt", ws: "ws", merged: "msg",
+  time: "ts",
+  hex: "hex",
+  int: "num",
+  float: "val",
+  text: "txt",
+  ws: "ws",
+  merged: "msg",
 };
 
 const VALID_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -93,7 +116,8 @@ export function assignNames(tokens: GenToken[]): (string | undefined)[] {
   const used = new Set<string>();
   return tokens.map((t) => {
     if (t.state !== "capture") return undefined;
-    let base = t.name && VALID_NAME.test(t.name) ? t.name : DEFAULT_NAMES[t.kind];
+    const base =
+      t.name && VALID_NAME.test(t.name) ? t.name : DEFAULT_NAMES[t.kind];
     let name = base;
     for (let i = 2; used.has(name); i++) name = base + i;
     used.add(name);
@@ -106,7 +130,11 @@ export function assignNames(tokens: GenToken[]): (string | undefined)[] {
  * Starts exact so the rebuilt pattern still matches the sample literally;
  * the originals ride along in `parts` so splitToken can restore them.
  */
-export function mergeTokens(tokens: GenToken[], from: number, to: number): GenToken[] {
+export function mergeTokens(
+  tokens: GenToken[],
+  from: number,
+  to: number,
+): GenToken[] {
   const [a, b] = from <= to ? [from, to] : [to, from];
   if (b - a < 1 || a < 0 || b >= tokens.length) return tokens;
   const parts = tokens.slice(a, b + 1);

@@ -11,7 +11,7 @@ Built with **Tauri v2 · React 19 · TypeScript · Vite**.
 
 - **Open logs from disk** via dialog (`Ctrl O`) or by **dragging & dropping**
   files anywhere onto the window. Multiple files open as tabs.
-- **Filters** that highlight matching lines (or *exclude* them to cut noise),
+- **Filters** that highlight matching lines (or _exclude_ them to cut noise),
   with plain-text or regex patterns and optional case sensitivity.
 - **Filter sets** (the tabs) each contain **filter groups** (collapsible
   sub-sections) so you can organise filters per investigation.
@@ -87,21 +87,21 @@ place to look when a large file feels sluggish. `compileAll` and `segments`
 
 ## Keyboard shortcuts
 
-| Shortcut            | Action                          |
-| ------------------- | ------------------------------- |
-| `Ctrl O`            | Open log file(s)                |
-| `Ctrl F`            | Find in view                    |
-| `Ctrl H`            | Toggle matches-only view        |
-| `Ctrl` `+` / `-`    | Zoom in / out (also `Ctrl`+scroll) |
-| `Ctrl 0`            | Reset zoom                      |
-| `Esc`               | Close find                      |
+| Shortcut         | Action                             |
+| ---------------- | ---------------------------------- |
+| `Ctrl O`         | Open log file(s)                   |
+| `Ctrl F`         | Find in view                       |
+| `Ctrl H`         | Toggle matches-only view           |
+| `Ctrl` `+` / `-` | Zoom in / out (also `Ctrl`+scroll) |
+| `Ctrl 0`         | Reset zoom                         |
+| `Esc`            | Close find                         |
 
 ## Recovering from a bad state
 
 Logsy remembers your workspace (open files, filters, layout, bookmarks) in the
 webview's `localStorage`. If a corrupt or pathological state ever makes the app
 freeze or crash **on launch**, the UI is unreachable and can't clear itself — so
-two command-line escape hatches run *before* the frontend loads:
+two command-line escape hatches run _before_ the frontend loads:
 
 ```bash
 logsy --reset    # wipe the saved state permanently, then start fresh
@@ -123,11 +123,11 @@ bun run tauri dev -- -- --safe   # first -- → cargo, second -- → the app
 
 If even `--reset` won't launch, delete the saved state manually (app closed):
 
-| OS      | Folder to delete                                                              |
-| ------- | ----------------------------------------------------------------------------- |
-| Windows | `%LOCALAPPDATA%\dev.logsy.app\EBWebView\Default\Local Storage`                 |
-| macOS   | `~/Library/WebKit/dev.logsy.app` (or the app's `WebsiteData` folder)          |
-| Linux   | `~/.local/share/dev.logsy.app` (WebKitGTK local storage)                      |
+| OS      | Folder to delete                                                     |
+| ------- | -------------------------------------------------------------------- |
+| Windows | `%LOCALAPPDATA%\dev.logsy.app\EBWebView\Default\Local Storage`       |
+| macOS   | `~/Library/WebKit/dev.logsy.app` (or the app's `WebsiteData` folder) |
+| Linux   | `~/.local/share/dev.logsy.app` (WebKitGTK local storage)             |
 
 ## Releasing
 
@@ -166,6 +166,7 @@ draft, and **Publish**.
 
 > To release the current version without bumping (e.g. the first `v0.1.0`),
 > just tag and push manually:
+>
 > ```bash
 > git tag v0.1.0 && git push origin v0.1.0
 > ```

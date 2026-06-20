@@ -15,12 +15,14 @@ export function useCompareCollapse(rows: readonly { fieldsFromId?: string }[]) {
     return s;
   }, [rows]);
 
-  const allCollapsed = groupIds.size > 0 && [...groupIds].every((id) => collapsed.has(id));
+  const allCollapsed =
+    groupIds.size > 0 && [...groupIds].every((id) => collapsed.has(id));
 
   const toggle = useCallback((id: string) => {
     setCollapsed((s) => {
       const n = new Set(s);
-      if (n.has(id)) n.delete(id); else n.add(id);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
       return n;
     });
   }, []);
@@ -30,5 +32,11 @@ export function useCompareCollapse(rows: readonly { fieldsFromId?: string }[]) {
     setCollapsed(allCollapsed ? new Set() : new Set(groupIds));
   }, [allCollapsed, groupIds]);
 
-  return { collapsed, toggle, toggleAll, allCollapsed, hasGroups: groupIds.size > 0 };
+  return {
+    collapsed,
+    toggle,
+    toggleAll,
+    allCollapsed,
+    hasGroups: groupIds.size > 0,
+  };
 }

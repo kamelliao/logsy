@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ArrowUpToLine, ChevronDown, ChevronRight, Download, ListX, ListPlus, X } from "lucide-react";
+import {
+  ArrowUpToLine,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  ListX,
+  ListPlus,
+  X,
+} from "lucide-react";
 import type { ViewRow } from "@/types";
 import { Button } from "@/components/ui/button";
 import { PanelEmpty } from "@/components/PanelEmpty";
@@ -45,14 +53,14 @@ const CELL_PAD = 26; // 13px each side — matches the cell padding in CSS
 const MAX_BODY_ROWS = 12;
 
 interface Group {
-  id: string;                 // "" for ungrouped/unknown
-  key: string | undefined;    // the filter id, or undefined when unknown
+  id: string; // "" for ungrouped/unknown
+  key: string | undefined; // the filter id, or undefined when unknown
   label: string;
   color: string;
-  index: number;              // 0-based filter serial, -1 if the filter is gone
+  index: number; // 0-based filter serial, -1 if the filter is gone
   rows: ViewRow[];
   cols: string[];
-  template: string;           // grid-template-columns shared by header + rows
+  template: string; // grid-template-columns shared by header + rows
 }
 
 function buildGroups(
@@ -76,7 +84,11 @@ function buildGroups(
     let maxN = 1;
     for (const r of grpRows) {
       if (r.n > maxN) maxN = r.n;
-      for (const k of Object.keys(r.fields ?? {})) if (!seen.has(k)) { seen.add(k); cols.push(k); }
+      for (const k of Object.keys(r.fields ?? {}))
+        if (!seen.has(k)) {
+          seen.add(k);
+          cols.push(k);
+        }
     }
     const widths = cols.map((c) => {
       // The header renders in ui-font, uppercase, with letter-spacing — a touch
@@ -94,18 +106,32 @@ function buildGroups(
     const lnCh = Math.max(4, String(maxN).length + 1);
     // Fixed (non-shrinking) tracks sized to full content; the row's
     // `width: max-content` (in CSS) lets the table overflow → horizontal scroll.
-    const dataTracks = widths.map((w) => `calc(${w}ch + ${CELL_PAD}px)`).join(" ");
+    const dataTracks = widths
+      .map((w) => `calc(${w}ch + ${CELL_PAD}px)`)
+      .join(" ");
     // remove · line · data… · greedy pad (absorbs slack so columns hug content
     // when the table is narrower than its box)
     const template = `34px calc(${lnCh}ch + ${CELL_PAD}px) ${dataTracks} minmax(0, 1fr)`;
-    out.push({ id, key, label: labelFor(key), color: colorFor(key), index: indexFor(key), rows: grpRows, cols, template });
+    out.push({
+      id,
+      key,
+      label: labelFor(key),
+      color: colorFor(key),
+      index: indexFor(key),
+      rows: grpRows,
+      cols,
+      template,
+    });
   }
   // Order the tables by their filter's position in the set (the #N serial), NOT
   // by Map insertion order — that latter follows whichever group's earliest line
   // appears first, so removing a table's first row would change its earliest line
   // and make the whole table jump to a new slot. Filters that no longer exist
   // (index -1) sort to the end. The sort is stable, so same-index groups keep order.
-  out.sort((a, b) => (a.index < 0 ? Infinity : a.index) - (b.index < 0 ? Infinity : b.index));
+  out.sort(
+    (a, b) =>
+      (a.index < 0 ? Infinity : a.index) - (b.index < 0 ? Infinity : b.index),
+  );
   return out;
 }
 
@@ -113,17 +139,37 @@ function buildGroups(
  *  its own bounded 2D scroll box: rows scroll vertically inside it (capped height,
  *  virtualized) and the table scrolls horizontally on its own native scrollbar —
  *  so a wide or tall table never drags the whole panel around. */
-export function CompareTable({ rows, rowH, onRemove, labelFor, colorFor, indexFor, onExport, onClearGroup, onImportMatching, onJump, onFocusFilter, collapsed, onToggleCollapse }: CompareTableProps) {
-  const groups = useMemo(() => buildGroups(rows, labelFor, colorFor, indexFor), [rows, labelFor, colorFor, indexFor]);
+export function CompareTable({
+  rows,
+  rowH,
+  onRemove,
+  labelFor,
+  colorFor,
+  indexFor,
+  onExport,
+  onClearGroup,
+  onImportMatching,
+  onJump,
+  onFocusFilter,
+  collapsed,
+  onToggleCollapse,
+}: CompareTableProps) {
+  const groups = useMemo(
+    () => buildGroups(rows, labelFor, colorFor, indexFor),
+    [rows, labelFor, colorFor, indexFor],
+  );
 
   if (!rows.length) {
     return (
       <PanelEmpty title="Nothing to compare yet">
         <p>
-          Right-click a parsed line in the log (or select several, then right-click) ▸{" "}
-          <b>Add to compare</b> to line up its extracted fields side by side here.
+          Right-click a parsed line in the log (or select several, then
+          right-click) ▸ <b>Add to compare</b> to line up its extracted fields
+          side by side here.
         </p>
-        <p className="panel-empty-hint">Only lines a filter has parsed fields from can be compared.</p>
+        <p className="panel-empty-hint">
+          Only lines a filter has parsed fields from can be compared.
+        </p>
       </PanelEmpty>
     );
   }
@@ -165,7 +211,18 @@ interface CompareGroupProps {
 /** One pattern's table: a sticky toolbar header plus (when expanded) a bounded,
  *  self-scrolling body. The toolbar pins to the panel top via CSS sticky as you
  *  scroll between tables. */
-function CompareGroup({ g, rowH, collapsed, onToggleCollapse, onRemove, onExport, onClearGroup, onImportMatching, onJump, onFocusFilter }: CompareGroupProps) {
+function CompareGroup({
+  g,
+  rowH,
+  collapsed,
+  onToggleCollapse,
+  onRemove,
+  onExport,
+  onClearGroup,
+  onImportMatching,
+  onJump,
+  onFocusFilter,
+}: CompareGroupProps) {
   // Shared with CompareGroupBody: it mounts the scroll element here, and the
   // toolbar's "scroll to top" reaches the same element. null while collapsed.
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -173,7 +230,9 @@ function CompareGroup({ g, rowH, collapsed, onToggleCollapse, onRemove, onExport
     <div className="cmp-group">
       <div className="cmp-group-head">
         <Button
-          variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground hover:text-foreground"
           title={collapsed ? "Expand this table" : "Collapse this table"}
           onClick={() => onToggleCollapse(g.id)}
         >
@@ -181,7 +240,11 @@ function CompareGroup({ g, rowH, collapsed, onToggleCollapse, onRemove, onExport
         </Button>
         <button
           className="cmp-group-jump"
-          title={g.key ? `Go to filter #${g.index + 1} in Filters` : "This filter no longer exists"}
+          title={
+            g.key
+              ? `Go to filter #${g.index + 1} in Filters`
+              : "This filter no longer exists"
+          }
           onClick={() => g.key && onFocusFilter(g.key)}
           disabled={!g.key}
         >
@@ -198,7 +261,9 @@ function CompareGroup({ g, rowH, collapsed, onToggleCollapse, onRemove, onExport
         <span className="count-badge">{g.rows.length}</span>
         <div className="cmp-group-actions">
           <Button
-            variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-foreground"
             title="Scroll this table to the top"
             disabled={collapsed}
             onClick={() => bodyRef.current?.scrollTo({ top: 0 })}
@@ -206,21 +271,27 @@ function CompareGroup({ g, rowH, collapsed, onToggleCollapse, onRemove, onExport
             <ArrowUpToLine />
           </Button>
           <Button
-            variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-foreground"
             title="Import this table's matching lines into the comparison"
             onClick={() => onImportMatching(g.key)}
           >
             <ListPlus />
           </Button>
           <Button
-            variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-foreground"
             title="Remove this table's lines from the comparison"
             onClick={() => onClearGroup(g.key)}
           >
             <ListX />
           </Button>
           <Button
-            variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
+            variant="ghost"
+            size="icon-xs"
+            className="text-muted-foreground hover:text-foreground"
             title="Export this table as CSV"
             onClick={() => onExport(g.key, g.label)}
           >
@@ -228,7 +299,15 @@ function CompareGroup({ g, rowH, collapsed, onToggleCollapse, onRemove, onExport
           </Button>
         </div>
       </div>
-      {!collapsed && <CompareGroupBody g={g} rowH={rowH} bodyRef={bodyRef} onRemove={onRemove} onJump={onJump} />}
+      {!collapsed && (
+        <CompareGroupBody
+          g={g}
+          rowH={rowH}
+          bodyRef={bodyRef}
+          onRemove={onRemove}
+          onJump={onJump}
+        />
+      )}
     </div>
   );
 }
@@ -247,7 +326,13 @@ interface CompareGroupBodyProps {
  *  (virtualized, capped to MAX_BODY_ROWS tall) and the grid horizontally; the
  *  column header is `position: sticky` so it stays put on vertical scroll while
  *  riding along on horizontal scroll (same scroll container → no JS sync). */
-function CompareGroupBody({ g, rowH, bodyRef, onRemove, onJump }: CompareGroupBodyProps) {
+function CompareGroupBody({
+  g,
+  rowH,
+  bodyRef,
+  onRemove,
+  onJump,
+}: CompareGroupBodyProps) {
   const virt = useVirtualizer({
     count: g.rows.length,
     getScrollElement: () => bodyRef.current,
@@ -256,18 +341,28 @@ function CompareGroupBody({ g, rowH, bodyRef, onRemove, onJump }: CompareGroupBo
     getItemKey: (i) => g.rows[i]?.n ?? i,
   });
   // Font zoom changes rowH; reflow the fixed-size rows.
-  useEffect(() => { virt.measure(); }, [rowH]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    virt.measure();
+  }, [rowH]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cap the box at MAX_BODY_ROWS data rows + the sticky column-header row. Shorter
   // tables shrink to content (no inner scrollbar); taller ones scroll internally.
   const maxH = (MAX_BODY_ROWS + 1) * rowH;
   const vItems = virt.getVirtualItems();
   return (
-    <div ref={bodyRef} className="cmp-table-scroll scroll" style={{ maxHeight: maxH }}>
+    <div
+      ref={bodyRef}
+      className="cmp-table-scroll scroll"
+      style={{ maxHeight: maxH }}
+    >
       <div className="cmp-colhead" style={{ gridTemplateColumns: g.template }}>
         <span className="cmp-ch cmp-rm" />
         <span className="cmp-ch cmp-ln">line</span>
-        {g.cols.map((c) => <span key={c} className="cmp-ch" title={c}>{c}</span>)}
+        {g.cols.map((c) => (
+          <span key={c} className="cmp-ch" title={c}>
+            {c}
+          </span>
+        ))}
         <span className="cmp-ch cmp-pad" />
       </div>
       <div className="cmp-body" style={{ height: virt.getTotalSize() }}>
@@ -278,7 +373,11 @@ function CompareGroupBody({ g, rowH, bodyRef, onRemove, onJump }: CompareGroupBo
             <div
               key={vi.key}
               className={"cmp-vrow" + (vi.index % 2 ? " odd" : "")}
-              style={{ transform: `translateY(${vi.start}px)`, height: vi.size, gridTemplateColumns: g.template }}
+              style={{
+                transform: `translateY(${vi.start}px)`,
+                height: vi.size,
+                gridTemplateColumns: g.template,
+              }}
             >
               <span className="cmp-cell cmp-rm">
                 <button
@@ -291,7 +390,11 @@ function CompareGroupBody({ g, rowH, bodyRef, onRemove, onJump }: CompareGroupBo
                 </button>
               </span>
               <span className="cmp-cell cmp-ln">
-                <button className="cmp-ln-btn" title={`Jump to line ${r.n}`} onClick={() => onJump(r.n)}>
+                <button
+                  className="cmp-ln-btn"
+                  title={`Jump to line ${r.n}`}
+                  onClick={() => onJump(r.n)}
+                >
                   {r.n}
                 </button>
               </span>
@@ -299,7 +402,11 @@ function CompareGroupBody({ g, rowH, bodyRef, onRemove, onJump }: CompareGroupBo
                 const fv = r.fields?.[c];
                 const isNum = fv && typeof fv.value === "number";
                 return (
-                  <span key={c} className={"cmp-cell" + (isNum ? " num" : "")} title={fv ? fv.raw : undefined}>
+                  <span
+                    key={c}
+                    className={"cmp-cell" + (isNum ? " num" : "")}
+                    title={fv ? fv.raw : undefined}
+                  >
                     {fv ? fv.raw : "—"}
                   </span>
                 );

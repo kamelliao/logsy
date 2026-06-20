@@ -1,19 +1,19 @@
-import * as React from "react"
-import { Menu as MenuPrimitive } from "@base-ui/react/menu"
-import { ChevronRight } from "lucide-react"
+import * as React from "react";
+import { Menu as MenuPrimitive } from "@base-ui/react/menu";
+import { ChevronRight } from "lucide-react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
-  return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+  return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />;
 }
 
 function DropdownMenuPortal({ ...props }: MenuPrimitive.Portal.Props) {
-  return <MenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />
+  return <MenuPrimitive.Portal data-slot="dropdown-menu-portal" {...props} />;
 }
 
 function DropdownMenuTrigger({ ...props }: MenuPrimitive.Trigger.Props) {
-  return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />
+  return <MenuPrimitive.Trigger data-slot="dropdown-menu-trigger" {...props} />;
 }
 
 function DropdownMenuContent({
@@ -47,11 +47,11 @@ function DropdownMenuContent({
         />
       </MenuPrimitive.Positioner>
     </MenuPrimitive.Portal>
-  )
+  );
 }
 
 function DropdownMenuGroup({ ...props }: MenuPrimitive.Group.Props) {
-  return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />
+  return <MenuPrimitive.Group data-slot="dropdown-menu-group" {...props} />;
 }
 
 function DropdownMenuItem({
@@ -59,21 +59,25 @@ function DropdownMenuItem({
   variant = "default",
   ...props
 }: MenuPrimitive.Item.Props & {
-  variant?: "default" | "destructive"
+  variant?: "default" | "destructive";
 }) {
   return (
     <MenuPrimitive.Item
       data-slot="dropdown-menu-item"
-      className={cn("menu-item", variant === "destructive" && "danger", className)}
+      className={cn(
+        "menu-item",
+        variant === "destructive" && "danger",
+        className,
+      )}
       {...props}
     />
-  )
+  );
 }
 
 // Submenu parts. base-ui's ContextMenu reuses the same Menu primitives, so these
 // work inside both a DropdownMenuContent and a ContextMenuContent.
 function DropdownMenuSub({ ...props }: MenuPrimitive.SubmenuRoot.Props) {
-  return <MenuPrimitive.SubmenuRoot data-slot="dropdown-menu-sub" {...props} />
+  return <MenuPrimitive.SubmenuRoot data-slot="dropdown-menu-sub" {...props} />;
 }
 
 function DropdownMenuSubTrigger({
@@ -90,7 +94,7 @@ function DropdownMenuSubTrigger({
       {children}
       <ChevronRight size={14} className="mi-sub" />
     </MenuPrimitive.SubmenuTrigger>
-  )
+  );
 }
 
 function DropdownMenuSubContent({
@@ -101,7 +105,7 @@ function DropdownMenuSubContent({
   ...props
 }: MenuPrimitive.Popup.Props &
   Pick<MenuPrimitive.Positioner.Props, "sideOffset" | "alignOffset"> & {
-    zIndex?: number
+    zIndex?: number;
   }) {
   return (
     <MenuPrimitive.Portal>
@@ -119,7 +123,7 @@ function DropdownMenuSubContent({
         />
       </MenuPrimitive.Positioner>
     </MenuPrimitive.Portal>
-  )
+  );
 }
 
 function DropdownMenuSeparator({
@@ -132,7 +136,7 @@ function DropdownMenuSeparator({
       className={cn("menu-sep", className)}
       {...props}
     />
-  )
+  );
 }
 
 function DropdownMenuShortcut({
@@ -145,7 +149,7 @@ function DropdownMenuShortcut({
       className={cn("mi-key", className)}
       {...props}
     />
-  )
+  );
 }
 
 export {
@@ -160,4 +164,4 @@ export {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-}
+};

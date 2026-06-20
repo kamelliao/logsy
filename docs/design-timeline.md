@@ -3,6 +3,7 @@
 Status: **v2 implemented 2026-06-14** (branch `feat/event-timeline`, not committed). Tests green.
 
 ### v2.8 refinements (2026-06-14)
+
 - **Bug fix — only one track survived a reload.** `normalizeState` (the
   localStorage-load path) still de-duped `g.sources` by **`timeField` alone**
   (leftover v1 logic), so tracks sharing a field name (several filters each
@@ -18,7 +19,7 @@ Status: **v2 implemented 2026-06-14** (branch `feat/event-timeline`, not committ
   Timeline, when popped, live as **tabs in a single popped dock** on the side
   opposite the main panel (never two stacked docks). New
   `AppState.timelinePopped`, plus a shared `poppedActiveTab: "compare" |
-  "timeline"` and `poppedCollapsed` that **replace** the old per-panel
+"timeline"` and `poppedCollapsed` that **replace** the old per-panel
   `compareCollapsed`/`timelineCollapsed` (migrated in `normalizeState`). One `pop`
   dock entry (ref `popRef`), one `popDockNode` (collapsed → simple strip head;
   expanded → `panel-tabs` over the popped tabs + the active body), one resize
@@ -28,6 +29,7 @@ Status: **v2 implemented 2026-06-14** (branch `feat/event-timeline`, not committ
   Compare/Timeline is the active tab.
 
 ### v2.10 — canvas: hover keyboard nav + scroll under the sheet (2026-06-15)
+
 - **WASD works on hover, not click-to-focus.** The canvas keyboard nav was bound
   to `onKeyDown` (needed DOM focus → a click first). Replaced with a window
   `keydown` listener gated on a `hoverRef` (set on `onPointerEnter`, cleared on
@@ -54,15 +56,17 @@ Status: **v2 implemented 2026-06-14** (branch `feat/event-timeline`, not committ
   via `.tlc-mm:empty` when there are no events).
 
 ### v2.9 — per-track line counts + gutter marker (2026-06-14)
+
 The added-line set was near-invisible (only aggregate counts + canvas marks). This
 surfaces it **without re-rendering log text** (that would duplicate the log view).
+
 - **Per-track count badge** `inTl / matching` (e.g. `12/40` = on-timeline /
   matchable) on each track row, left of the import/clear buttons. App's
   `trackLineStats` stays `{matching, inTl}`.
 - **`.intimeline` gutter marker** in the log view (mirrors `.incompare`): a teal
   inset bar (`--tl-accent`, #0d9488) on timeline lines; a line in both compare and
   timeline stacks blue 0–2px + teal 2–4px. So which lines are on the timeline is
-  visible *in context* while scrolling the log — this is the canonical "which
+  visible _in context_ while scrolling the log — this is the canonical "which
   lines" surface, alongside the canvas marks.
 - **Orphan hint** — a bounded one-liner in the sheet hint area when there are
   lines on the timeline that **no track plots** ("added but nothing shows"): a
@@ -71,6 +75,7 @@ surfaces it **without re-rendering log text** (that would duplicate the log view
   gutter / canvas, so it's the only added-line detail the panel shows.
 
 #### Rejected: a per-line "Lines" index (built, then removed)
+
 A `Tracks ⇄ Lines` toggle with per-track chip lists (in-timeline + an expandable,
 capped candidate list, dot=toggle / number=jump, "Not plotted" group) was built
 and then **removed**: it duplicated what the badges + gutter marker + canvas
@@ -79,14 +84,15 @@ tens of thousands of lines, plus "add all"). The added-line set already scales t
 canvas/marks, so listing it per-line added cost without unique value. Kept only the
 cheap, bounded pieces (badge, gutter, orphan hint). Also rejected earlier: a
 full-text line list (duplicates the log), a "timeline-only" log-view filter (can't
-*add* not-yet lines), and minimap ticks (deferred).
+_add_ not-yet lines), and minimap ticks (deferred).
 
 ### v2.8 refinements (2026-06-17)
+
 - **Filter-row timeline menu is now a checkbox toggle.** Each usable field shows a
   ✓ (`Check` icon) when it's already plotted as a track; clicking toggles it — adds
-  when off, removes when on. Single-field rows flip the label between *Add to
-  timeline track* / *Remove from timeline track*; multi-field rows use a *Timeline
-  tracks* submenu with a ✓ per field (sub-trigger shows ✓ only when all are tracked).
+  when off, removes when on. Single-field rows flip the label between _Add to
+  timeline track_ / _Remove from timeline track_; multi-field rows use a _Timeline
+  tracks_ submenu with a ✓ per field (sub-trigger shows ✓ only when all are tracked).
   The old "Track already exists" toast is gone (re-clicking now removes). Wiring:
   `FilterPanel` derives a memoized `filterId → tracked field names` map from
   `set.sources` and threads a stable `trackedFields` array into each row's menu;
@@ -94,10 +100,11 @@ full-text line list (duplicates the log), a "timeline-only" log-view filter (can
   `onToggleTimelineTrack`).
 
 ### v2.7 refinements (2026-06-14)
+
 - **`+ Add track` button removed.** It was the lowest-context of the three add
   paths — a mini filter picker rebuilding a selection the user already has in the
   Filters tab. Adding a track now happens where the context is: the **filter row's
-  right-click → *Add to timeline track*** (one item per usable field), backed by the
+  right-click → _Add to timeline track_** (one item per usable field), backed by the
   line→track auto-create (A2). The panel's `AddTrack` composer, `usableFilters`, and
   the `onAddTrack` prop were dropped (`addTrack` stays in App for the filter menu).
 - **Empty Tracks state uses a shadcn `Empty` component** (new `ui/empty.tsx`):
@@ -107,8 +114,9 @@ full-text line list (duplicates the log), a "timeline-only" log-view filter (can
   "lines" stage (`lineCount === 0`).
 
 ### v2.1 refinements (2026-06-14)
+
 - **Add a track from the filter list**: a filter row's right-click / ⋮ menu now
-  offers *Add to timeline track* (one item per numeric field when the filter has
+  offers _Add to timeline track_ (one item per numeric field when the filter has
   several). Wired `FilterPanel.onAddTimelineTrack` → App `addTrack`, which now
   **de-dupes by `(filterId, timeField)`**.
 - **Track row title**: renamed inline by **double-clicking** the title (Enter/blur
@@ -129,6 +137,7 @@ full-text line list (duplicates the log), a "timeline-only" log-view filter (can
   persisted to `localStorage`.
 
 ### v2.2 refinements (2026-06-14)
+
 - **Any field can back a track** — not just `time`/numeric-typed ones. Named groups
   default to `string` (`guessType`), so requiring numeric blocked most filters.
   `numericFieldsOf` → **`trackFieldsOf` returns all of a filter's fields**; the
@@ -151,8 +160,9 @@ full-text line list (duplicates the log), a "timeline-only" log-view filter (can
   zoom/pan**.
 
 ### v2.6 polish (2026-06-14)
+
 - **Per-row import + clear, with disabled states.** Each track row now has a
-  `ListMinus` *clear* button left of the `ListPlus` *import* button. App computes
+  `ListMinus` _clear_ button left of the `ListPlus` _import_ button. App computes
   `trackLineStats: Map<trackId, {matching, inTl}>` (per track: matching lines via
   `winnerLines`, and how many are already on the timeline); import is disabled when
   all matches are already added (`inTl === matching`) or there are none, clear when
@@ -161,15 +171,16 @@ full-text line list (duplicates the log), a "timeline-only" log-view filter (can
 - **Track DnD locked to the vertical axis** via `restrictToVerticalAxis`
   (`@dnd-kit/modifiers`) on the `DndContext` — no sideways drift.
 - **Field-picker labels** are terse + context-aware: the start select reads
-  *"Time field"* for a point, *"Start field"* once an end exists; the end select
-  reads *"End field"*.
+  _"Time field"_ for a point, _"Start field"_ once an end exists; the end select
+  reads _"End field"_.
 - **Toast switched to a light theme** — `.logsy-toast` was an inverted dark chip
   (`background: var(--text)`, white text); now white bg, `var(--text)` text,
   `var(--border)` border, `var(--text-2)` icon.
 
 ### v2.5 refinements (2026-06-14)
-- **Guidance moved above the canvas.** The empty-state hint (incl. the *add all
-  matching lines* button) now sits in the panel header, **left of the
+
+- **Guidance moved above the canvas.** The empty-state hint (incl. the _add all
+  matching lines_ button) now sits in the panel header, **left of the
   "N events · N lines" counts**, instead of below the canvas.
 - **Added lines persist across reload, per file.** `timelineLines` is no longer
   ephemeral React state — it lives in `AppState.timelineLinesByFile` (a
@@ -191,8 +202,8 @@ full-text line list (duplicates the log), a "timeline-only" log-view filter (can
   **one bordered pill** (`inline-flex … rounded-md border`), with the inner
   `SelectTrigger`s stripped to borderless (`border-0 bg-transparent shadow-none`)
   so the pill reads as a single control. A point shows `[ field ] +`; the `+`
-  reveals `[ field ] → [ end ] ✕` (the `MoveRight` arrow only ever sits *between
-  the two field selects*, never next to the unit). Picking an end sets
+  reveals `[ field ] → [ end ] ✕` (the `MoveRight` arrow only ever sits _between
+  the two field selects_, never next to the unit). Picking an end sets
   `kind:"span"`; the `✕` clears it back to `kind:"point"`. The **unit select stays
   OUTSIDE the pill** — the earlier inline `→`-before-unit adder read as a false
   "field → unit" span, which this fixes. (`TimelineSource.kind` is still written
@@ -200,6 +211,7 @@ full-text line list (duplicates the log), a "timeline-only" log-view filter (can
   chosen; the `+` only shows when the filter has another field to pair.)
 
 ### v2.4 — affordance: auto-bridge the two-step setup (2026-06-14)
+
 The timeline needs two inputs (a **track** = filter+field, and **lines**), declared
 in two places with AND semantics — so either one alone yields an identical empty
 canvas, and the user can't tell which step they're missing. The two directions are
@@ -207,16 +219,17 @@ asymmetric: **track→lines is deterministic** (the filter already knows its mat
 lines) so it can be auto-filled; **line→track is ambiguous** (which field is the
 timestamp?) so it's offered, not silent. Fixes (App.tsx only; model/persistence
 untouched):
-- **A1 — per-row "import matching lines" button.** Creating a track only *defines
-  what to plot*; it does **not** auto-pull lines (that conflates "define a measure"
+
+- **A1 — per-row "import matching lines" button.** Creating a track only _defines
+  what to plot_; it does **not** auto-pull lines (that conflates "define a measure"
   with "load data" and could flood the canvas). Instead each track row has a
   `ListPlus` button → `importTrackLines(tr)`, which adds that track's
   `winnerLines(filterId, timeField)` (visible lines where this filter is the
   **first-match winner** and exposes the field — exactly the lines that produce a
   mark) with a `"N lines imported"` toast. Explicit, per-track, affordance next to
   the track.
-- **A2 — adding lines with no matching track creates one.** The LogView *Add to
-  timeline* handler is now `addLinesToTimeline`: after adding, it finds the distinct
+- **A2 — adding lines with no matching track creates one.** The LogView _Add to
+  timeline_ handler is now `addLinesToTimeline`: after adding, it finds the distinct
   first-match filters among the added lines that have **no track**, and **batches**
   one track each (`field = trackFieldsOf(f)[0]`) into a **single undoable patch** +
   one toast, then switches to the Timeline tab. Batching is the fix for a
@@ -225,15 +238,16 @@ untouched):
   filter's other matches.
 - **B — empty-state bridge button.** The "tracks exist, no lines" hint gained an
   inline **add all matching lines** button → `addAllMatchingLines` (every visible
-  track's `winnerLines`). Backs up A1 after a *Clear lines*.
+  track's `winnerLines`). Backs up A1 after a _Clear lines_.
 - `winnerLines` / `buildTrack` factored out and shared by all three paths;
   `TimelinePanel` gained `onAddMatchingLines`.
 
 ### v2.3 refinements (2026-06-14)
+
 - **Hover card no longer clipped**: `.tlc-wrap` is `overflow:hidden` (rounded corners
-  + resize strip), so a tall absolutely-positioned tooltip got cut off. Now the card
-  is **portaled to `document.body`** (`position:fixed`, z 1000) using viewport client
-  coords stored on hover (`cx`/`cy`), and **flips up/left** near the bottom/right edge.
+  - resize strip), so a tall absolutely-positioned tooltip got cut off. Now the card
+    is **portaled to `document.body`** (`position:fixed`, z 1000) using viewport client
+    coords stored on hover (`cx`/`cy`), and **flips up/left** near the bottom/right edge.
 - **Default track name** is `"<filter#>:<field>"` (e.g. `3:ts`), matching the row's
   filter serial — set in App `addTrack` from `g.filters.findIndex`.
 - **Panel layout**: canvas is **sticky at the top** (fixed flex region); only the
@@ -265,8 +279,8 @@ small track schema on top.
   never spawn tracks on their own; nothing is "missed" because the user decides
   what to plot.
 - **Events come from a global set of added log lines** (ephemeral
-  `timelineLines: Set<number>`, reset on file switch; right-click → *Add to
-  timeline*, like the compare panel).
+  `timelineLines: Set<number>`, reset on file switch; right-click → _Add to
+  timeline_, like the compare panel).
 - **Extraction is first-match-wins.** A line's parsed fields come from the first
   structural filter that matched it (`row.fieldsFromId` / `view.fieldsFor(n)`). The
   line feeds every track whose `filterId === row.fieldsFromId` **and** whose
@@ -282,11 +296,12 @@ small track schema on top.
 - **View is a tab** in the main dock (alongside Filters / Compare / Bookmarks).
 
 ### Decision history (so the shape isn't re-litigated)
+
 - v0 (abandoned): one track = one whole filter; plot all its matches. Too coarse;
   no field choice.
 - v1 (built, this branch): tracks auto-derived one-per-`time`-field, **keyed by
   field name, no filterId**; line-driven; first-match extraction. Got the canvas
-  + a compact config list working.
+  - a compact config list working.
 - v2 (this doc): tracks become a **user-owned list keyed by `(filterId, field)`**,
   configurable per row (DnD reorder, collapse, rename, point/span, field, unit),
   any numeric field, plus Perfetto-style canvas interactions. The `filterId` is
@@ -297,17 +312,17 @@ small track schema on top.
 
 `time`/numeric field text comes in a few shapes:
 
-| Shape | Example | Unit |
-|---|---|---|
-| Clock, self-describing | `12:30:01.442`, `01:05.7` | known (→ ms) via `parseTime` |
-| Plain number | `12345` | **ambiguous: s / ms / µs / ns** |
+| Shape                  | Example                   | Unit                            |
+| ---------------------- | ------------------------- | ------------------------------- |
+| Clock, self-describing | `12:30:01.442`, `01:05.7` | known (→ ms) via `parseTime`    |
+| Plain number           | `12345`                   | **ambiguous: s / ms / µs / ns** |
 
 Plain numbers carry no unit, so the user **must declare it**. The unit lives on
 the **`TimelineSource`** (independent of the filter's field defs — the same field
 can mean different things to different timelines):
 
 ```ts
-type TimeUnit = "hms" | "s" | "ms" | "us" | "ns";   // "hms" = parse as clock
+type TimeUnit = "hms" | "s" | "ms" | "us" | "ns"; // "hms" = parse as clock
 ```
 
 - Default guessed from the field name (`guessUnit`): suffix `*_ns` / `*_us` /
@@ -317,6 +332,7 @@ type TimeUnit = "hms" | "s" | "ms" | "us" | "ns";   // "hms" = parse as clock
   No unit = legacy ms-ish (compare-table path, unchanged).
 
 ### Canonical base
+
 All event times normalize to **nanoseconds (integer `Number`)**:
 `hms`/`parseTime` yields ms → ×1e6; `s` ×1e9; `ms` ×1e6; `us` ×1e3; `ns` ×1.
 float64 holds integers exactly to ~9×10¹⁵ ns ≈ **104 days** — ample for firmware
@@ -326,20 +342,23 @@ from the current zoom range); the user never declares a display unit.
 ## Data model
 
 ```ts
-interface TimelineSource {        // one track = one (filter, field)
+interface TimelineSource {
+  // one track = one (filter, field)
   id: string;
-  filterId: string;              // the filter this track binds to
-  timeField: string;             // a numeric field of that filter (point time / span start)
-  lane: string;                  // display label (default = timeField)
+  filterId: string; // the filter this track binds to
+  timeField: string; // a numeric field of that filter (point time / span start)
+  lane: string; // display label (default = timeField)
   kind: "point" | "span";
-  endField?: string;             // span: the end field (same filter, same line)
-  unit: TimeUnit;                // normalized to ns
-  color?: string;                // default = per-track palette
-  collapsed?: boolean;           // row collapsed in the config list
-  hidden?: boolean;              // hidden from the canvas without deleting config
+  endField?: string; // span: the end field (same filter, same line)
+  unit: TimeUnit; // normalized to ns
+  color?: string; // default = per-track palette
+  collapsed?: boolean; // row collapsed in the config list
+  hidden?: boolean; // hidden from the canvas without deleting config
 }
 
-interface FilterSet { /* …existing… */ sources?: TimelineSource[] }  // ordered, user-owned
+interface FilterSet {
+  /* …existing… */ sources?: TimelineSource[];
+} // ordered, user-owned
 ```
 
 `FilterSet.sources` is the ordered track list (array order = DnD order). Track
@@ -365,7 +384,7 @@ buildTimeline(view, lineNumbers, tracks): EventMark[]
 ```
 
 - `numericFieldsOf(filter)` returns the filter's `int|hex|float|time` fields — it
-  feeds the *Add track* / per-row field & end-field pickers.
+  feeds the _Add track_ / per-row field & end-field pickers.
 - `EventMark.fields` carries the source line's parsed fields for the hover card.
 
 ## UI — Timeline tab
@@ -396,7 +415,7 @@ buildTimeline(view, lineNumbers, tracks): EventMark[]
     drag is free for measuring (final pan affordance TBD during build).
   - **click a mark** → scroll the log view to that line.
 
-## TODO — implementation  (done 2026-06-14)
+## TODO — implementation (done 2026-06-14)
 
 Built in order: types → logic + tests green → App → panel → canvas → persistence.
 
@@ -405,7 +424,7 @@ Built in order: types → logic + tests green → App → panel → canvas → p
       `tr.filterId === row.fieldsFromId` (first-match kept); added
       `numericFieldsOf(filter)` and `laneColor(i)`; removed the dead
       `timelineTracks` derive and `timeFieldNames`. `coerceTime`/`guessUnit` unchanged.
-- [x] **__tests__/timeline.test.ts** — covers filterId matching, first-match
+- [x] \***\*tests**/timeline.test.ts\*\* — covers filterId matching, first-match
       precedence, one filter with several ts fields → several tracks, span within
       one filter, non-`time` numeric field + unit, hidden track skipped,
       `numericFieldsOf`.
@@ -426,13 +445,13 @@ Built in order: types → logic + tests green → App → panel → canvas → p
 
 ## Files
 
-| File | Change |
-|---|---|
-| `src/types.ts` | `TimelineSource.filterId`, `TimelineSource.collapsed` |
-| `src/logic.ts` | `buildTimeline` (filterId match), `numericFieldsOf`, drop derive |
-| `src/components/TimelinePanel.tsx` | user-owned DnD/collapsible track rows + Add track |
-| `src/components/TimelineCanvas.tsx` | hover guide line, drag-to-measure, pan rebind |
-| `src/App.tsx` | add/remove/reorder track wiring, pickers, click-to-jump |
-| `src/styles/logsy.css` | track row / handle / collapse / measure band / guide line |
-| `src/__tests__/timeline.test.ts` | filterId match, first-match, multi-ts, span, numeric unit |
-| `src/__tests__/filterFile.test.ts` | sources round-trip with filterId |
+| File                                | Change                                                           |
+| ----------------------------------- | ---------------------------------------------------------------- |
+| `src/types.ts`                      | `TimelineSource.filterId`, `TimelineSource.collapsed`            |
+| `src/logic.ts`                      | `buildTimeline` (filterId match), `numericFieldsOf`, drop derive |
+| `src/components/TimelinePanel.tsx`  | user-owned DnD/collapsible track rows + Add track                |
+| `src/components/TimelineCanvas.tsx` | hover guide line, drag-to-measure, pan rebind                    |
+| `src/App.tsx`                       | add/remove/reorder track wiring, pickers, click-to-jump          |
+| `src/styles/logsy.css`              | track row / handle / collapse / measure band / guide line        |
+| `src/__tests__/timeline.test.ts`    | filterId match, first-match, multi-ts, span, numeric unit        |
+| `src/__tests__/filterFile.test.ts`  | sources round-trip with filterId                                 |

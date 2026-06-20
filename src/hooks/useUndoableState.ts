@@ -15,7 +15,10 @@ export interface UndoableState {
    * { undoable: false } for navigation / file / view-only changes, or
    * { coalesce } to fold a run of similar edits (typing, dragging) into one step.
    */
-  patchState: (fn: (s: AppState) => void, opts?: { undoable?: boolean; coalesce?: string }) => void;
+  patchState: (
+    fn: (s: AppState) => void,
+    opts?: { undoable?: boolean; coalesce?: string },
+  ) => void;
   undo: () => void;
   redo: () => void;
   canUndo: boolean;
@@ -37,7 +40,10 @@ export function useUndoableState(): UndoableState {
   // their saved workspace is untouched on disk and will return on a normal launch.
   useEffect(() => {
     if (SAFE_MODE) {
-      toast.warning("Safe mode: your saved state was not loaded and won't be saved this session. Restart normally to restore it.", { duration: 8000 });
+      toast.warning(
+        "Safe mode: your saved state was not loaded and won't be saved this session. Restart normally to restore it.",
+        { duration: 8000 },
+      );
     }
   }, []);
 
@@ -45,9 +51,13 @@ export function useUndoableState(): UndoableState {
   // every edit added a fixed cost to each action on large filter sets. The
   // unload flush (below) covers the trailing edits.
   useEffect(() => {
-    if (SAFE_MODE) return;   // never write over the preserved state in safe mode
+    if (SAFE_MODE) return; // never write over the preserved state in safe mode
     const t = setTimeout(() => {
-      try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
+      try {
+        localStorage.setItem(STATE_KEY, JSON.stringify(state));
+      } catch {
+        /* ignore */
+      }
     }, 300);
     return () => clearTimeout(t);
   }, [state]);
@@ -61,8 +71,12 @@ export function useUndoableState(): UndoableState {
   // edits made within the debounce window aren't lost.
   useEffect(() => {
     const flush = () => {
-      if (SAFE_MODE) return;   // see SAFE_MODE: don't persist this session
-      try { localStorage.setItem(STATE_KEY, JSON.stringify(stateRef.current)); } catch { /* ignore */ }
+      if (SAFE_MODE) return; // see SAFE_MODE: don't persist this session
+      try {
+        localStorage.setItem(STATE_KEY, JSON.stringify(stateRef.current));
+      } catch {
+        /* ignore */
+      }
     };
     window.addEventListener("beforeunload", flush);
     window.addEventListener("pagehide", flush);
@@ -82,7 +96,10 @@ export function useUndoableState(): UndoableState {
   const [, bumpHistory] = useReducer((x: number) => x + 1, 0);
 
   const patchState = useCallback(
-    (fn: (s: AppState) => void, opts?: { undoable?: boolean; coalesce?: string }) => {
+    (
+      fn: (s: AppState) => void,
+      opts?: { undoable?: boolean; coalesce?: string },
+    ) => {
       if (opts?.undoable !== false) {
         const base = stateRef.current;
         const top = past.current[past.current.length - 1];
@@ -125,15 +142,32 @@ export function useUndoableState(): UndoableState {
   const canUndo = past.current.length > 0;
   const canRedo = future.current.length > 0;
 
-  const pushRecent = useCallback((key: "recentFiles" | "recentFilterFiles", path: string) => {
-    setState((s) => {
-      const cur = (s[key] ?? []).filter((p) => p !== path);
-      cur.unshift(path);
-      return { ...s, [key]: cur.slice(0, 10) };
-    });
-  }, []);
-  const clearRecent = useCallback((key: "recentFiles" | "recentFilterFiles") =>
-    setState((s) => ({ ...s, [key]: [] })), []);
+  const pushRecent = useCallback(
+    (key: "recentFiles" | "recentFilterFiles", path: string) => {
+      setState((s) => {
+        const cur = (s[key] ?? []).filter((p) => p !== path);
+        cur.unshift(path);
+        return { ...s, [key]: cur.slice(0, 10) };
+      });
+    },
+    [],
+  );
+  const clearRecent = useCallback(
+    (key: "recentFiles" | "recentFilterFiles") =>
+      setState((s) => ({ ...s, [key]: [] })),
+    [],
+  );
 
-  return { state, setState, stateRef, patchState, undo, redo, canUndo, canRedo, pushRecent, clearRecent };
+  return {
+    state,
+    setState,
+    stateRef,
+    patchState,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    pushRecent,
+    clearRecent,
+  };
 }

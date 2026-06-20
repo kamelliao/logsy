@@ -1,4 +1,10 @@
-import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from "react";
+import {
+  forwardRef,
+  useImperativeHandle,
+  useLayoutEffect,
+  useRef,
+  type ReactNode,
+} from "react";
 import { tokenizeRegex, type RegexToken } from "@/lib/regexHighlight";
 
 interface RegexInputProps {
@@ -14,7 +20,11 @@ interface RegexInputProps {
 // to keep paren matching correct). Only `background` is applied to wrappers: any
 // padding/margin would shift glyphs out of line with the input underneath.
 function renderTokens(tokens: RegexToken[]): ReactNode[] {
-  interface Frame { children: ReactNode[]; capturing: boolean; gi?: number }
+  interface Frame {
+    children: ReactNode[];
+    capturing: boolean;
+    gi?: number;
+  }
   const root: ReactNode[] = [];
   const stack: Frame[] = [];
   let key = 0;
@@ -27,7 +37,8 @@ function renderTokens(tokens: RegexToken[]): ReactNode[] {
       <span
         key={key++}
         className={
-          "rx-groupwrap" + (frame.capturing ? " cap" : "") +
+          "rx-groupwrap" +
+          (frame.capturing ? " cap" : "") +
           (frame.gi !== undefined ? ` g${frame.gi % 6}` : "")
         }
       >
@@ -40,15 +51,31 @@ function renderTokens(tokens: RegexToken[]): ReactNode[] {
     const isClose = tk.t === "group" && tk.s === ")";
     if (isOpen) {
       const named = tk.s === "(?<";
-      const frame: Frame = { children: [], capturing: tk.s === "(" || named, gi: named ? namedIdx++ : undefined };
-      frame.children.push(<span key={key++} className="rx-group">{tk.s}</span>);
+      const frame: Frame = {
+        children: [],
+        capturing: tk.s === "(" || named,
+        gi: named ? namedIdx++ : undefined,
+      };
+      frame.children.push(
+        <span key={key++} className="rx-group">
+          {tk.s}
+        </span>,
+      );
       stack.push(frame);
     } else if (isClose && stack.length) {
       const frame = stack.pop()!;
-      frame.children.push(<span key={key++} className="rx-group">{tk.s}</span>);
+      frame.children.push(
+        <span key={key++} className="rx-group">
+          {tk.s}
+        </span>,
+      );
       close(frame);
     } else {
-      sink().push(<span key={key++} className={"rx-" + tk.t}>{tk.s}</span>);
+      sink().push(
+        <span key={key++} className={"rx-" + tk.t}>
+          {tk.s}
+        </span>,
+      );
     }
   }
   // Unwind groups left open while the user is mid-typing (innermost first).
@@ -82,7 +109,8 @@ export const RegexInput = forwardRef<HTMLTextAreaElement, RegexInputProps>(
 
     // Keep the highlight layer scrolled in lock-step with the textarea.
     const syncScroll = () => {
-      const ta = inputRef.current, hl = hlRef.current;
+      const ta = inputRef.current,
+        hl = hlRef.current;
       if (!ta || !hl) return;
       hl.scrollTop = ta.scrollTop;
       hl.scrollLeft = ta.scrollLeft;
@@ -106,11 +134,13 @@ export const RegexInput = forwardRef<HTMLTextAreaElement, RegexInputProps>(
           // A pattern is one logical line: Enter must never insert a newline.
           // preventDefault doesn't stop propagation, so Ctrl+Enter still
           // reaches the modal's save handler.
-          onKeyDown={(e) => { if (e.key === "Enter") e.preventDefault(); }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") e.preventDefault();
+          }}
           onChange={(e) => onChange(e.target.value.replace(/[\r\n]+/g, ""))}
           onScroll={syncScroll}
         />
       </div>
     );
-  }
+  },
 );
