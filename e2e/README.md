@@ -62,6 +62,10 @@ panels are covered; Playwright still parallelizes individual tests across worker
   - select mode: range select, batch enable/disable/delete
   - search; import / export (round-trip via `tauri.calls()`)
   - reorder (drag & drop): filters, into/out of groups, groups, sets
+- `log-view.spec.ts` — the LogView:
+  - find in view (Ctrl+F): hit count, next/wrap, no-match, case & regex options
+  - matches-only (Ctrl+H) toggle + toolbar button + disabled-without-highlights
+  - match map presence; go to line (Ctrl+G); zoom in/out/reset (Ctrl +/-/0)
 
 ### Driving dnd-kit drags
 
@@ -73,6 +77,5 @@ would otherwise show up as duplicate `.fr-pattern` nodes.
 
 ## Planned next (not yet implemented)
 
-- `log-view.spec.ts` — find in view + matches-only + match map; goto; zoom.
 - `bookmarks.spec.ts`, `timeline.spec.ts`, `compare.spec.ts`.
-- Keyboard shortcuts; CSV export.
+- Menu bar + remaining keyboard shortcuts; CSV export.
