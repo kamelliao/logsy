@@ -62,6 +62,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import { useUndoableState } from "@/hooks/useUndoableState";
+import { useFontZoom } from "@/hooks/useFontZoom";
 import { useLogFiles } from "@/hooks/useLogFiles";
 import { useDockLayout } from "@/hooks/useDockLayout";
 import { useFilterActions, type EditingState } from "@/hooks/useFilterActions";
@@ -73,10 +74,6 @@ import { baseName } from "@/lib/path";
 
 const MENUS = ["File", "Edit", "View", "Filters", "Help"] as const;
 const DOCS_URL = "https://github.com/kamelliao/logsy#readme";
-const FONT_DEFAULT = 12;
-const FONT_STEP = 1;
-const FONT_MIN = 8;
-const FONT_MAX = 24;
 
 export function App() {
   const {
@@ -405,48 +402,11 @@ export function App() {
   const toggleLineNumbers = () =>
     setState((s) => ({ ...s, showLineNumbers: !(s.showLineNumbers ?? true) }));
 
-  const zoomIn = useCallback(
-    () =>
-      setState((s) => ({
-        ...s,
-        fontSize: Math.min(FONT_MAX, (s.fontSize ?? FONT_DEFAULT) + FONT_STEP),
-      })),
-    [],
-  );
-  const zoomOut = useCallback(
-    () =>
-      setState((s) => ({
-        ...s,
-        fontSize: Math.max(FONT_MIN, (s.fontSize ?? FONT_DEFAULT) - FONT_STEP),
-      })),
-    [],
-  );
-  const zoomReset = useCallback(
-    () => setState((s) => ({ ...s, fontSize: FONT_DEFAULT })),
-    [],
-  );
+  const { fontSize, zoomIn, zoomOut, zoomReset } = useFontZoom({
+    state,
+    setState,
+  });
 
-  useEffect(() => {
-    function onWheel(e: WheelEvent) {
-      if (!e.ctrlKey && !e.metaKey) return;
-      // The timeline owns ctrl+wheel over its own area (axis zoom); don't also
-      // font-zoom the log view when the cursor is there.
-      if ((e.target as Element | null)?.closest?.(".tlc-outer")) return;
-      e.preventDefault();
-      const dir = e.deltaY < 0 ? 1 : -1;
-      setState((s) => ({
-        ...s,
-        fontSize: Math.max(
-          FONT_MIN,
-          Math.min(FONT_MAX, (s.fontSize ?? FONT_DEFAULT) + dir * FONT_STEP),
-        ),
-      }));
-    }
-    window.addEventListener("wheel", onWheel, { passive: false });
-    return () => window.removeEventListener("wheel", onWheel);
-  }, []);
-
-  const fontSize = state.fontSize ?? FONT_DEFAULT;
   const fontWeight = state.fontWeight ?? 400;
   const showLineNumbers = state.showLineNumbers ?? true;
   const rowH = Math.round(fontSize * 1.5);
