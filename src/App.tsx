@@ -46,11 +46,10 @@ import { useTimeline } from "@/hooks/useTimeline";
 import { useBookmarks } from "@/hooks/useBookmarks";
 import { useStore } from "@/store";
 import { activeFile } from "@/state/selectors";
-import { SAFE_MODE } from "@/state/persistence";
+import { SAFE_MODE, DOCS_URL, APP_VERSION_FALLBACK } from "@/config";
 import { useShallow } from "zustand/react/shallow";
 
 const MENUS = ["File", "Edit", "View", "Filters", "Help"] as const;
-const DOCS_URL = "https://github.com/kamelliao/logsy#readme";
 
 export function App() {
   // Workspace state comes straight from the store now. Undo/redo + their enabled
@@ -84,7 +83,7 @@ export function App() {
   } | null>(null);
   const [aboutOpen, setAboutOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const [appVersion, setAppVersion] = useState("0.2.1");
+  const [appVersion, setAppVersion] = useState(APP_VERSION_FALLBACK);
   // Go-to-line dialog + signals pushed to LogView for menu-driven actions.
   const [gotoOpen, setGotoOpen] = useState(false);
   const [selectAllNonce, setSelectAllNonce] = useState(0);

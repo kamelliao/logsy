@@ -1,7 +1,8 @@
 import type { PaletteEntry } from "@/types";
+import { DEFAULT_TEXT_COLOR, DEFAULT_BG_COLOR } from "@/config";
 
 export const DEFAULT_PALETTE: PaletteEntry[] = [
-  { name: "default", text: "#1c1f23", bg: "#ffffff" },
+  { name: "default", text: DEFAULT_TEXT_COLOR, bg: DEFAULT_BG_COLOR },
   { name: "red", text: "#b42318", bg: "#fce4e4" },
   { name: "orange", text: "#b54708", bg: "#fcebd9" },
   { name: "amber", text: "#854d0e", bg: "#fef7c3" },

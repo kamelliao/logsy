@@ -1,7 +1,6 @@
 import { useEffect } from "react";
 import { useStore } from "@/store";
-
-const FONT_DEFAULT = 12;
+import { FONT_DEFAULT } from "@/config";
 
 /**
  * Log-view font size and its zoom controls, backed by the store's prefs slice.
