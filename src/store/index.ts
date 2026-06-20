@@ -34,6 +34,25 @@ const FONT_DEFAULT = 12;
 const FONT_STEP = 1;
 const clampFont = (n: number) => Math.max(8, Math.min(24, n));
 
+// Compare/timeline pinned lines: persisted per file, NOT on the undo stack. Both
+// edit a `{ [fileId]: number[] }` map on the active file via this shared mutator.
+type LinesKey = "compareLinesByFile" | "timelineLinesByFile";
+function mutateLines(
+  set: (updater: (st: Store) => Partial<Store>) => void,
+  key: LinesKey,
+  fn: (cur: Set<number>) => void,
+) {
+  set((st) => {
+    const fid = activeFile(st.doc)?.id;
+    if (!fid) return {};
+    const cur = new Set(st.doc[key]?.[fid] ?? []);
+    fn(cur);
+    return {
+      doc: { ...st.doc, [key]: { ...(st.doc[key] ?? {}), [fid]: [...cur] } },
+    };
+  });
+}
+
 type RecentKey = "recentFiles" | "recentFilterFiles";
 type PatchOpts = { undoable?: boolean; coalesce?: string };
 
@@ -85,6 +104,16 @@ export interface Store extends FilterActions {
   setMarker: (n: number, icon: MarkerIcon, note: string) => void;
   removeMarker: (n: number) => void;
   clearMarkers: () => void;
+
+  // ---- compare slice (persisted lines, non-undoable) ----
+  addToCompare: (ns: number[]) => void;
+  removeFromCompare: (ns: number[]) => void;
+  clearCompare: () => void;
+
+  // ---- timeline slice (persisted lines, non-undoable) ----
+  addToTimeline: (ns: number[]) => void;
+  removeFromTimeline: (ns: number[]) => void;
+  clearTimeline: () => void;
 }
 
 // Undo history is memory-only — never persisted, never rendered — so it lives in
@@ -282,6 +311,49 @@ export const useStore = create<Store>()(
           },
           { undoable: false },
         ),
+
+      // ---- compare slice: pinned lines per file (persisted, off the undo stack) ----
+      addToCompare: (ns) => {
+        mutateLines(set, "compareLinesByFile", (c) =>
+          ns.forEach((n) => c.add(n)),
+        );
+        // Surface the comparison: focus its tab, or expand it if it's popped out.
+        set((st) =>
+          st.doc.comparePopped
+            ? {
+                doc: {
+                  ...st.doc,
+                  poppedCollapsed: false,
+                  poppedActiveTab: "compare" as const,
+                },
+              }
+            : {
+                doc: {
+                  ...st.doc,
+                  activePanelTab: "compare" as const,
+                  filterCollapsed: false,
+                },
+              },
+        );
+      },
+      removeFromCompare: (ns) =>
+        mutateLines(set, "compareLinesByFile", (c) =>
+          ns.forEach((n) => c.delete(n)),
+        ),
+      clearCompare: () =>
+        mutateLines(set, "compareLinesByFile", (c) => c.clear()),
+
+      // ---- timeline slice: plotted lines per file (persisted, off the undo stack) ----
+      addToTimeline: (ns) =>
+        mutateLines(set, "timelineLinesByFile", (c) =>
+          ns.forEach((n) => c.add(n)),
+        ),
+      removeFromTimeline: (ns) =>
+        mutateLines(set, "timelineLinesByFile", (c) =>
+          ns.forEach((n) => c.delete(n)),
+        ),
+      clearTimeline: () =>
+        mutateLines(set, "timelineLinesByFile", (c) => c.clear()),
     }),
     {
       name: STATE_KEY,

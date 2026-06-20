@@ -259,7 +259,22 @@ Deps`** — the injection of `patchState`/`setState`/`stateRef` is gone, which w
    _Optional tail:_ `EditModal` could likewise self-subscribe `saveFilter`/
    `deleteFilter`/`setEditing` (minor; App keeps those 2 actions for it for now).
 
-5. **`compareSlice` + `timelineSlice`** with the derived-rows split.
+5. **[DONE] `compareSlice` + `timelineSlice`** with the derived-rows split. Only the
+   **persisted-line** mutations moved to the store — compare: `addToCompare`
+   (+ surfaces the tab) / `removeFromCompare` / `clearCompare`; timeline:
+   `addToTimeline` / `removeFromTimeline` / `clearTimeline` — sharing a `mutateLines`
+   helper that edits `{compare,timeline}LinesByFile[activeFileId]` (non-undoable).
+   `useCompare` Deps `{view,file,state,setState}` → `{view,file}` (reads
+   `compareLinesByFile` + mutations from the store; keeps `compareRows`/CSV/group
+   helpers — all view-derived). `useTimeline` Deps
+   `{view,file,set,state,setState,patchState,selectPanelTab}` →
+   `{view,file,set,selectPanelTab}`: plotted lines + their mutations come from the
+   store, and `patchState` (for undoable **track** edits) is read from the store
+   internally rather than injected. The heavily view-coupled track logic (tracks,
+   marks, timeFieldsByFilter, toggle/import/winnerLines, stats, orphans) stays in the
+   hook. `selectPanelTab` stays a Dep — a genuine UI collaborator, not the document
+   smell. Verified: tsc unchanged (8 pre-existing), 79/79 tests, vite build green
+   (one pre-existing `buildCsv` exhaustive-deps warning left as-is).
 6. **`documentSlice` + retire `useUndoableState`.** `useLogFiles` keeps IO only.
    Delete the adapter from phase 1.
 7. **`useMenuDefs` de-prop.** Read store directly; this collapses the 30-arg signature.

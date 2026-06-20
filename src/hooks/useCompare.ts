@@ -2,26 +2,30 @@ import { useMemo, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { AppState, LogFile, ViewResult } from "@/types";
+import type { LogFile, ViewResult } from "@/types";
+import { useStore } from "@/store";
 
 interface Deps {
   view: ViewResult;
   file: LogFile | null;
-  state: AppState;
-  setState: React.Dispatch<React.SetStateAction<AppState>>;
 }
 
 /**
- * The comparison panel: the per-file set of lines pinned for field comparison
- * (persisted, not undoable — mirrors the timeline) plus the rows they resolve
- * to and CSV export. Pinned lines live in `compareLinesByFile[file.id]`.
+ * The comparison panel: the rows the pinned lines resolve to and CSV export. The
+ * pinned lines themselves (`compareLinesByFile[file.id]`, persisted, not undoable)
+ * and the add/remove/clear mutations live in the store's compare slice; this hook
+ * owns only the view-derived rows and the group/export helpers built on them.
  */
-export function useCompare({ view, file, state, setState }: Deps) {
+export function useCompare({ view, file }: Deps) {
   // Lines explicitly added to the comparison panel. Persisted per file (survives
   // reload / document switch / filter switch), keyed by file id like the timeline.
+  const compareLinesByFile = useStore((s) => s.doc.compareLinesByFile);
+  const addToCompare = useStore((s) => s.addToCompare);
+  const removeFromCompare = useStore((s) => s.removeFromCompare);
+  const clearCompare = useStore((s) => s.clearCompare);
   const compareLines = useMemo(
-    () => new Set(file ? (state.compareLinesByFile?.[file.id] ?? []) : []),
-    [state.compareLinesByFile, file],
+    () => new Set(file ? (compareLinesByFile?.[file.id] ?? []) : []),
+    [compareLinesByFile, file],
   );
   // Rows shown in the comparison panel: explicitly-added, still-visible, parsed lines.
   const compareRows = useMemo(
@@ -37,36 +41,6 @@ export function useCompare({ view, file, state, setState }: Deps) {
     [view, compareLines],
   );
 
-  // Compare lines persist per file (survive reload / document switch / filter
-  // switch) but are not on the undo stack, so they go through plain setState into
-  // `compareLinesByFile[file.id]` — mirroring the timeline.
-  const mutateCompare = (fn: (cur: Set<number>) => void) =>
-    setState((s) => {
-      const fid = (s.files.find((f) => f.id === s.activeFileId) ?? s.files[0])
-        ?.id;
-      if (!fid) return s;
-      const cur = new Set(s.compareLinesByFile?.[fid] ?? []);
-      fn(cur);
-      return {
-        ...s,
-        compareLinesByFile: {
-          ...(s.compareLinesByFile ?? {}),
-          [fid]: [...cur],
-        },
-      };
-    });
-  const addToCompare = (ns: number[]) => {
-    mutateCompare((c) => ns.forEach((n) => c.add(n)));
-    // Surface the comparison: focus its tab, or expand it if it's popped out.
-    setState((s) =>
-      s.comparePopped
-        ? { ...s, poppedCollapsed: false, poppedActiveTab: "compare" }
-        : { ...s, activePanelTab: "compare", filterCollapsed: false },
-    );
-  };
-  const removeFromCompare = (ns: number[]) =>
-    mutateCompare((c) => ns.forEach((n) => c.delete(n)));
-  const clearCompare = () => mutateCompare((c) => c.clear());
   // Clear just one pattern-table's lines (its Compare group header button).
   const clearCompareGroup = (id: string | undefined) => {
     const ns = compareRows
