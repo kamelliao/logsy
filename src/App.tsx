@@ -35,7 +35,6 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import type { FilterGroup } from "@/types";
 import { DEFAULT_PALETTE } from "@/lib/palette";
-import { exportPayload } from "@/lib/filterFile";
 import type { PaletteEntry } from "@/types";
 
 import { compileAll, computeView } from "@/lib/engine";
@@ -48,7 +47,7 @@ import { CompareTable } from "@/components/CompareTable";
 import { useCompareCollapse } from "@/components/useCompareCollapse";
 import { BookmarksPanel } from "@/components/BookmarksPanel";
 import { TimelinePanel } from "@/components/TimelinePanel";
-import { MenuPopup, type MenuItem } from "@/components/MenuPopup";
+import { MenuPopup } from "@/components/MenuPopup";
 import { AboutModal } from "@/components/AboutModal";
 import { ShortcutsModal } from "@/components/ShortcutsModal";
 import { useConfirm } from "@/components/ConfirmDialog";
@@ -63,6 +62,7 @@ import {
 import { useUndoableState } from "@/hooks/useUndoableState";
 import { useFontZoom } from "@/hooks/useFontZoom";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
+import { useMenuDefs } from "@/hooks/useMenuDefs";
 import { useLogFiles } from "@/hooks/useLogFiles";
 import { useDockLayout } from "@/hooks/useDockLayout";
 import { useFilterActions, type EditingState } from "@/hooks/useFilterActions";
@@ -70,7 +70,6 @@ import { useCompare } from "@/hooks/useCompare";
 import { useTimeline } from "@/hooks/useTimeline";
 import { useBookmarks } from "@/hooks/useBookmarks";
 import { activeFile } from "@/state/selectors";
-import { baseName } from "@/lib/path";
 
 const MENUS = ["File", "Edit", "View", "Filters", "Help"] as const;
 const DOCS_URL = "https://github.com/kamelliao/logsy#readme";
@@ -461,150 +460,40 @@ export function App() {
     focusFilterSearch,
   });
 
-  // Save Filter is disabled when the current set was already saved/loaded and
-  // hasn't changed since (nothing to write).
-  const saveFilterDisabled =
-    !set || (!!set.filePath && set.savedSnapshot === exportPayload(set));
-
-  const recentFilesMenu: MenuItem[] = state.recentFiles.length
-    ? [
-        ...state.recentFiles.map((p, i) => ({
-          label: `${i + 1}   ${baseName(p)}`,
-          action: () => void loadPaths([p]),
-        })),
-        { sep: true as const },
-        {
-          label: "Clear Recent Files",
-          action: () => clearRecent("recentFiles"),
-        },
-      ]
-    : [{ label: "No recent files", disabled: true }];
-
-  const recentFilterFilesMenu: MenuItem[] = state.recentFilterFiles.length
-    ? [
-        ...state.recentFilterFiles.map((p, i) => ({
-          label: `${i + 1}   ${baseName(p)}`,
-          disabled: !set,
-          action: () => void loadFilterFromPath(p),
-        })),
-        { sep: true as const },
-        {
-          label: "Clear Recent Filter Files",
-          action: () => clearRecent("recentFilterFiles"),
-        },
-      ]
-    : [{ label: "No recent filter files", disabled: true }];
-
-  const menuDefs: Record<string, MenuItem[]> = {
-    File: [
-      { label: "Open…", key: "Ctrl O", action: () => void openFiles() },
-      {
-        label: "Load Filters…",
-        disabled: !set,
-        action: () => void importFilters(),
-      },
-      {
-        label: "Append Filters…",
-        disabled: !set,
-        action: () => void appendFilters(),
-      },
-      {
-        label: "Save Filter",
-        disabled: saveFilterDisabled,
-        action: () => void saveFilters(),
-      },
-      {
-        label: "Save Filter As…",
-        disabled: !set,
-        action: () => void saveFiltersAs(),
-      },
-      { sep: true },
-      { label: "Recent Files", submenu: recentFilesMenu },
-      { label: "Recent Filter Files", submenu: recentFilterFilesMenu },
-      { sep: true },
-      { label: "Reload", key: "Ctrl R", action: () => location.reload() },
-      {
-        label: "Exit",
-        action: () => invoke("window_controls", { action: "close" }),
-      },
-    ],
-    Edit: [
-      { label: "Undo", key: "Ctrl Z", disabled: !canUndo, action: undo },
-      { label: "Redo", key: "Ctrl Y", disabled: !canRedo, action: redo },
-      { sep: true },
-      {
-        label: "Select All",
-        key: "Ctrl A",
-        disabled: !file,
-        action: selectAllLines,
-      },
-      {
-        label: "Find…",
-        key: "Ctrl F",
-        disabled: !file,
-        action: () => setFindOpen(true),
-      },
-      { label: "Go to…", key: "Ctrl G", disabled: !file, action: openGoto },
-    ],
-    View: [
-      {
-        label: "Show filter panel",
-        checked: !state.filterCollapsed,
-        key: "Ctrl B",
-        disabled: !file,
-        action: toggleFilterCollapsed,
-      },
-      { sep: true },
-      {
-        label: "Show only matched lines",
-        checked: fileViewMode === "matches",
-        key: "Ctrl H",
-        action: () =>
-          setViewMode(fileViewMode === "matches" ? "all" : "matches"),
-      },
-      {
-        label: "Show line numbers",
-        checked: showLineNumbers,
-        action: toggleLineNumbers,
-      },
-      { sep: true },
-      { label: "Zoom In", key: "Ctrl +", action: zoomIn },
-      { label: "Zoom Out", key: "Ctrl −", action: zoomOut },
-      {
-        label: `Reset Zoom  (${fontSize}px)`,
-        key: "Ctrl 0",
-        action: zoomReset,
-      },
-    ],
-    Filters: [
-      {
-        label: "Add new filter…",
-        disabled: !set,
-        action: () => openNewFilter(),
-      },
-      { sep: true },
-      {
-        label: "Enable all filters",
-        disabled: !set,
-        action: () => bulk("enableAll"),
-      },
-      {
-        label: "Disable all filters",
-        disabled: !set,
-        action: () => bulk("disableAll"),
-      },
-      {
-        label: "Remove all filters",
-        disabled: !set,
-        action: () => bulk("clear"),
-      },
-    ],
-    Help: [
-      { label: "Keyboard shortcuts", action: () => setShortcutsOpen(true) },
-      { label: "Documentation", action: openDocs },
-      { label: "About", action: () => setAboutOpen(true) },
-    ],
-  };
+  const menuDefs = useMenuDefs({
+    state,
+    file,
+    set,
+    fileViewMode,
+    showLineNumbers,
+    fontSize,
+    canUndo,
+    canRedo,
+    openFiles,
+    importFilters,
+    appendFilters,
+    saveFilters,
+    saveFiltersAs,
+    loadPaths,
+    loadFilterFromPath,
+    clearRecent,
+    undo,
+    redo,
+    selectAllLines,
+    setFindOpen,
+    openGoto,
+    toggleFilterCollapsed,
+    setViewMode,
+    toggleLineNumbers,
+    zoomIn,
+    zoomOut,
+    zoomReset,
+    openNewFilter,
+    bulk,
+    openDocs,
+    setShortcutsOpen,
+    setAboutOpen,
+  });
 
   // Build the resizable workspace: log view + filter/compare docks. Docks dock
   // bottom or right; on the same side compare sits before (above/left-of) filter.
