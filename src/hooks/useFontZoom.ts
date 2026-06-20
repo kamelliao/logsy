@@ -1,49 +1,23 @@
-import { useCallback, useEffect } from "react";
-import type { Dispatch, SetStateAction } from "react";
-import type { AppState } from "@/types";
+import { useEffect } from "react";
+import { useStore } from "@/store";
 
 const FONT_DEFAULT = 12;
-const FONT_STEP = 1;
-const FONT_MIN = 8;
-const FONT_MAX = 24;
-
-const clampFont = (n: number) => Math.max(FONT_MIN, Math.min(FONT_MAX, n));
-
-interface Deps {
-  state: AppState;
-  setState: Dispatch<SetStateAction<AppState>>;
-}
 
 /**
- * Log-view font size and its zoom controls. Zoom is driven from the menu, the
- * keyboard (Ctrl +/−/0) and Ctrl+wheel over the log. Persisted in `state.fontSize`.
+ * Log-view font size and its zoom controls, backed by the store's prefs slice.
+ * Zoom is driven from the menu, the keyboard (Ctrl +/−/0) and Ctrl+wheel over the
+ * log. Persisted in `state.fontSize`; this hook only adds the Ctrl+wheel listener.
  */
-export function useFontZoom({ state, setState }: Deps): {
+export function useFontZoom(): {
   fontSize: number;
   zoomIn: () => void;
   zoomOut: () => void;
   zoomReset: () => void;
 } {
-  const zoomIn = useCallback(
-    () =>
-      setState((s) => ({
-        ...s,
-        fontSize: clampFont((s.fontSize ?? FONT_DEFAULT) + FONT_STEP),
-      })),
-    [setState],
-  );
-  const zoomOut = useCallback(
-    () =>
-      setState((s) => ({
-        ...s,
-        fontSize: clampFont((s.fontSize ?? FONT_DEFAULT) - FONT_STEP),
-      })),
-    [setState],
-  );
-  const zoomReset = useCallback(
-    () => setState((s) => ({ ...s, fontSize: FONT_DEFAULT })),
-    [setState],
-  );
+  const fontSize = useStore((s) => s.doc.fontSize ?? FONT_DEFAULT);
+  const zoomIn = useStore((s) => s.zoomIn);
+  const zoomOut = useStore((s) => s.zoomOut);
+  const zoomReset = useStore((s) => s.zoomReset);
 
   useEffect(() => {
     function onWheel(e: WheelEvent) {
@@ -52,20 +26,12 @@ export function useFontZoom({ state, setState }: Deps): {
       // font-zoom the log view when the cursor is there.
       if ((e.target as Element | null)?.closest?.(".tlc-outer")) return;
       e.preventDefault();
-      const dir = e.deltaY < 0 ? 1 : -1;
-      setState((s) => ({
-        ...s,
-        fontSize: clampFont((s.fontSize ?? FONT_DEFAULT) + dir * FONT_STEP),
-      }));
+      if (e.deltaY < 0) zoomIn();
+      else zoomOut();
     }
     window.addEventListener("wheel", onWheel, { passive: false });
     return () => window.removeEventListener("wheel", onWheel);
-  }, [setState]);
+  }, [zoomIn, zoomOut]);
 
-  return {
-    fontSize: state.fontSize ?? FONT_DEFAULT,
-    zoomIn,
-    zoomOut,
-    zoomReset,
-  };
+  return { fontSize, zoomIn, zoomOut, zoomReset };
 }

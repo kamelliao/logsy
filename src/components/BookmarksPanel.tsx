@@ -1,28 +1,24 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import { Bookmark, Plus, Trash2 } from "lucide-react";
-import type { Marker, MarkerIcon } from "@/types";
+import type { MarkerIcon } from "@/types";
 import { MARKER_ICONS, MarkerGlyph, markerColor } from "@/components/markers";
 import { PanelEmpty } from "@/components/PanelEmpty";
+import { useStore, selectActiveMarkers } from "@/store";
 
 interface BookmarksPanelProps {
-  markers: Marker[];
   /** Resolves a line number to its raw log text, for the preview line. */
   lineText: (n: number) => string;
   onJump: (n: number) => void;
-  onSetNote: (n: number, note: string) => void;
-  onRemove: (n: number) => void;
-  onClearAll: () => void;
 }
 
 /** The Bookmarks tab body: a jump-list of every marker in the active file. */
-export function BookmarksPanel({
-  markers,
-  lineText,
-  onJump,
-  onSetNote,
-  onRemove,
-  onClearAll,
-}: BookmarksPanelProps) {
+export function BookmarksPanel({ lineText, onJump }: BookmarksPanelProps) {
+  // Bookmarks come straight from the store — this panel re-renders only when the
+  // active file's markers change, not on unrelated workspace edits.
+  const markers = useStore(selectActiveMarkers);
+  const setMarker = useStore((s) => s.setMarker);
+  const onRemove = useStore((s) => s.removeMarker);
+  const onClearAll = useStore((s) => s.clearMarkers);
   // Which row's note is in edit mode; null = all rows show their read state.
   const [editing, setEditing] = useState<number | null>(null);
   // Icon filter: "all" shows every marker, otherwise only the chosen glyph.
@@ -113,7 +109,7 @@ export function BookmarksPanel({
                     placeholder="Add a note…"
                     value={m.note}
                     autoFocus
-                    onChange={(e) => onSetNote(m.n, e.target.value)}
+                    onChange={(e) => setMarker(m.n, m.icon, e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === "Escape")
                         setEditing(null);

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useTransition } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import type { AppState } from "@/types";
+import { useStore } from "@/store";
 
 export type PanelTab = "filters" | "compare" | "bookmarks" | "timeline";
 export type PoppedTab = "compare" | "timeline";
@@ -21,20 +22,20 @@ const DEFAULT_WEIGHT: Record<string, number> = {
   pop: 120,
 };
 
-interface Deps {
-  state: AppState;
-  setState: React.Dispatch<React.SetStateAction<AppState>>;
-  stateRef: React.RefObject<AppState>;
-}
-
 /**
  * Owns the dock layout: where the panels dock, which tab is active, the popped
  * Compare/Timeline dock, persisted panel sizes, and the collapse/expand resize
  * effects. The deferred panel transition (isPanelPending) lives here too, since
  * both tab selection and filter-set switching use it to keep large re-renders
- * off the click's critical path.
+ * off the click's critical path. Layout writes are raw (non-undoable) document
+ * edits, sourced straight from the store.
  */
-export function useDockLayout({ state, setState, stateRef }: Deps) {
+export function useDockLayout() {
+  const state = useStore((s) => s.doc);
+  const setState = useStore((s) => s.setDoc);
+  // Latest document, read without a render dependency — the old `stateRef.current`.
+  const getDoc = (): AppState => useStore.getState().doc;
+
   // Switching the dock tab or filter set mounts/renders a large list — a long
   // task that would block the click's paint (high INP). Deferring it keeps the
   // interaction responsive; isPanelPending dims the panel body while it renders.
@@ -65,7 +66,7 @@ export function useDockLayout({ state, setState, stateRef }: Deps) {
   // that tab is already shown expanded, do nothing — re-running the transition
   // would needlessly dim the panel body even though no content re-renders.
   const selectPanelTab = (tab: PanelTab) => {
-    const s = stateRef.current;
+    const s = getDoc();
     if (resolveActiveTab(s) === tab && !s.filterCollapsed) return;
     startPanelTransition(() =>
       setState((st) => ({
