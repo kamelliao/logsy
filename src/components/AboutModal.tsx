@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
-import { Button } from "./ui/button";
-import logo from "../assets/logo.png";
+import { Button } from "@/components/ui/button";
+import logo from "@/assets/logo.png";
 
 interface AboutModalProps {
   version: string;

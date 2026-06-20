@@ -1,5 +1,5 @@
 import { Bookmark, Star, Flag, Bug, Pin, CircleAlert, type LucideIcon } from "lucide-react";
-import type { MarkerIcon } from "../types";
+import type { MarkerIcon } from "@/types";
 
 /** The bookmark glyphs offered in the picker, in display order. */
 export const MARKER_ICONS: { id: MarkerIcon; label: string; color: string; Icon: LucideIcon }[] = [

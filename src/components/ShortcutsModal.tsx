@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
-import { Button } from "./ui/button";
-import { Kbd } from "./ui/kbd";
+import { Button } from "@/components/ui/button";
+import { Kbd } from "@/components/ui/kbd";
 
 interface ShortcutsModalProps {
   onClose: () => void;

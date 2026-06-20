@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
-import { tokenize, buildPattern, type GenToken } from "../lib/generalize";
-import { parsePattern, realizeRaws, reparsePattern } from "../lib/reparse";
+import { tokenize, buildPattern, type GenToken } from "@/lib/generalize";
+import { parsePattern, realizeRaws, reparsePattern } from "@/lib/reparse";
 
 // The core contract: parsePattern is a left-inverse of buildPattern *up to* the
 // emitted regex — parsePattern(buildPattern(t)) need not reproduce t's kinds, but

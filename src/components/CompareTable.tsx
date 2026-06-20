@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { ArrowUpToLine, ChevronDown, ChevronRight, Download, ListX, ListPlus, X } from "lucide-react";
-import type { ViewRow } from "../types";
-import { Button } from "./ui/button";
-import { PanelEmpty } from "./PanelEmpty";
+import type { ViewRow } from "@/types";
+import { Button } from "@/components/ui/button";
+import { PanelEmpty } from "@/components/PanelEmpty";
 
 interface CompareTableProps {
   rows: ViewRow[];

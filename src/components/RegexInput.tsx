@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useLayoutEffect, useRef, type ReactNode } from "react";
-import { tokenizeRegex, type RegexToken } from "../lib/regexHighlight";
+import { tokenizeRegex, type RegexToken } from "@/lib/regexHighlight";
 
 interface RegexInputProps {
   value: string;

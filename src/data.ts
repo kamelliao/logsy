@@ -1,4 +1,4 @@
-import type { AppState, Filter, PaletteEntry } from "./types";
+import type { AppState, Filter, PaletteEntry } from "@/types";
 
 export const DEFAULT_PALETTE: PaletteEntry[] = [
   { name: "default", text: "#1c1f23", bg: "#ffffff" },

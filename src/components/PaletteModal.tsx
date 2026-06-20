@@ -10,11 +10,11 @@ import {
 } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis, restrictToParentElement } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
-import type { PaletteEntry } from "../types";
-import { DEFAULT_PALETTE, TEXT_SWATCHES, BG_SWATCHES } from "../data";
-import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
-import { Input } from "./ui/input";
+import type { PaletteEntry } from "@/types";
+import { DEFAULT_PALETTE, TEXT_SWATCHES, BG_SWATCHES } from "@/data";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 
 // ---- types -----------------------------------------------------------------
 

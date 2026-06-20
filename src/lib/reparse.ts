@@ -12,8 +12,8 @@
 // `[`, `(?<`), while exact literals always escape them (`\.`, `\[`, `\(`, `\\`).
 // So a literal run can never be mistaken for a general form.
 
-import { escapeRegex } from "../logic";
-import { GenToken, GenKind, buildPattern, generalPattern } from "./generalize";
+import { escapeRegex } from "@/logic";
+import { GenToken, GenKind, buildPattern, generalPattern } from "@/lib/generalize";
 
 interface Seg { kind: GenKind; raw: string; len: number; }
 

@@ -1,7 +1,7 @@
 import {
   FileText, Star, Flag, Bug, Zap, CircleAlert, type LucideIcon,
 } from "lucide-react";
-import type { FileIcon } from "../types";
+import type { FileIcon } from "@/types";
 
 /** The glyphs offered in the per-file icon picker, in display order. */
 export const FILE_ICONS: { id: FileIcon; label: string; Icon: LucideIcon }[] = [

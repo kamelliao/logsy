@@ -13,14 +13,14 @@ import {
   SortableContext, useSortable, arrayMove, verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Filter, FieldDef, TimelineSource, TimeUnit, EventMark, EventShape } from "../types";
-import { trackFieldsOf } from "../logic";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "./ui/select";
-import { Button } from "./ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "./ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { PanelEmpty } from "./PanelEmpty";
-import { TimelineCanvas } from "./TimelineCanvas";
+import type { Filter, FieldDef, TimelineSource, TimeUnit, EventMark, EventShape } from "@/types";
+import { trackFieldsOf } from "@/logic";
+import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { PanelEmpty } from "@/components/PanelEmpty";
+import { TimelineCanvas } from "@/components/TimelineCanvas";
 
 const UNITS: TimeUnit[] = ["hms", "s", "ms", "us", "ns"];
 

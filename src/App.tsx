@@ -1,141 +1,60 @@
-import { useState, useMemo, useEffect, useCallback, useReducer, useRef, useTransition, Fragment, CSSProperties, ReactNode } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef, Fragment, CSSProperties, ReactNode } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import { ChevronDown, ChevronLeft, ChevronRight, ChevronsDownUp, ChevronsUpDown, ChevronUp, Eraser, FolderOpen, Minus, PanelBottom, PanelBottomClose, PanelRightClose, PanelLeftOpen, PanelRight, PanelTopOpen, Square, Upload, X } from "lucide-react";
 import { tinykeys } from "tinykeys";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { save, open } from "@tauri-apps/plugin-dialog";
+import { save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { AppState, LogFile, FilterSet, FilterGroup, Filter, FilterLayout, MarkerIcon, TimelineSource } from "./types";
-import {
-  uid, makeFilter, filterFromTatAttrs, initialState, normalizeState, DEFAULT_PALETTE,
-} from "./data";
-import type { PaletteEntry } from "./types";
+import type { FilterGroup } from "@/types";
+import { DEFAULT_PALETTE } from "@/data";
+import { exportPayload } from "@/filterFile";
+import type { PaletteEntry } from "@/types";
 
-// Open accepts native Logsy JSON plus TextAnalysisTool.NET (.tat/.xml) for import;
-// Save always writes Logsy JSON, so it only offers .json.
-const OPEN_DIALOG_FILTERS = [
-  { name: "Filter files", extensions: ["json", "tat", "xml"] },
-  { name: "Logsy filters", extensions: ["json"] },
-  { name: "TextAnalysisTool.NET", extensions: ["tat", "xml"] },
-];
-const SAVE_DIALOG_FILTERS = [{ name: "Logsy filters", extensions: ["json"] }];
+import { compileAll, computeView } from "@/logic";
+import { Sidebar } from "@/components/Sidebar";
+import { LogView } from "@/components/LogView";
+import { FilterPanel } from "@/components/FilterPanel";
+import { EditModal } from "@/components/EditModal";
+import { PaletteModal } from "@/components/PaletteModal";
+import { CompareTable } from "@/components/CompareTable";
+import { useCompareCollapse } from "@/components/useCompareCollapse";
+import { BookmarksPanel } from "@/components/BookmarksPanel";
+import { TimelinePanel } from "@/components/TimelinePanel";
+import { MenuPopup, type MenuItem } from "@/components/MenuPopup";
+import { AboutModal } from "@/components/AboutModal";
+import { ShortcutsModal } from "@/components/ShortcutsModal";
+import { useConfirm } from "@/components/ConfirmDialog";
+import { Button } from "@/components/ui/button";
+import { Toaster } from "@/components/ui/sonner";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/components/ui/resizable";
+import { useUndoableState } from "@/hooks/useUndoableState";
+import { useLogFiles } from "@/hooks/useLogFiles";
+import { useDockLayout } from "@/hooks/useDockLayout";
+import { useFilterActions, type EditingState } from "@/hooks/useFilterActions";
+import { useCompare } from "@/hooks/useCompare";
+import { useTimeline } from "@/hooks/useTimeline";
+import { useBookmarks } from "@/hooks/useBookmarks";
+import { activeFile } from "@/state/selectors";
+import { baseName } from "@/lib/path";
 
-/**
- * Parse a TextAnalysisTool.NET (.tat) filter file so users of that tool can
- * import their filters here. Returns null when the text isn't a TAT document.
- */
-function parseTatFilters(
-  text: string
-): { filters: Filter[]; groups: FilterGroup[]; order: string[]; sources: TimelineSource[] } | null {
-  const doc = new DOMParser().parseFromString(text, "application/xml");
-  if (doc.getElementsByTagName("parsererror").length) return null;
-  if (doc.documentElement?.tagName !== "TextAnalysisTool.NET") return null;
-  const attrs = ["text", "description", "enabled", "excluding", "case_sensitive", "regex", "foreColor", "backColor"];
-  const filters = Array.from(doc.getElementsByTagName("filter")).map((el) =>
-    filterFromTatAttrs(Object.fromEntries(attrs.map((k) => [k, el.getAttribute(k)])))
-  );
-  return { filters, groups: [], order: filters.map((f) => f.id), sources: [] };
-}
-
-import { buildGroupFromImport, exportPayload, remapImportIds } from "./filterFile";
-import { compileAll, computeView, buildTimeline, laneColor, guessUnit, isTimeLike } from "./logic";
-import { tokenize, buildPattern } from "./lib/generalize";
-import { Sidebar } from "./components/Sidebar";
-import { LogView } from "./components/LogView";
-import { FilterPanel } from "./components/FilterPanel";
-import { EditModal } from "./components/EditModal";
-import { PaletteModal } from "./components/PaletteModal";
-import { CompareTable } from "./components/CompareTable";
-import { useCompareCollapse } from "./components/useCompareCollapse";
-import { BookmarksPanel } from "./components/BookmarksPanel";
-import { TimelinePanel } from "./components/TimelinePanel";
-import { MenuPopup, type MenuItem } from "./components/MenuPopup";
-import { AboutModal } from "./components/AboutModal";
-import { ShortcutsModal } from "./components/ShortcutsModal";
-import { useConfirm } from "./components/ConfirmDialog";
-import { Button } from "./components/ui/button";
-import { Toaster } from "./components/ui/sonner";
-import { TooltipProvider } from "./components/ui/tooltip";
-import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "./components/ui/resizable";
-
-const STATE_KEY = "logsy.state.v6";
 const MENUS = ["File", "Edit", "View", "Filters", "Help"] as const;
 const DOCS_URL = "https://github.com/kamelliao/logsy#readme";
-const FONT_DEFAULT = 12.5;
+const FONT_DEFAULT = 12;
 const FONT_STEP = 1;
 const FONT_MIN = 8;
 const FONT_MAX = 24;
 
-// Safe mode (app launched with `--safe`): the Rust side injects
-// `window.__LOGSY_SAFE_MODE__` before this bundle runs. We then neither read nor
-// write persisted state this session, so a state that freezes/crashes the app on
-// load can be escaped without losing it — the bad state stays on disk and the
-// next normal launch resumes it (use this to export/repair, then restart).
-const SAFE_MODE = typeof window !== "undefined"
-  && Boolean((window as unknown as { __LOGSY_SAFE_MODE__?: boolean }).__LOGSY_SAFE_MODE__);
-
-function loadState(): AppState {
-  if (SAFE_MODE) return normalizeState(initialState());
-  try {
-    const raw = localStorage.getItem(STATE_KEY);
-    if (raw) return normalizeState(JSON.parse(raw) as AppState);
-  } catch { /* ignore */ }
-  return normalizeState(initialState());
-}
-
-// In-memory log contents, keyed by file id. Log bodies are *not* persisted to
-// localStorage (they can be huge) — on restart we reload them from `file.path`.
-const linesStore: Record<string, string[]> = {};
-const EMPTY_LINES: string[] = [];
-
-function splitLines(text: string): string[] {
-  const arr = text.split(/\r\n|\n|\r/);
-  if (arr.length > 0 && arr[arr.length - 1] === "") arr.pop();
-  return arr;
-}
-
-function baseName(p: string): string {
-  const parts = p.split(/[\\/]/);
-  return parts[parts.length - 1] || p;
-}
-
-// Yield a paint so a just-set loading overlay actually renders before a heavy
-// synchronous step (splitting a large file into lines) blocks the main thread.
-function nextPaint(): Promise<void> {
-  return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
-}
-
 export function App() {
-  const [state, setState] = useState<AppState>(loadState);
-  const [editing, setEditing] = useState<{ isNew: boolean; filter: Filter; genSeed?: string } | null>(null);
+  const { state, setState, stateRef, patchState, undo, redo, canUndo, canRedo, pushRecent, clearRecent } = useUndoableState();
+  const [editing, setEditing] = useState<EditingState | null>(null);
   // A request to scroll+flash a filter row (e.g. clicking a Compare group header).
   // The bumping nonce re-triggers the flash even when the same id is re-requested.
   const [filterFlash, setFilterFlash] = useState<{ id: string; nonce: number } | null>(null);
-  const fpRef = useRef<PanelImperativeHandle | null>(null);
-  const popRef = useRef<PanelImperativeHandle | null>(null);
   const [openMenu, setOpenMenu] = useState<{ name: string; x: number; y: number } | null>(null);
-  // Bumped whenever a file's lines land in `linesStore`, to re-derive `lines`.
-  const [linesVersion, setLinesVersion] = useState(0);
-  const [dragOver, setDragOver] = useState(false);
-  // Marks a non-urgent file switch so React can show an overlay while computing
-  // the new view rather than silently freezing for large files.
-  const [isSwitchingFile, startFileSwitchTransition] = useTransition();
-  // Same idea for switching the dock tab to Filters or switching filter sets:
-  // mounting/rendering a large filter list is a long task that would block the
-  // click's paint (high INP). Deferring it keeps the interaction responsive;
-  // isPanelPending dims the panel body as feedback while it renders.
-  const [isPanelPending, startPanelTransition] = useTransition();
-  // When set, the center shows a blank "open a file" drop screen instead of the
-  // active workspace (triggered by the sidebar's Open File button).
-  const [openScreen, setOpenScreen] = useState(false);
-  const openScreenRef = useRef(false);
-  openScreenRef.current = openScreen;
   const [aboutOpen, setAboutOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  // When set, a log file is being read from disk — drives the loading overlay.
-  const [busy, setBusy] = useState<{ name: string } | null>(null);
   const [appVersion, setAppVersion] = useState("0.2.1");
   // Go-to-line dialog + signals pushed to LogView for menu-driven actions.
   const [gotoOpen, setGotoOpen] = useState(false);
@@ -154,25 +73,6 @@ export function App() {
 
   useEffect(() => { getVersion().then(setAppVersion).catch(() => { /* not under Tauri */ }); }, []);
 
-  // Tell the user when this session is running in safe mode (started with --safe):
-  // their saved workspace is untouched on disk and will return on a normal launch.
-  useEffect(() => {
-    if (SAFE_MODE) {
-      toast.warning("Safe mode: your saved state was not loaded and won't be saved this session. Restart normally to restore it.", { duration: 8000 });
-    }
-  }, []);
-
-  // Persist on a short debounce — serializing the whole state synchronously on
-  // every edit added a fixed cost to each action on large filter sets. The
-  // unload flush (below, after stateRef) covers the trailing edits.
-  useEffect(() => {
-    if (SAFE_MODE) return;   // never write over the preserved state in safe mode
-    const t = setTimeout(() => {
-      try { localStorage.setItem(STATE_KEY, JSON.stringify(state)); } catch { /* ignore */ }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [state]);
-
   const file = state.files.find((f) => f.id === state.activeFileId) ?? state.files[0] ?? null;
   const set = file ? (file.sets.find((g) => g.id === file.activeSetId) ?? file.sets[0]) : null;
   // Log-view header state is per-document (stored on the active LogFile).
@@ -182,75 +82,36 @@ export function App() {
   // Switching filter sets (or files) exits "view this filter only".
   useEffect(() => { setSoloFilterId(null); }, [file?.activeSetId, file?.id]);
 
-  const lines = useMemo(
-    () => (file ? linesStore[file.id] ?? EMPTY_LINES : EMPTY_LINES),
-    [file?.id, linesVersion]
-  );
+  const {
+    lines, busy, isSwitchingFile, dragOver, openScreen, setOpenScreen,
+    selectFile, deleteFile, openFiles, loadPaths,
+  } = useLogFiles({ patchState, setState, stateRef, pushRecent, appConfirm, file });
+
   const compiled = useMemo(() => compileAll(set?.filters ?? []), [set?.filters]);
   const view = useMemo(() => computeView(lines, compiled), [lines, compiled]);
-  // Timeline tracks: a user-owned, ordered list (no auto-derivation).
-  const tracks = useMemo(() => set?.sources ?? [], [set?.sources]);
-  // Lines the user added to the timeline. Persisted per file (survives reload),
-  // keyed by file id so a file switch naturally shows that file's own set.
-  const timelineLines = useMemo(
-    () => new Set(file ? state.timelineLinesByFile?.[file.id] ?? [] : []),
-    [state.timelineLinesByFile, file],
-  );
-  // Lines explicitly added to the comparison panel. Persisted per file (survives
-  // reload / document switch / filter switch), keyed by file id like the timeline.
-  const compareLines = useMemo(
-    () => new Set(file ? state.compareLinesByFile?.[file.id] ?? [] : []),
-    [state.compareLinesByFile, file],
-  );
-  // Events come from the lines the user added to the timeline (like compare).
-  // `badEndTracks` flags span tracks whose end field resolved BEFORE the start
-  // (illegal, backwards span) — those ends are dropped; we warn on the row.
-  const { marks, badEndTracks } = useMemo(() => {
-    const bad = new Set<string>();
-    const m = buildTimeline(view, timelineLines, tracks, bad);
-    return { marks: m, badEndTracks: bad };
-  }, [view, timelineLines, tracks]);
-  // Field names per filter that may back a timeline TIME field. A field qualifies
-  // if its declared type is numeric (int/hex/float/time) OR a sampled matched
-  // value looks time-like (covers string-typed groups that actually hold numbers).
-  // One O(rows) pass collects a few sample lines per provider filter that has any
-  // string-typed field; recomputed when the view or filters change.
-  const timeFieldsByFilter = useMemo(() => {
-    const result = new Map<string, Set<string>>();
-    const providers = (set?.filters ?? []).filter((f) => f.fields && f.fields.length);
-    if (!providers.length) return result;
-    const NUMERIC: Record<string, boolean> = { int: true, hex: true, float: true, time: true };
-    const needsSample = new Set<string>();
-    for (const f of providers) {
-      result.set(f.id, new Set(f.fields!.filter((d) => NUMERIC[d.type]).map((d) => d.name)));
-      if (f.fields!.some((d) => !NUMERIC[d.type])) needsSample.add(f.id);
-    }
-    if (needsSample.size) {
-      const SAMPLE = 20;
-      const sampleLines = new Map<string, number[]>();
-      for (const fid of needsSample) sampleLines.set(fid, []);
-      for (let n = 1; n <= view.rows.length; n++) {
-        const fid = view.rows[n - 1]?.fieldsFromId;
-        if (!fid || !needsSample.has(fid)) continue;
-        const arr = sampleLines.get(fid)!;
-        if (arr.length < SAMPLE) arr.push(n);
-      }
-      for (const fid of needsSample) {
-        const have = result.get(fid)!;
-        const strFields = providers.find((p) => p.id === fid)!.fields!.filter((d) => !NUMERIC[d.type]);
-        for (const n of sampleLines.get(fid)!) {
-          const fl = view.fieldsFor(n);
-          if (!fl) continue;
-          for (const d of strFields) {
-            if (have.has(d.name)) continue;
-            const v = fl[d.name]?.raw;
-            if (v !== undefined && isTimeLike(v)) have.add(d.name);
-          }
-        }
-      }
-    }
-    return result;
-  }, [view, set]);
+
+  // ---------- dock layout ----------
+  const {
+    isPanelPending, startPanelTransition, fpRef, popRef,
+    setFilterPos, toggleFilterCollapsed, togglePoppedCollapsed, selectPanelTab,
+    popCompareOut, dockCompareBack, popTimelineOut, dockTimelineBack,
+    compareTabAvailable, timelineTabAvailable, poppedTabs, popOpen,
+    poppedActiveTab, activePanelTab, poppedPos, layoutFor, onLayoutFor,
+    MAIN_COLLAPSED, POP_COLLAPSED,
+  } = useDockLayout({ state, setState, stateRef });
+
+  // ---------- compare / timeline / bookmarks ----------
+  const {
+    compareLines, compareRows,
+    addToCompare, removeFromCompare, clearCompare, clearCompareGroup, importCompareGroup, exportGroupCsv,
+  } = useCompare({ view, file, state, setState });
+  const {
+    tracks, timelineLines, marks, badEndTracks, timeFieldsByFilter, orphanLines, trackLineStats,
+    removeFromTimeline, clearTimeline, setTrack, removeTrack, reorderTracks,
+    importTrackLines, clearTrackLines, addAllMatchingLines, addLinesToTimeline, toggleTimelineTrack,
+  } = useTimeline({ view, file, set, state, setState, patchState, selectPanelTab });
+  const { markers, setMarker, removeMarker, clearMarkers } = useBookmarks({ file, patchState });
+
   // Soloing a filter ("View this filter only"): the log shows just that filter's
   // matches (forced enabled, never excluding), while the filter panel keeps its
   // badge counts from the full `view`. Ephemeral — not persisted, not undoable.
@@ -263,736 +124,35 @@ export function App() {
   }, [soloFilterId, compiled, lines]);
   const logView = soloView ?? view;
   const effectiveViewMode: "all" | "matches" = soloView ? "matches" : fileViewMode;
-  // Rows shown in the comparison panel: explicitly-added, still-visible, parsed lines.
-  const compareRows = useMemo(
-    () => view.rows
-      .filter((r) => !r.excluded && compareLines.has(r.n) && r.fieldsFromId !== undefined)
-      .map((r) => ({ ...r, fields: view.fieldsFor(r.n) })),
-    [view, compareLines],
-  );
 
   // Per-table collapse for the Compare panel — see useCompareCollapse for why it
   // lives here (shared between the dock-head toggle and each table's chevron).
   const compareCollapse = useCompareCollapse(compareRows);
 
-  // ---------- helpers ----------
-  // Latest state, readable from async callbacks (file loading) and from
-  // patchState / undo without stale closures.
-  const stateRef = useRef(state);
-  stateRef.current = state;
-  // Latest appConfirm, for the once-mounted drag-drop listener (which can't close
-  // over a fresh handler each render).
-  const appConfirmRef = useRef(appConfirm);
-  appConfirmRef.current = appConfirm;
+  // Reveal the Filters tab and focus its search box (Ctrl+Shift+L). The nonce
+  // bump tells FilterPanel to focus even when the tab was already open.
+  const focusFilterSearch = () => { selectPanelTab("filters"); setFocusSearchNonce((n) => n + 1); };
+  const showCompare = compareRows.length > 0;
 
-  // Flush the debounced persist when the window goes away (reload / close), so
-  // edits made within the debounce window aren't lost.
-  useEffect(() => {
-    const flush = () => {
-      if (SAFE_MODE) return;   // see SAFE_MODE: don't persist this session
-      try { localStorage.setItem(STATE_KEY, JSON.stringify(stateRef.current)); } catch { /* ignore */ }
-    };
-    window.addEventListener("beforeunload", flush);
-    window.addEventListener("pagehide", flush);
-    return () => {
-      window.removeEventListener("beforeunload", flush);
-      window.removeEventListener("pagehide", flush);
-    };
-  }, []);
-
-  // ---------- undo / redo ----------
-  // Whole-AppState snapshots. Snapshots are immutable (patchState clones before
-  // mutating), so stacking the prior reference is cheap. Memory-only (not
-  // persisted); `bumpHistory` re-renders so menu enablement stays in sync.
-  const past = useRef<AppState[]>([]);
-  const future = useRef<AppState[]>([]);
-  const coalesceKey = useRef<string | null>(null);
-  const [, bumpHistory] = useReducer((x: number) => x + 1, 0);
-  const HISTORY_CAP = 50;
-
-  // Mutate state immutably. By default the edit is recorded for undo; pass
-  // { undoable: false } for navigation / file / view-only changes, or
-  // { coalesce } to fold a run of similar edits (typing, dragging) into one step.
-  const patchState = useCallback(
-    (fn: (s: AppState) => void, opts?: { undoable?: boolean; coalesce?: string }) => {
-      if (opts?.undoable !== false) {
-        const base = stateRef.current;
-        const top = past.current[past.current.length - 1];
-        const fold = !!opts?.coalesce && coalesceKey.current === opts.coalesce;
-        // Skip when folding, or when an earlier edit this tick already pushed the
-        // same base (so a single user action is one undo step).
-        if (!fold && top !== base) {
-          past.current.push(base);
-          if (past.current.length > HISTORY_CAP) past.current.shift();
-        }
-        future.current = [];
-        coalesceKey.current = opts?.coalesce ?? null;
-        bumpHistory();
-      }
-      setState((s) => {
-        const n = structuredClone(s);
-        fn(n);
-        return n;
-      });
-    },
-    [],
-  );
-
-  const undo = useCallback(() => {
-    if (past.current.length === 0) return;
-    const prev = past.current.pop()!;
-    future.current.push(stateRef.current);
-    coalesceKey.current = null;
-    bumpHistory();
-    setState(prev);
-  }, []);
-  const redo = useCallback(() => {
-    if (future.current.length === 0) return;
-    const next = future.current.pop()!;
-    past.current.push(stateRef.current);
-    coalesceKey.current = null;
-    bumpHistory();
-    setState(next);
-  }, []);
-  const canUndo = past.current.length > 0;
-  const canRedo = future.current.length > 0;
-
-  // Push a path to the front of a recent-list (deduped, capped at 10).
-  const pushRecent = useCallback((key: "recentFiles" | "recentFilterFiles", path: string) => {
-    setState((s) => {
-      const cur = (s[key] ?? []).filter((p) => p !== path);
-      cur.unshift(path);
-      return { ...s, [key]: cur.slice(0, 10) };
-    });
-  }, []);
-  const clearRecent = useCallback((key: "recentFiles" | "recentFilterFiles") =>
-    setState((s) => ({ ...s, [key]: [] })), []);
-
-  function withFile(s: AppState, fid: string): LogFile {
-    return s.files.find((f) => f.id === fid)!;
-  }
-  // The active file resolved from a state snapshot (mirrors the render-time
-  // `file` derivation) — for patches that must not close over a stale `file`.
-  function activeFile(s: AppState): LogFile | null {
-    return s.files.find((f) => f.id === s.activeFileId) ?? s.files[0] ?? null;
-  }
-  function withSet(s: AppState, fid: string, gid: string): FilterSet {
-    return withFile(s, fid).sets.find((g) => g.id === gid)!;
-  }
-
-  // ---------- files ----------
-  const selectFile = (fid: string) => {
-    setOpenScreen(false);
-    startFileSwitchTransition(() => setState((s) => ({ ...s, activeFileId: fid })));
-  };
-
-  // Closing a log discards its workspace (filters, sets) — confirm first.
-  const deleteFile = async (fid: string) => {
-    const f = stateRef.current.files.find((x) => x.id === fid);
-    const ok = await appConfirm({
-      title: "Close log?",
-      message: `Close "${f?.name ?? "this log"}"? Its filters in this workspace will be discarded.`,
-      okLabel: "Close", cancelLabel: "Cancel", danger: true,
-    });
-    if (!ok) return;
-    patchState((s) => {
-      s.files = s.files.filter((x) => x.id !== fid);
-      if (s.activeFileId === fid) s.activeFileId = s.files[0]?.id ?? null;
-      delete linesStore[fid];
-    }, { undoable: false });
-  };
-
-  // Read each path from disk and add it as a log file. The same path may be
-  // opened more than once — each open is a separate entry (duplicates get a
-  // "(n)" suffix so the sidebar stays readable). When `inheritFilters` is set
-  // (e.g. for drag-and-drop) the new file starts with a copy of the current
-  // set's filters instead of an empty one.
-  const loadPaths = useCallback(async (paths: string[], inheritFilters = false) => {
-    let lastErr = "";
-    // Snapshot the active set's filters once, up front, so every dropped file
-    // inherits the same starting point.
-    const inherited = (() => {
-      if (!inheritFilters) return null;
-      const cur = stateRef.current;
-      const cf = cur.files.find((f) => f.id === cur.activeFileId) ?? cur.files[0] ?? null;
-      const cg = cf ? (cf.sets.find((g) => g.id === cf.activeSetId) ?? cf.sets[0]) : null;
-      return cg ?? null;
-    })();
-    const makeSets = (): FilterSet[] =>
-      inherited
-        ? [{ ...(JSON.parse(JSON.stringify(inherited)) as FilterSet), id: uid("g") }]
-        : [{ id: uid("g"), name: "Filters", filters: [], groups: [], order: [] }];
-    try {
-    for (const path of paths) {
-      let text: string;
-      let encoding: string;
-      setBusy({ name: baseName(path) });
-      await nextPaint();   // let the overlay paint before the read/split blocks
-      try {
-        const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
-        text = res.text;
-        encoding = res.encoding;
-      } catch (e) {
-        lastErr = `${baseName(path)} — ${String(e)}`;
-        continue;
-      }
-      pushRecent("recentFiles", path);
-      await nextPaint();   // yield again so the overlay stays visible before the synchronous line-split
-      const lns = splitLines(text);
-      const id = uid("file");
-      linesStore[id] = lns;
-      patchState((s) => {
-        // Disambiguate repeated opens of the same path: "log" → "log (2)" → …
-        const dupes = s.files.filter((f) => f.path === path).length;
-        const f: LogFile = {
-          id,
-          name: dupes > 0 ? `${baseName(path)} (${dupes + 1})` : baseName(path),
-          path,
-          lineCount: lns.length,
-          encoding,
-          sets: makeSets(),
-          activeSetId: null,
-        };
-        f.activeSetId = f.sets[0].id;
-        s.files.push(f);
-        s.activeFileId = f.id;
-      }, { undoable: false });
-    }
-    } finally {
-      setBusy(null);
-    }
-    setLinesVersion((v) => v + 1);
-    if (lastErr) toast.error("Could not open file: " + lastErr);
-  }, [patchState, pushRecent]);
-
-  const openFiles = useCallback(async () => {
-    const sel = await open({ multiple: true });
-    if (sel == null) return;
-    await loadPaths(Array.isArray(sel) ? sel : [sel]);
-    setOpenScreen(false); // a file is now active — leave the open screen
-  }, [loadPaths]);
-
-  // Replace the active file's contents in place (same workspace slot, keeping its
-  // filters/groups) with a file from disk — used by drag-and-drop so a dropped
-  // log loads into the current workspace instead of spawning a new file entry.
-  const replaceActiveFile = useCallback(async (path: string) => {
-    const cur = stateRef.current;
-    const active = cur.files.find((f) => f.id === cur.activeFileId) ?? cur.files[0] ?? null;
-    if (!active) { await loadPaths([path]); return; }
-    let text: string;
-    let encoding: string;
-    setBusy({ name: baseName(path) });
-    await nextPaint();   // let the overlay paint before the read/split blocks
-    try {
-      const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
-      text = res.text;
-      encoding = res.encoding;
-    }
-    catch (e) { setBusy(null); toast.error("Could not open file: " + baseName(path) + " — " + String(e)); return; }
-    const lns = splitLines(text);
-    linesStore[active.id] = lns;
-    patchState((s) => {
-      const f = s.files.find((x) => x.id === active.id);
-      if (!f) return;
-      f.path = path;
-      f.name = baseName(path);
-      f.lineCount = lns.length;
-      f.encoding = encoding;
-      s.activeFileId = f.id;
-    }, { undoable: false });
-    pushRecent("recentFiles", path);
-    // The slot keeps its file id but gets new contents, so its old line numbers
-    // are stale — drop this file's compare lines (timeline does the same on reload).
-    setState((s) => ({ ...s, compareLinesByFile: { ...(s.compareLinesByFile ?? {}), [active.id]: [] } }));
-    setLinesVersion((v) => v + 1);
-    setBusy(null);
-  }, [loadPaths, patchState, pushRecent]);
-
-  // On restart the persisted file list has paths but no cached lines; reload the
-  // active file's contents from disk when they're missing.
-  useEffect(() => {
-    if (!file || !file.path || linesStore[file.id]) return;
-    const { id, path, name } = file;
-    let cancelled = false;
-    // Show the loading overlay: the read can be slow (a large file, or one on a
-    // network share), and without feedback the blank workspace looks stuck.
-    setBusy({ name });
-    (async () => {
-      try {
-        const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
-        if (cancelled) return;
-        linesStore[id] = splitLines(res.text);
-        patchState((s) => { const f = s.files.find((x) => x.id === id); if (f) f.encoding = res.encoding; }, { undoable: false });
-        setLinesVersion((v) => v + 1);
-      } catch (e) {
-        if (!cancelled) toast.error(`Could not reload ${name}: ${String(e)}`);
-      } finally {
-        if (!cancelled) setBusy(null);
-      }
-    })();
-    return () => { cancelled = true; setBusy(null); };
-  }, [file?.id, file?.path]);
-
-  // OS drag-and-drop of files onto the window (Tauri handles this natively).
-  const loadPathsRef = useRef(loadPaths);
-  loadPathsRef.current = loadPaths;
-  const replaceActiveFileRef = useRef(replaceActiveFile);
-  replaceActiveFileRef.current = replaceActiveFile;
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let disposed = false;
-    try {
-      getCurrentWebview()
-        .onDragDropEvent((event) => {
-          const p = event.payload;
-          // Only show the drop overlay for genuine file drags (which carry
-          // `paths`). In-webview drags — e.g. dragging to select log text — also
-          // emit enter/over events but with no paths, and must be ignored.
-          const hasFiles = "paths" in p && Array.isArray(p.paths) && p.paths.length > 0;
-          if (p.type === "enter" || p.type === "over") { if (hasFiles) setDragOver(true); }
-          else if (p.type === "drop") {
-            setDragOver(false);
-            if (!p.paths.length) return;
-            const paths = p.paths;
-            void (async () => {
-              // Dropped onto the "open a file" screen: always open as new files.
-              if (openScreenRef.current) {
-                await loadPathsRef.current(paths);
-                setOpenScreen(false);
-                return;
-              }
-              // A log is already open: confirm, then load into the current
-              // workspace (replace the active file in place, keeping its filters)
-              // rather than spawning a new file entry.
-              if (stateRef.current.files.length > 0) {
-                const ok = await appConfirmRef.current({
-                  title: "Replace current log?",
-                  message: `A log is already open. Replace it with the dropped file${paths.length > 1 ? "s" : ""}?`,
-                  okLabel: "Replace", cancelLabel: "Cancel", danger: true,
-                });
-                if (!ok) return;
-                await replaceActiveFileRef.current(paths[0]);
-                // Any extra dropped files open as additional entries.
-                if (paths.length > 1) await loadPathsRef.current(paths.slice(1), true);
-              } else {
-                await loadPathsRef.current(paths);
-              }
-            })();
-          } else {
-            setDragOver(false);
-          }
-        })
-        .then((un) => { if (disposed) un(); else unlisten = un; })
-        .catch(() => { /* not running under Tauri */ });
-    } catch { /* not running under Tauri */ }
-    return () => { disposed = true; unlisten?.(); };
-  }, []);
-
-  // ---------- groups ----------
-  const switchSet = (gid: string) => startPanelTransition(() => patchState((s) => { if (!file) return; withFile(s, file.id).activeSetId = gid; }, { undoable: false }));
-  const addSet = () => patchState((s) => {
-    if (!file) return;
-    const f = withFile(s, file.id);
-    const g: FilterSet = { id: uid("g"), name: "New set", filters: [], groups: [], order: [] };
-    f.sets.push(g); f.activeSetId = g.id;
-  });
-  const renameSet = (gid: string, name: string) => patchState((s) => { if (!file) return; withSet(s, file.id, gid).name = name; });
-  const deleteSet = async (gid: string) => {
-    if (!file) return;
-    const g = file.sets.find((x) => x.id === gid);
-    // Confirm only when the set actually holds filters (empty sets delete freely).
-    if (g && g.filters.length > 0) {
-      const ok = await appConfirm({
-        title: "Delete filter set?",
-        message: `Delete the "${g.name}" filter set and its ${g.filters.length} filter${g.filters.length > 1 ? "s" : ""}?`,
-        okLabel: "Delete", cancelLabel: "Cancel", danger: true,
-      });
-      if (!ok) return;
-    }
-    patchState((s) => {
-      const f = withFile(s, file.id);
-      f.sets = f.sets.filter((x) => x.id !== gid);
-      if (f.activeSetId === gid) f.activeSetId = f.sets[0]?.id ?? null;
-    });
-  };
-  const reorderSets = (from: number, to: number) => patchState((s) => {
-    if (!file) return;
-    const f = withFile(s, file.id);
-    const [m] = f.sets.splice(from, 1);
-    f.sets.splice(to, 0, m);
-  });
-  // Duplicate a whole filter set: deep-copy its groups/filters with fresh ids,
-  // remap groupId references and the top-level order, drop the save link, and
-  // insert the copy right after the original (then activate it).
-  const duplicateSet = (gid: string) => patchState((s) => {
-    if (!file) return;
-    const f = withFile(s, file.id);
-    const idx = f.sets.findIndex((x) => x.id === gid);
-    if (idx < 0) return;
-    const src = f.sets[idx];
-    const groupMap = new Map(src.groups.map((grp) => [grp.id, uid("grp")] as const));
-    const filMap = new Map(src.filters.map((fl) => [fl.id, uid("f")] as const));
-    const copy: FilterSet = {
-      id: uid("g"),
-      name: src.name + " copy",
-      groups: src.groups.map((grp) => ({ ...grp, id: groupMap.get(grp.id)! })),
-      filters: src.filters.map((fl) => ({
-        ...fl,
-        id: filMap.get(fl.id)!,
-        groupId: fl.groupId ? groupMap.get(fl.groupId) ?? null : null,
-        fields: fl.fields ? fl.fields.map((x) => ({ ...x })) : undefined,
-      })),
-      order: src.order.map((id) => groupMap.get(id) ?? filMap.get(id)).filter((x): x is string => !!x),
-    };
-    f.sets.splice(idx + 1, 0, copy);
-    f.activeSetId = copy.id;
-  });
-
-  // ---------- groups ----------
-  const addGroup = () => patchState((s) => {
-    if (!file || !set) return;
-    const g = withSet(s, file.id, set.id);
-    const names = new Set(g.groups.map((x) => x.name));
-    let name = "New group";
-    if (names.has(name)) {
-      let n = 1;
-      while (names.has(`New group ${n}`)) n++;
-      name = `New group ${n}`;
-    }
-    const grp = { id: uid("grp"), name, collapsed: false };
-    g.groups.push(grp);
-    g.order.push(grp.id);
-  });
-  const renameGroup = (gid: string, name: string) => patchState((s) => {
-    if (!file || !set) return;
-    const grp = withSet(s, file.id, set.id).groups.find((x) => x.id === gid);
-    if (grp) grp.name = name;
-  });
-  const toggleGroup = (gid: string) => patchState((s) => {
-    if (!file || !set) return;
-    const grp = withSet(s, file.id, set.id).groups.find((x) => x.id === gid);
-    if (grp) grp.collapsed = !grp.collapsed;
-  }, { undoable: false });
-  const deleteGroup = (gid: string) => patchState((s) => {
-    if (!file || !set) return;
-    const g = withSet(s, file.id, set.id);
-    g.groups = g.groups.filter((x) => x.id !== gid);
-    // Keep the filters — move them back to the ungrouped bucket, taking the
-    // group's old top-level slot (so they don't jump elsewhere).
-    const freed = g.filters.filter((f) => f.groupId === gid).map((f) => f.id);
-    g.filters.forEach((f) => { if (f.groupId === gid) f.groupId = null; });
-    const at = g.order.indexOf(gid);
-    if (at >= 0) g.order.splice(at, 1, ...freed);
-    else g.order.push(...freed);
-  });
-  // Commit a whole-set drag-and-drop arrangement (built live in FilterPanel) in
-  // one undoable step. Rebuild `filters` in visual order — loose rows and each
-  // group's rows interleaved per `model.top` — and set every filter's groupId;
-  // `order` becomes the new interleaved top-level order.
-  const applyLayout = (model: FilterLayout) => patchState((s) => {
-    if (!file || !set) return;
-    const g = withSet(s, file.id, set.id);
-    const byId = new Map(g.filters.map((f) => [f.id, f] as const));
-    const next: Filter[] = [];
-    for (const entry of model.top) {
-      if (entry.kind === "filter") {
-        const f = byId.get(entry.id);
-        if (f) { f.groupId = null; next.push(f); byId.delete(entry.id); }
-      } else {
-        for (const fid of model.inGroup[entry.id] ?? []) {
-          const f = byId.get(fid);
-          if (f) { f.groupId = entry.id; next.push(f); byId.delete(fid); }
-        }
-      }
-    }
-    for (const f of byId.values()) next.push(f); // safety: never drop a filter
-    g.filters = next;
-    g.order = model.top.map((e) => e.id);
-  });
-  const setGroupEnabled = (gid: string, enabled: boolean) => patchState((s) => {
-    if (!file || !set) return;
-    withSet(s, file.id, set.id).filters.forEach((f) => { if (f.groupId === gid) f.enabled = enabled; });
+  // ---------- filter actions ----------
+  const {
+    switchSet, addSet, renameSet, deleteSet, reorderSets, duplicateSet,
+    addGroup, renameGroup, toggleGroup, deleteGroup, applyLayout, setGroupEnabled,
+    updateFilter, deleteFilter, deleteFilters, setFiltersEnabled, duplicateFilter,
+    openNewFilter, openFilterFromPattern, openEditFilter, saveFilter,
+    saveFiltersAs, saveFilters, loadFilterFromPath, importFilters, appendFilters, bulk,
+  } = useFilterActions({
+    file, set, patchState, pushRecent, appConfirm, startPanelTransition,
+    setEditing, soloFilterId, setSoloFilterId,
   });
 
   // ---------- palette ----------
   const effectivePalette: PaletteEntry[] = state.customPalette ?? DEFAULT_PALETTE;
   const [paletteModalOpen, setPaletteModalOpen] = useState(false);
-
   const applyPalette = (palette: PaletteEntry[]) =>
     setState((s) => ({ ...s, customPalette: palette }));
 
-  // ---------- filters ----------
-  const updateFilter = (fid: string, patch: Partial<Filter>) => patchState((s) => {
-    if (!file || !set) return;
-    const g = withSet(s, file.id, set.id);
-    Object.assign(g.filters.find((x) => x.id === fid)!, patch);
-  });
-  const deleteFilter = (fid: string) => {
-    patchState((s) => {
-      if (!file || !set) return;
-      const g = withSet(s, file.id, set.id);
-      g.filters = g.filters.filter((x) => x.id !== fid);
-      const oi = g.order.indexOf(fid);
-      if (oi >= 0) g.order.splice(oi, 1);
-    });
-    if (soloFilterId === fid) setSoloFilterId(null);
-    setEditing(null);
-  };
-  // Batch delete from the filter panel's selection mode. One undoable step (a
-  // single Ctrl+Z brings them all back), and unlike single-row delete it also
-  // drops timeline tracks bound to the removed filters so none are left orphaned.
-  // Always confirms; returns whether it went through so the panel only clears
-  // its selection on success.
-  const deleteFilters = async (ids: string[]): Promise<boolean> => {
-    if (!file || !set || ids.length === 0) return false;
-    const ok = await appConfirm({
-      title: "Delete filters?",
-      message: `Delete ${ids.length} selected filter${ids.length > 1 ? "s" : ""}? This can be undone with Ctrl+Z.`,
-      okLabel: "Delete", cancelLabel: "Cancel", danger: true,
-    });
-    if (!ok) return false;
-    const del = new Set(ids);
-    patchState((s) => {
-      if (!file || !set) return;
-      const g = withSet(s, file.id, set.id);
-      g.filters = g.filters.filter((x) => !del.has(x.id));
-      g.order = g.order.filter((id) => !del.has(id));
-      g.sources = (g.sources ?? []).filter((x) => !del.has(x.filterId));
-    });
-    if (soloFilterId && del.has(soloFilterId)) setSoloFilterId(null);
-    setEditing(null);
-    return true;
-  };
-  const setFiltersEnabled = (ids: string[], enabled: boolean) => {
-    if (!file || !set || ids.length === 0) return;
-    const sel = new Set(ids);
-    patchState((s) => {
-      if (!file || !set) return;
-      withSet(s, file.id, set.id).filters.forEach((f) => { if (sel.has(f.id)) f.enabled = enabled; });
-    });
-  };
-  const duplicateFilter = (fid: string) => patchState((s) => {
-    if (!file || !set) return;
-    const g = withSet(s, file.id, set.id);
-    const idx = g.filters.findIndex((x) => x.id === fid);
-    if (idx < 0) return;
-    const copy = { ...g.filters[idx], id: uid("f") };
-    g.filters.splice(idx + 1, 0, copy);
-    if (copy.groupId === null) {
-      const oi = g.order.indexOf(fid);
-      if (oi >= 0) g.order.splice(oi + 1, 0, copy.id);
-      else g.order.push(copy.id);
-    }
-  });
-  // New filters default to the neutral white-bg / black-text style; the user
-  // picks a highlight colour in the editor when they want one.
-  const openNewFilter = (groupId: string | null = null) => {
-    if (!set) return;
-    setEditing({ isNew: true, filter: makeFilter("", { groupId }) });
-  };
-  const openFilterFromPattern = (text: string, mode: "exact" | "pattern" = "exact") => {
-    if (!set) return;
-    if (mode === "pattern") {
-      // Filters match single lines; a multi-line selection seeds from its
-      // first non-empty line. genSeed drives the chips UI in EditModal.
-      const seed = text.split(/\r?\n/).find((l) => l.trim())?.trim() ?? text;
-      setEditing({
-        isNew: true,
-        filter: makeFilter(buildPattern(tokenize(seed)), { regex: true }),
-        genSeed: seed,
-      });
-    } else {
-      setEditing({ isNew: true, filter: makeFilter(text) });
-    }
-  };
-  const openEditFilter = (fid: string) => {
-    if (!set) return;
-    const fl = set.filters.find((x) => x.id === fid)!;
-    setEditing({ isNew: false, filter: { ...fl } });
-  };
-  const saveFilter = (draft: Filter) => {
-    patchState((s) => {
-      if (!file || !set) return;
-      const g = withSet(s, file.id, set.id);
-      const idx = g.filters.findIndex((x) => x.id === draft.id);
-      if (idx >= 0) g.filters[idx] = draft; else g.filters.push(draft);
-      // Reconcile top-level order with the (possibly changed) set.
-      const oi = g.order.indexOf(draft.id);
-      if (draft.groupId === null && oi < 0) g.order.push(draft.id);
-      else if (draft.groupId !== null && oi >= 0) g.order.splice(oi, 1);
-    });
-    setEditing(null);
-  };
-
-  // ---------- save / import ----------
-  const writeFiltersTo = async (path: string) => {
-    if (!file || !set) return;
-    try {
-      await invoke("write_text_file", { path, contents: exportPayload(set) });
-      patchState((s) => {
-        if (!file || !set) return;
-        const g = withSet(s, file.id, set.id);
-        g.filePath = path;
-        // Mark this as the clean baseline so "Save Filter" disables until the
-        // next edit.
-        g.savedSnapshot = exportPayload(g);
-      }, { undoable: false });
-      pushRecent("recentFilterFiles", path);
-      toast.success("Filters saved");
-    } catch (e) {
-      toast.error("Could not save filters: " + String(e));
-    }
-  };
-
-  const saveFiltersAs = async () => {
-    if (!set) return;
-    const path = await save({
-      defaultPath: set.name.replace(/\s+/g, "_") + "_filters.json",
-      filters: SAVE_DIALOG_FILTERS,
-    });
-    if (typeof path === "string") await writeFiltersTo(path);
-  };
-
-  // "Save filters": update the file it was last saved to; if never saved, behave as Save As.
-  const saveFilters = async () => {
-    if (!set) return;
-    if (set.filePath) await writeFiltersTo(set.filePath);
-    else await saveFiltersAs();
-  };
-
-  // Load a filter file from a known path into the current set. `mode` is either
-  // "replace" (swap the whole set, the default) or "append" (merge the import in
-  // as additional filters/groups beside the existing ones). Replace confirms
-  // first when the set isn't empty; append is additive and undoable, so it
-  // doesn't. Used by the "Load Filters"/"Append Filters" dialogs and the Recent
-  // Filter Files menu.
-  const loadFilterFromPath = async (path: string, mode: "replace" | "append" = "replace") => {
-    if (!file || !set) return;
-    if (mode === "replace" && set.filters.length > 0) {
-      const ok = await appConfirm({
-        title: "Replace current filters?",
-        message: "Loading will replace every filter and group in the current set. This can't be undone.",
-        okLabel: "Replace", cancelLabel: "Cancel", danger: true,
-      });
-      if (!ok) return;
-    }
-    let text: string;
-    // read_text_file returns { text, encoding } — pull the text out (passing the
-    // whole object to JSON.parse below would silently fail the load).
-    try { text = (await invoke<{ text: string; encoding: string }>("read_text_file", { path })).text; }
-    catch (e) { toast.error("Could not read file: " + String(e)); return; }
-    let built: ReturnType<typeof buildGroupFromImport> = null;
-    let foreign = false; // a TAT import isn't a Logsy file, so don't make it the save target
-    try { built = buildGroupFromImport(JSON.parse(text)); } catch { /* not JSON — try TAT below */ }
-    if (!built) { built = parseTatFilters(text); foreign = !!built; } // TextAnalysisTool.NET (.tat)
-    if (!built) { toast.error("That file isn't Logsy or TextAnalysisTool.NET filters."); return; }
-
-    if (mode === "append") {
-      // Fresh ids so the merged-in filters/groups/tracks never collide with what
-      // the set already holds. Leave filePath/savedSnapshot untouched: appending
-      // dirties the set (Save Filter re-enables) without retargeting the save.
-      const add = remapImportIds(built);
-      patchState((s) => {
-        if (!file || !set) return;
-        const g = withSet(s, file.id, set.id);
-        g.filters.push(...add.filters);
-        g.groups.push(...add.groups);
-        g.order.push(...add.order);
-        g.sources = [...(g.sources ?? []), ...add.sources];
-        normalizeState(s);
-      });
-      if (!foreign) pushRecent("recentFilterFiles", path);
-      toast.success("Filters appended");
-      return;
-    }
-
-    patchState((s) => {
-      if (!file || !set) return;
-      const g = withSet(s, file.id, set.id);
-      g.filters = built.filters;
-      g.groups = built.groups;
-      g.order = built.order;
-      g.sources = built.sources;
-      if (foreign) {
-        // Imported from a foreign format: the filters now live as Logsy filters,
-        // not tied to the source file. "Save Filter" stays enabled and opens
-        // Save As rather than writing back to the .tat.
-        g.filePath = undefined;
-        g.savedSnapshot = undefined;
-        normalizeState(s);
-      } else {
-        // A native Logsy file becomes the save target and the clean baseline.
-        g.filePath = path;
-        normalizeState(s);
-        g.savedSnapshot = exportPayload(g);
-      }
-    });
-    if (!foreign) pushRecent("recentFilterFiles", path);
-    toast.success(foreign ? "Filters imported" : "Filters loaded");
-  };
-
-  // "Load filters": pick a file, then load it into the current set.
-  const importFilters = async () => {
-    if (!file || !set) return;
-    const path = await open({ multiple: false, filters: OPEN_DIALOG_FILTERS });
-    if (typeof path !== "string") return;
-    await loadFilterFromPath(path);
-  };
-
-  // "Append filters": pick a file, then merge it into the current set without
-  // replacing what's already there.
-  const appendFilters = async () => {
-    if (!file || !set) return;
-    const path = await open({ multiple: false, filters: OPEN_DIALOG_FILTERS });
-    if (typeof path !== "string") return;
-    await loadFilterFromPath(path, "append");
-  };
-
-  // ---------- bulk ----------
-  const bulk = (action: string) => {
-    if (action === "enableAll")   patchState((s) => { if (file && set) withSet(s, file.id, set.id).filters.forEach((f) => (f.enabled = true)); });
-    else if (action === "disableAll") patchState((s) => { if (file && set) withSet(s, file.id, set.id).filters.forEach((f) => (f.enabled = false)); });
-    else if (action === "clear")  patchState((s) => { if (!file || !set) return; const g = withSet(s, file.id, set.id); g.filters = []; g.order = g.order.filter((id) => g.groups.some((grp) => grp.id === id)); });
-    else if (action === "save")   void saveFilters();
-    else if (action === "saveAs") void saveFiltersAs();
-    else if (action === "import") void importFilters();
-    else if (action === "append") void appendFilters();
-  };
-
-  // ---------- compare panel ----------
-  // Compare lines persist per file (survive reload / document switch / filter
-  // switch) but are not on the undo stack, so they go through plain setState into
-  // `compareLinesByFile[file.id]` — mirroring the timeline.
-  const mutateCompare = (fn: (cur: Set<number>) => void) =>
-    setState((s) => {
-      const fid = (s.files.find((f) => f.id === s.activeFileId) ?? s.files[0])?.id;
-      if (!fid) return s;
-      const cur = new Set(s.compareLinesByFile?.[fid] ?? []);
-      fn(cur);
-      return { ...s, compareLinesByFile: { ...(s.compareLinesByFile ?? {}), [fid]: [...cur] } };
-    });
-  const addToCompare = (ns: number[]) => {
-    mutateCompare((c) => ns.forEach((n) => c.add(n)));
-    // Surface the comparison: focus its tab, or expand it if it's popped out.
-    setState((s) => s.comparePopped
-      ? { ...s, poppedCollapsed: false, poppedActiveTab: "compare" }
-      : { ...s, activePanelTab: "compare", filterCollapsed: false });
-  };
-  const removeFromCompare = (ns: number[]) => mutateCompare((c) => ns.forEach((n) => c.delete(n)));
-  const clearCompare = () => mutateCompare((c) => c.clear());
-  // Clear just one pattern-table's lines (its Compare group header button).
-  const clearCompareGroup = (id: string | undefined) => {
-    const ns = compareRows.filter((r) => (r.fieldsFromId ?? "") === (id ?? "")).map((r) => r.n);
-    if (ns.length) removeFromCompare(ns);
-  };
-  // Import every visible line this filter parses into the comparison (its group
-  // header button) — the analogue of the timeline track's "import matching lines".
-  const importCompareGroup = (id: string | undefined) => {
-    const ns = view.rows
-      .filter((r) => !r.excluded && r.fieldsFromId !== undefined && (r.fieldsFromId ?? "") === (id ?? ""))
-      .map((r) => r.n);
-    if (ns.length) addToCompare(ns);
-  };
+  // ---------- navigation glue (panel ↔ panel) ----------
   // Jump from a Compare group header to the filter that produced it: reveal the
   // Filters tab, expand the filter's group if collapsed, then flash its row.
   // selectPanelTab no-ops (no dim transition) when Filters is already the visible
@@ -1008,27 +168,6 @@ export function App() {
     setFilterFlash({ id, nonce: Date.now() });
   };
 
-  // ---------- bookmarks ----------
-  const markers = file?.markers ?? [];
-  // Upsert a bookmark on a line (persisted with the file; not on the undo stack).
-  const setMarker = (n: number, icon: MarkerIcon, note: string) => patchState((s) => {
-    if (!file) return;
-    const f = withFile(s, file.id);
-    if (!Array.isArray(f.markers)) f.markers = [];
-    const m = f.markers.find((x) => x.n === n);
-    if (m) { m.icon = icon; m.note = note; }
-    else f.markers.push({ n, icon, note });
-    f.markers.sort((a, b) => a.n - b.n);
-  }, { undoable: false });
-  const removeMarker = (n: number) => patchState((s) => {
-    if (!file) return;
-    const f = withFile(s, file.id);
-    if (Array.isArray(f.markers)) f.markers = f.markers.filter((m) => m.n !== n);
-  }, { undoable: false });
-  const clearMarkers = () => patchState((s) => {
-    if (!file) return;
-    withFile(s, file.id).markers = [];
-  }, { undoable: false });
   // Jump to a bookmark from the Bookmarks tab. Bookmarks only render in "Show
   // all"; if the target line is hidden *because* of matches-only mode (not
   // excluded, just unmatched), switch to all first so the jump lands on it.
@@ -1040,208 +179,6 @@ export function App() {
     setMarkerJump({ n, nonce: Date.now() });
   };
 
-  // ---------- timeline ----------
-  // Added lines persist per file (survive reload) but are not on the undo stack,
-  // so they go through plain setState into `timelineLinesByFile[file.id]`.
-  const mutateTimeline = (fn: (cur: Set<number>) => void) =>
-    setState((s) => {
-      const fid = (s.files.find((f) => f.id === s.activeFileId) ?? s.files[0])?.id;
-      if (!fid) return s;
-      const cur = new Set(s.timelineLinesByFile?.[fid] ?? []);
-      fn(cur);
-      return { ...s, timelineLinesByFile: { ...(s.timelineLinesByFile ?? {}), [fid]: [...cur] } };
-    });
-  const addToTimeline = (ns: number[]) => mutateTimeline((c) => ns.forEach((n) => c.add(n)));
-  const removeFromTimeline = (ns: number[]) => mutateTimeline((c) => ns.forEach((n) => c.delete(n)));
-  // Global clear: drop every line from the timeline (tracks stay). Mirrors
-  // `clearCompare` — the panel's dock-head "Clear" action.
-  const clearTimeline = () => mutateTimeline((c) => c.clear());
-  // Tracks are a document edit → undoable; persisted on the set, keyed by id.
-  const setTrack = (tr: TimelineSource) => patchState((s) => {
-    if (!file || !set) return;
-    const g = withSet(s, file.id, set.id);
-    const list = [...(g.sources ?? [])];
-    const i = list.findIndex((x) => x.id === tr.id);
-    if (i >= 0) list[i] = tr; else list.push(tr);
-    g.sources = list;
-  });
-  // All visible lines for which `filterId` is the first-match winner AND that
-  // expose `timeField` — exactly the lines that will produce a mark on this track.
-  const winnerLines = (filterId: string, timeField: string): number[] => {
-    const out: number[] = [];
-    for (let n = 1; n <= view.rows.length; n++) {
-      if (view.rows[n - 1]?.fieldsFromId !== filterId) continue;
-      if (view.fieldsFor(n)?.[timeField]) out.push(n);
-    }
-    return out;
-  };
-  // A fresh TimelineSource for (filter, field). `order` = the filter's serial
-  // (lane label, e.g. "#3:ts"); `colorIdx` = position in the track list (palette).
-  // `sample` lets the default unit be inferred from a real value's shape.
-  const buildTrack = (filterId: string, timeField: string, order: number, colorIdx: number, sample?: string): TimelineSource => ({
-    id: "tlt_" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
-    filterId, timeField, lane: `#${order + 1}:${timeField}`,
-    kind: "point", unit: guessUnit(timeField, sample), color: laneColor(colorIdx),
-  });
-  // Append a new track bound to a (filter, field). Creating a track only defines
-  // *what* to plot; it does NOT pull lines in (that would conflate "define a
-  // measure" with "load data" and could flood the canvas). The track row carries
-  // an explicit "import matching lines" button instead (onImportTrackLines).
-  // Toggle a timeline track for (filter, time field): the filter-row menu shows a
-  // ✓ when it's plotted, so clicking a checked field removes it and an unchecked
-  // one adds it — a plain checkbox, no "already exists" dead-end.
-  const toggleTimelineTrack = (filterId: string, timeField: string) => {
-    if (!file || !set) return;
-    // Track identity is (filter, time field).
-    if ((set.sources ?? []).some((x) => x.filterId === filterId && x.timeField === timeField)) {
-      patchState((s) => {
-        if (!file || !set) return;
-        const g = withSet(s, file.id, set.id);
-        g.sources = (g.sources ?? []).filter((x) => !(x.filterId === filterId && x.timeField === timeField));
-      });
-      return;
-    }
-    // Sample the field's first matched value so the default unit can be inferred
-    // from its shape (a plain number ⇒ seconds), not just the field name.
-    const lines = winnerLines(filterId, timeField);
-    const sample = lines.length ? view.fieldsFor(lines[0])?.[timeField]?.raw : undefined;
-    patchState((s) => {
-      if (!file || !set) return;
-      const g = withSet(s, file.id, set.id);
-      const list = [...(g.sources ?? [])];
-      // Guard the race where the same pair was added between checks.
-      if (list.some((x) => x.filterId === filterId && x.timeField === timeField)) return;
-      const idx = g.filters.findIndex((f) => f.id === filterId);
-      list.push(buildTrack(filterId, timeField, idx, list.length, sample));
-      g.sources = list;
-    });
-  };
-  // Track row "import matching lines": pull just this track's winner lines onto the
-  // timeline (explicit, per-track — the affordance lives next to the track).
-  const importTrackLines = (tr: TimelineSource) => {
-    const lines = winnerLines(tr.filterId, tr.timeField);
-    if (lines.length) {
-      addToTimeline(lines);
-    } else {
-      toast(`No matching lines`, { description: `Nothing matches "${tr.lane}" yet.` });
-    }
-  };
-  // Track row "clear lines": remove just this track's matching lines.
-  const clearTrackLines = (tr: TimelineSource) => {
-    const lines = winnerLines(tr.filterId, tr.timeField);
-    if (lines.length) removeFromTimeline(lines);
-  };
-  // Per-track stats for the row import/clear buttons and the per-row count badge:
-  // how many lines the track matches, and how many of those are on the timeline.
-  const trackLineStats = useMemo(() => {
-    const m = new Map<string, { matching: number; inTl: number }>();
-    for (const tr of tracks) {
-      const lines = winnerLines(tr.filterId, tr.timeField);
-      let inTl = 0;
-      for (const n of lines) if (timelineLines.has(n)) inTl++;
-      m.set(tr.id, { matching: lines.length, inTl });
-    }
-    return m;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracks, view, timelineLines]);
-  // Orphan lines: on the timeline but producing no mark (their first-match filter
-  // has no track, or the track's field is absent) — the "added but nothing shows"
-  // case. Surfaced as a bounded hint in the timeline panel.
-  const orphanLines = useMemo(() => {
-    const plotted = new Set(marks.map((mk) => mk.lineN));
-    return [...timelineLines].filter((n) => !plotted.has(n)).sort((a, b) => a - b);
-  }, [marks, timelineLines]);
-  // LogView "Add to timeline": add the lines, then bridge the common dead-end —
-  // if any added line's first-match filter has no track yet, create one so the
-  // events actually show. Line-first, so no autofill. A multi-filter selection is
-  // batched into ONE undoable patch + one toast so it never spawns overlapping
-  // prompts (one per filter, deduped).
-  const addLinesToTimeline = (ns: number[]) => {
-    addToTimeline(ns);
-    if (!file || !set) return;
-    const existing = new Set((set.sources ?? []).map((x) => x.filterId));
-    const specs: { fid: string; fld: string }[] = [];
-    const seen = new Set<string>();
-    for (const n of ns) {
-      const fid = view.rows[n - 1]?.fieldsFromId;
-      if (!fid || existing.has(fid) || seen.has(fid)) continue;
-      seen.add(fid);
-      const f = set.filters.find((x) => x.id === fid);
-      const allow = timeFieldsByFilter.get(fid);
-      // First numeric/time-like field, in filter order.
-      const fld = f?.fields?.find((d) => allow?.has(d.name))?.name;
-      if (f && fld) specs.push({ fid, fld });
-    }
-    if (specs.length === 0) return;
-    patchState((s) => {
-      if (!file || !set) return;
-      const g = withSet(s, file.id, set.id);
-      const list = [...(g.sources ?? [])];
-      for (const { fid, fld } of specs) {
-        if (list.some((x) => x.filterId === fid && x.timeField === fld)) continue;
-        const idx = g.filters.findIndex((f) => f.id === fid);
-        list.push(buildTrack(fid, fld, idx, list.length));
-      }
-      g.sources = list;
-    });
-    selectPanelTab("timeline");
-    const serials = specs.map((x) => `#${set.filters.findIndex((f) => f.id === x.fid) + 1}`).join(", ");
-    toast.success(specs.length > 1 ? `${specs.length} tracks added` : `Track added`, {
-      description: `For filter${specs.length > 1 ? "s" : ""} ${serials}.`,
-    });
-  };
-  // "Add all matching lines" (timeline panel, when tracks exist but no lines yet):
-  // pull every visible track's matching lines onto the timeline in one go.
-  const addAllMatchingLines = () => {
-    if (!set) return;
-    const all = new Set<number>();
-    for (const tr of set.sources ?? []) {
-      if (tr.hidden) continue;
-      for (const n of winnerLines(tr.filterId, tr.timeField)) all.add(n);
-    }
-    if (all.size) addToTimeline([...all]);
-  };
-  const removeTrack = (id: string) => patchState((s) => {
-    if (!file || !set) return;
-    const g = withSet(s, file.id, set.id);
-    g.sources = (g.sources ?? []).filter((x) => x.id !== id);
-  });
-  const reorderTracks = (ids: string[]) => patchState((s) => {
-    if (!file || !set) return;
-    const g = withSet(s, file.id, set.id);
-    const by = new Map((g.sources ?? []).map((x) => [x.id, x]));
-    g.sources = ids.map((id) => by.get(id)!).filter(Boolean);
-  });
-
-  // Build CSV text for a single pattern-set's rows.
-  const buildCsv = (rows: typeof compareRows) => {
-    const esc = (s: string) => /[,"\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-    const cols: string[] = []; const seen = new Set<string>();
-    for (const r of rows) for (const k of Object.keys(r.fields ?? {})) if (!seen.has(k)) { seen.add(k); cols.push(k); }
-    const parts: string[] = [["line", ...cols].map(esc).join(",")];
-    for (const r of rows) parts.push([String(r.n), ...cols.map((c) => r.fields?.[c]?.raw ?? "")].map(esc).join(","));
-    return parts.join("\n") + "\n";
-  };
-
-  // Export one compared pattern's table as CSV via a native save dialog.
-  const exportGroupCsv = useCallback(async (id: string | undefined, label: string) => {
-    const rows = compareRows.filter((r) => (r.fieldsFromId ?? "") === (id ?? ""));
-    if (!rows.length) return;
-    // Default name is a timestamp (yyyymmdd_hhmmss.csv); `label` is unused here
-    // now but kept in the signature for call sites / future use.
-    void label;
-    const d = new Date();
-    const p2 = (n: number) => String(n).padStart(2, "0");
-    const stamp = `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}`;
-    const path = await save({ defaultPath: stamp + ".csv", filters: [{ name: "CSV", extensions: ["csv"] }] });
-    if (typeof path !== "string") return;
-    try {
-      await invoke("write_text_file", { path, contents: buildCsv(rows) });
-      toast.success("CSV saved");
-    } catch (e) {
-      toast.error("Could not save CSV: " + String(e));
-    }
-  }, [compareRows]);
 
   // Export the filtered log view via a native save dialog. LogView builds the
   // text (it knows which rows are visible) and hands it here to write.
@@ -1255,131 +192,6 @@ export function App() {
       toast.error("Could not export view: " + String(e));
     }
   }, []);
-
-  // ---------- dock layout ----------
-  const setFilterPos = (pos: "bottom" | "right") => setState((s) => ({ ...s, panelPos: pos }));
-  const toggleFilterCollapsed = () => setState((s) => ({ ...s, filterCollapsed: !s.filterCollapsed }));
-  const togglePoppedCollapsed = () => setState((s) => ({ ...s, poppedCollapsed: !s.poppedCollapsed }));
-  // Which tab the main dock actually shows, resolved the same way the render does
-  // (a popped-out Compare/Timeline falls back to Filters). Used to skip a no-op
-  // tab switch so we don't start a panel transition (the dim animation) when the
-  // target tab is already the visible one.
-  const resolveActiveTab = (s: AppState): "filters" | "compare" | "bookmarks" | "timeline" =>
-    s.activePanelTab === "bookmarks" ? "bookmarks"
-      : s.activePanelTab === "timeline" && !s.timelinePopped ? "timeline"
-      : s.activePanelTab === "compare" && !s.comparePopped ? "compare"
-      : "filters";
-  // Select a tab in the main panel (always expands it if it was collapsed). When
-  // that tab is already shown expanded, do nothing — re-running the transition
-  // would needlessly dim the panel body even though no content re-renders.
-  const selectPanelTab = (tab: "filters" | "compare" | "bookmarks" | "timeline") => {
-    const s = stateRef.current;
-    if (resolveActiveTab(s) === tab && !s.filterCollapsed) return;
-    startPanelTransition(() => setState((st) => ({ ...st, activePanelTab: tab, filterCollapsed: false })));
-  };
-  // Reveal the Filters tab and focus its search box (Ctrl+Shift+L). The nonce
-  // bump tells FilterPanel to focus even when the tab was already open.
-  const focusFilterSearch = () => { selectPanelTab("filters"); setFocusSearchNonce((n) => n + 1); };
-  // Compare and Timeline, when popped, share ONE dock beside Filters. Popping a
-  // panel out focuses it as the active tab in that shared dock and expands it;
-  // Filters takes over the main tab area if the popped panel was active there.
-  const popCompareOut = () => setState((s) => ({
-    ...s, comparePopped: true, poppedCollapsed: false, poppedActiveTab: "compare",
-    activePanelTab: s.activePanelTab === "compare" ? "filters" : s.activePanelTab,
-  }));
-  // Merge Compare back into the main panel as a tab, and focus it.
-  const dockCompareBack = () => setState((s) => ({
-    ...s, comparePopped: false, activePanelTab: "compare", filterCollapsed: false,
-    poppedActiveTab: "timeline",
-  }));
-  const popTimelineOut = () => setState((s) => ({
-    ...s, timelinePopped: true, poppedCollapsed: false, poppedActiveTab: "timeline",
-    activePanelTab: s.activePanelTab === "timeline" ? "filters" : s.activePanelTab,
-  }));
-  // Merge Timeline back into the main panel as a tab, and focus it.
-  const dockTimelineBack = () => setState((s) => ({
-    ...s, timelinePopped: false, activePanelTab: "timeline", filterCollapsed: false,
-    poppedActiveTab: "compare",
-  }));
-
-  const showCompare = compareRows.length > 0;
-  // Compare is a permanent tab (shows an empty-state when it has no rows); it's a
-  // main-panel tab unless popped out into the shared dock.
-  const compareTabAvailable = !state.comparePopped;
-  // Timeline is a tab unless it's popped out into the shared popped dock.
-  const timelineTabAvailable = !state.timelinePopped;
-  // Compare and Timeline share ONE popped dock. Its tab set is whichever are
-  // popped; the active tab is resolved against that set.
-  const poppedTabs: ("compare" | "timeline")[] = [
-    ...(state.comparePopped ? ["compare" as const] : []),
-    ...(state.timelinePopped ? ["timeline" as const] : []),
-  ];
-  const popOpen = poppedTabs.length > 0;
-  const poppedActiveTab: "compare" | "timeline" =
-    poppedTabs.includes(state.poppedActiveTab ?? "compare")
-      ? (state.poppedActiveTab ?? "compare")
-      : (poppedTabs[0] ?? "compare");
-  // Bookmarks is always a tab. Compare/Timeline fall back to Filters when unavailable.
-  const activePanelTab: "filters" | "compare" | "bookmarks" | "timeline" =
-    state.activePanelTab === "bookmarks" ? "bookmarks"
-      : state.activePanelTab === "timeline" && timelineTabAvailable ? "timeline"
-      : state.activePanelTab === "compare" && compareTabAvailable ? "compare"
-      : "filters";
-
-  // Default share (weight) for a panel that has no persisted size yet. Docks
-  // open generously so they reveal a useful amount of content.
-  const DEFAULT_WEIGHT: Record<string, number> = { lv: 100, center: 100, fp: 82, pop: 120 };
-  // Build a set's initial layout from its persisted-size bucket, normalised to 100%.
-  const layoutFor = (groupKey: string, ids: string[]): Record<string, number> => {
-    const bucket = state.panelSizes?.[groupKey] ?? {};
-    const out: Record<string, number> = {};
-    let known = 0; const unknown: string[] = [];
-    for (const id of ids) { const v = bucket[id]; if (typeof v === "number") { out[id] = v; known += v; } else unknown.push(id); }
-    if (unknown.length) {
-      const totalW = unknown.reduce((a, id) => a + (DEFAULT_WEIGHT[id] ?? 100), 0) || 1;
-      const rem = Math.max(unknown.length * 10, 100 - known);
-      for (const id of unknown) out[id] = rem * (DEFAULT_WEIGHT[id] ?? 100) / totalW;
-    }
-    const sum = ids.reduce((a, id) => a + out[id], 0) || 1;
-    for (const id of ids) out[id] = (out[id] / sum) * 100;
-    return out;
-  };
-  const onLayoutFor = (groupKey: string) => (layout: Record<string, number>) => setState((s) => {
-    const bucket = { ...(s.panelSizes?.[groupKey] ?? {}) };
-    for (const [id, v] of Object.entries(layout)) {
-      if (id === "fp" && s.filterCollapsed) continue;   // don't persist a collapsed size
-      if (id === "pop" && s.poppedCollapsed) continue;
-      bucket[id] = v;
-    }
-    return { ...s, panelSizes: { ...(s.panelSizes ?? {}), [groupKey]: bucket } };
-  });
-
-  // Drive collapse/expand by resizing the panel directly (the library's own
-  // collapse() records the pre-collapse size, which our maxSize pin corrupts).
-  // Resize only on the actual collapse↔expand transition; the panel's
-  // defaultSize handles fresh mounts. Expanded → a generous height.
-  // Collapsed strip size — shared by both docks so the popped Compare/Timeline
-  // dock collapses to the same tab-bar strip as the Filters/Bookmarks dock.
-  const MAIN_COLLAPSED = "34px";
-  const POP_COLLAPSED = MAIN_COLLAPSED;
-  // The popped dock opens larger than the filter dock — its tables/canvas benefit.
-  const EXPAND_FP = "30%";
-  const EXPAND_POP = "30%";
-  const prevFp = useRef(state.filterCollapsed);
-  const prevPop = useRef(state.poppedCollapsed);
-  useEffect(() => {
-    const p = fpRef.current; if (!p) return;
-    if (state.filterCollapsed) p.resize(MAIN_COLLAPSED);
-    // Defer expand so the maxSize pin (strip → 100%) settles before resizing.
-    else if (prevFp.current) requestAnimationFrame(() => p.resize(EXPAND_FP));
-    prevFp.current = state.filterCollapsed;
-  }, [state.filterCollapsed]);
-  useEffect(() => {
-    const p = popRef.current; if (!p) return;
-    if (state.poppedCollapsed) p.resize(POP_COLLAPSED);
-    else if (prevPop.current) requestAnimationFrame(() => p.resize(EXPAND_POP));
-    prevPop.current = state.poppedCollapsed;
-  }, [state.poppedCollapsed]);
 
   // ---------- layout ----------
   // Any explicit view-mode toggle also exits "view this filter only". Both the
@@ -1808,7 +620,6 @@ export function App() {
     // never sit on the same edge. Collapsing mirrors the main dock exactly (same
     // shared tab-strip look): right → a thin vertical title strip, otherwise the
     // tab bar stays visible (just the body is dropped).
-    const poppedPos: "bottom" | "right" = state.panelPos === "bottom" ? "right" : "bottom";
     const popDockNode = (): ReactNode => {
       const collapsed = !!state.poppedCollapsed;
       const pos = poppedPos;
