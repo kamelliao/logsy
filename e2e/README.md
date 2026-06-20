@@ -1,0 +1,78 @@
+# End-to-end tests
+
+Playwright drives the Logsy **frontend** in a real browser with the Tauri IPC
+layer mocked. Logsy is a Tauri desktop app, but the official WebDriver bridge
+(`tauri-driver`) has no macOS support, so true end-to-end (driving the packaged
+app) only runs on Linux/Windows CI. Almost all product logic lives in React; the
+thin Rust side (file read/encoding, write, window controls) is covered by Rust
+unit tests in `src-tauri`.
+
+## Running
+
+```bash
+bun run test:e2e          # headless run
+bun run test:e2e:ui       # interactive UI mode
+bunx playwright test e2e/filters.spec.ts   # a single file
+```
+
+The Playwright config (`playwright.config.ts`) starts the Vite dev server
+(`bun run dev`) on port 1420 and reuses an already-running one locally.
+
+## How the Tauri mock works
+
+`support/tauri-mock.ts` installs a stand-in for `window.__TAURI_INTERNALS__`
+before any app code runs, so `invoke`, `@tauri-apps/plugin-dialog`, and the event
+system behind webview drag-drop all resolve against it. Tests drive it via the
+`tauri` fixture:
+
+```ts
+import { test, expect, openLog, addFilter } from "./support/fixtures";
+
+test("…", async ({ page, tauri }) => {
+  await tauri.setFile("/logs/x.log", "line a\nline b\n"); // read_text_file source
+  await tauri.setDialogOpen("/logs/x.log"); // next open dialog result
+  // …drive the UI…
+  await tauri.drop(["/logs/x.log"]); // simulate an OS file drop
+  const calls = await tauri.calls(); // assert write_text_file payloads, etc.
+});
+```
+
+`openLog` and `addFilter` (in `support/fixtures.ts`) are helpers for the two most
+common setup steps.
+
+### Note on dev-mode events
+
+In dev, React StrictMode mounts effects twice, leaving a duplicate drag-drop
+listener. The mock delivers each event only to the most-recently-registered
+listener, which matches production (one listener) and avoids double-loading
+dropped files. See the comment in `tauri-mock.ts`.
+
+## What's covered (P0)
+
+**Convention: one spec file per panel / area** (not one per suite), with nested
+`test.describe` blocks inside. This keeps the top-level dir readable as more
+panels are covered; Playwright still parallelizes individual tests across workers.
+
+- `open-file.spec.ts` — open via dialog, open multiple files as tabs, drag-drop.
+- `filter-panel.spec.ts` — the FilterPanel, grouped by area:
+  - rows (serial/flags/hit-count, edit, row menu, delete)
+  - enable toggle; matching behaviour (highlight / exclude / regex / case)
+  - filter sets (tabs): add / switch / rename / delete / duplicate
+  - groups: add / collapse / rename / enable-all / delete-keep-filters
+  - select mode: range select, batch enable/disable/delete
+  - search; import / export (round-trip via `tauri.calls()`)
+  - reorder (drag & drop): filters, into/out of groups, groups, sets
+
+### Driving dnd-kit drags
+
+Use the `dragTo(page, source, target)` helper. dnd-kit's PointerSensor needs the
+press to move past a 5px activation distance and then several intermediate moves
+for collision detection, which the helper does. Read resulting order from inside
+`.filter-list` — the drag overlay and hover cards render in `<body>` portals and
+would otherwise show up as duplicate `.fr-pattern` nodes.
+
+## Planned next (not yet implemented)
+
+- `log-view.spec.ts` — find in view + matches-only + match map; goto; zoom.
+- `bookmarks.spec.ts`, `timeline.spec.ts`, `compare.spec.ts`.
+- Keyboard shortcuts; CSV export.

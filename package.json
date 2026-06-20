@@ -8,7 +8,9 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test": "bun test",
+    "test": "bun test ./src",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
     "bump": "node scripts/bump.mjs",
     "prepare": "husky",
     "lint": "eslint .",
@@ -51,6 +53,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.61.0",
     "@tailwindcss/vite": "^4.1.8",
     "@tauri-apps/cli": "^2.11.2",
     "@types/react": "^19.1.5",
