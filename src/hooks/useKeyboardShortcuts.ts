@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { tinykeys } from "tinykeys";
-import type { EditingState } from "@/hooks/useFilterActions";
+import type { EditingState } from "@/store";
 
 interface OpenMenu {
   name: string;

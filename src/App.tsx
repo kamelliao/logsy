@@ -42,11 +42,12 @@ import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useMenuDefs } from "@/hooks/useMenuDefs";
 import { useLogFiles } from "@/hooks/useLogFiles";
 import { useDockLayout } from "@/hooks/useDockLayout";
-import { useFilterActions, type EditingState } from "@/hooks/useFilterActions";
 import { useCompare } from "@/hooks/useCompare";
 import { useTimeline } from "@/hooks/useTimeline";
 import { useBookmarks } from "@/hooks/useBookmarks";
+import { useStore } from "@/store";
 import { activeFile } from "@/state/selectors";
+import { useShallow } from "zustand/react/shallow";
 
 const MENUS = ["File", "Edit", "View", "Filters", "Help"] as const;
 const DOCS_URL = "https://github.com/kamelliao/logsy#readme";
@@ -64,7 +65,8 @@ export function App() {
     pushRecent,
     clearRecent,
   } = useUndoableState();
-  const [editing, setEditing] = useState<EditingState | null>(null);
+  const editing = useStore((s) => s.editing);
+  const setEditing = useStore((s) => s.setEditing);
   // A request to scroll+flash a filter row (e.g. clicking a Compare group header).
   // The bumping nonce re-triggers the flash even when the same id is re-requested.
   const [filterFlash, setFilterFlash] = useState<{
@@ -91,8 +93,9 @@ export function App() {
     n: number;
     nonce: number;
   } | null>(null);
-  // "View this filter only" — ephemeral focus on a single filter's matches.
-  const [soloFilterId, setSoloFilterId] = useState<string | null>(null);
+  // "View this filter only" — ephemeral focus on a single filter's matches (ui slice).
+  const soloFilterId = useStore((s) => s.soloFilterId);
+  const setSoloFilterId = useStore((s) => s.setSoloFilterId);
   // App-styled confirm() replacement (see useConfirm) + a bump to focus the
   // filter panel's search box from a keyboard shortcut.
   const [appConfirm, confirmNode] = useConfirm();
@@ -120,7 +123,7 @@ export function App() {
   // Switching filter sets (or files) exits "view this filter only".
   useEffect(() => {
     setSoloFilterId(null);
-  }, [file?.activeSetId, file?.id]);
+  }, [file?.activeSetId, file?.id, setSoloFilterId]);
 
   const {
     lines,
@@ -153,6 +156,14 @@ export function App() {
   // The three the App body itself drives; the rest of the bundle is consumed by
   // <Workspace> (the dock chrome) via the `dock` prop.
   const { startPanelTransition, selectPanelTab, toggleFilterCollapsed } = dock;
+
+  // The filter slice's confirm-dialog and panel-transition collaborators can't be
+  // store state (they're React/UI primitives), so bind them into the store once.
+  useEffect(() => {
+    useStore
+      .getState()
+      .setRuntime({ confirm: appConfirm, runTransition: startPanelTransition });
+  }, [appConfirm, startPanelTransition]);
 
   // ---------- compare / timeline / bookmarks ----------
   const {
@@ -254,17 +265,37 @@ export function App() {
     importFilters,
     appendFilters,
     bulk,
-  } = useFilterActions({
-    file,
-    set,
-    patchState,
-    pushRecent,
-    appConfirm,
-    startPanelTransition,
-    setEditing,
-    soloFilterId,
-    setSoloFilterId,
-  });
+  } = useStore(
+    useShallow((s) => ({
+      switchSet: s.switchSet,
+      addSet: s.addSet,
+      renameSet: s.renameSet,
+      deleteSet: s.deleteSet,
+      reorderSets: s.reorderSets,
+      duplicateSet: s.duplicateSet,
+      addGroup: s.addGroup,
+      renameGroup: s.renameGroup,
+      toggleGroup: s.toggleGroup,
+      deleteGroup: s.deleteGroup,
+      applyLayout: s.applyLayout,
+      setGroupEnabled: s.setGroupEnabled,
+      updateFilter: s.updateFilter,
+      deleteFilter: s.deleteFilter,
+      deleteFilters: s.deleteFilters,
+      setFiltersEnabled: s.setFiltersEnabled,
+      duplicateFilter: s.duplicateFilter,
+      openNewFilter: s.openNewFilter,
+      openFilterFromPattern: s.openFilterFromPattern,
+      openEditFilter: s.openEditFilter,
+      saveFilter: s.saveFilter,
+      saveFiltersAs: s.saveFiltersAs,
+      saveFilters: s.saveFilters,
+      loadFilterFromPath: s.loadFilterFromPath,
+      importFilters: s.importFilters,
+      appendFilters: s.appendFilters,
+      bulk: s.bulk,
+    })),
+  );
 
   // ---------- palette ----------
   const effectivePalette: PaletteEntry[] =

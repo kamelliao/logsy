@@ -9,6 +9,14 @@ import type { AppState, Marker, MarkerIcon } from "@/types";
 import { initialState, normalizeState } from "@/lib/defaults";
 import { STATE_KEY, SAFE_MODE } from "@/state/persistence";
 import { activeFile } from "@/state/selectors";
+import type { ConfirmOptions } from "@/components/ConfirmDialog";
+import {
+  createFilterActions,
+  type FilterActions,
+  type EditingState,
+} from "@/store/filterSlice";
+
+export type { EditingState } from "@/store/filterSlice";
 
 // The prior engine cloned whole state via structuredClone, so snapshots were never
 // frozen. immer's `produce` gives us structural sharing (cheap snapshots) with the
@@ -29,12 +37,30 @@ const clampFont = (n: number) => Math.max(8, Math.min(24, n));
 type RecentKey = "recentFiles" | "recentFilterFiles";
 type PatchOpts = { undoable?: boolean; coalesce?: string };
 
-export interface Store {
+export interface Store extends FilterActions {
   /** The persisted, undoable workspace document (everything that used to be AppState). */
   doc: AppState;
   /** Menu-enablement flags, mirrored into store state so selectors re-render on change. */
   canUndo: boolean;
   canRedo: boolean;
+
+  // ---- ui slice (non-persisted, transient) ----
+  /** The draft open in the filter editor modal (null when closed). */
+  editing: EditingState | null;
+  setEditing: (e: EditingState | null) => void;
+  /** "View this filter only" — ephemeral focus on a single filter's matches. */
+  soloFilterId: string | null;
+  setSoloFilterId: (id: string | null) => void;
+
+  // ---- runtime collaborators (bound by App; not state we can compute) ----
+  /** App-styled confirm() replacement; bound from useConfirm. */
+  confirm: (opts: ConfirmOptions) => Promise<boolean>;
+  /** Defer a heavy re-render (the dock's useTransition); bound from useDockLayout. */
+  runTransition: (fn: () => void) => void;
+  setRuntime: (rt: {
+    confirm?: (opts: ConfirmOptions) => Promise<boolean>;
+    runTransition?: (fn: () => void) => void;
+  }) => void;
 
   /**
    * Mutate the document immutably. Recorded for undo by default; pass
@@ -130,6 +156,25 @@ export const useStore = create<Store>()(
       doc: normalizeState(initialState()),
       canUndo: false,
       canRedo: false,
+
+      // ---- ui slice ----
+      editing: null,
+      setEditing: (e) => set({ editing: e }),
+      soloFilterId: null,
+      setSoloFilterId: (id) => set({ soloFilterId: id }),
+
+      // ---- runtime collaborators (safe fallbacks until App binds the real ones) ----
+      confirm: (o) =>
+        Promise.resolve(
+          window.confirm(
+            typeof o.message === "string" ? o.message : "Are you sure?",
+          ),
+        ),
+      runTransition: (fn) => fn(),
+      setRuntime: (rt) => set(rt),
+
+      // ---- filter slice ----
+      ...createFilterActions(set, get),
 
       patchState: (fn, opts) => {
         const base = get().doc;
