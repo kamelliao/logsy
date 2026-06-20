@@ -1,49 +1,23 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { AppState, FilterSet, LogFile } from "@/types";
 import { exportPayload } from "@/lib/filterFile";
 import { baseName } from "@/lib/path";
+import { useStore } from "@/store";
+import { activeFile, activeSet } from "@/state/selectors";
+import { useShallow } from "zustand/react/shallow";
 import type { MenuItem } from "@/components/MenuPopup";
 
 interface Deps {
-  state: AppState;
-  file: LogFile | null;
-  set: FilterSet | null;
-  fileViewMode: "all" | "matches";
-  showLineNumbers: boolean;
-  fontSize: number;
-  canUndo: boolean;
-  canRedo: boolean;
-
-  // File menu.
+  // Handlers that aren't (yet) store actions: log-file IO, App-local UI signals,
+  // and the dock/view toggles. State and the filter/undo/zoom actions are read
+  // from the store directly.
   openFiles: () => void | Promise<void>;
-  importFilters: () => void | Promise<void>;
-  appendFilters: () => void | Promise<void>;
-  saveFilters: () => void | Promise<void>;
-  saveFiltersAs: () => void | Promise<void>;
   loadPaths: (paths: string[]) => void | Promise<void>;
-  loadFilterFromPath: (path: string) => void | Promise<void>;
-  clearRecent: (key: "recentFiles" | "recentFilterFiles") => void;
-
-  // Edit menu.
-  undo: () => void;
-  redo: () => void;
   selectAllLines: () => void;
   setFindOpen: (v: boolean) => void;
   openGoto: () => void;
-
-  // View menu.
   toggleFilterCollapsed: () => void;
   setViewMode: (m: "all" | "matches") => void;
   toggleLineNumbers: () => void;
-  zoomIn: () => void;
-  zoomOut: () => void;
-  zoomReset: () => void;
-
-  // Filters menu.
-  openNewFilter: () => void;
-  bulk: (action: string) => void;
-
-  // Help menu.
   openDocs: () => void;
   setShortcutsOpen: (v: boolean) => void;
   setAboutOpen: (v: boolean) => void;
@@ -56,16 +30,46 @@ interface Deps {
  * App maps the returned record over the menubar and feeds it to MenuPopup.
  */
 export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
+  const state = useStore((s) => s.doc);
+  const canUndo = useStore((s) => s.canUndo);
+  const canRedo = useStore((s) => s.canRedo);
   const {
-    state,
-    file,
-    set,
-    fileViewMode,
-    showLineNumbers,
-    fontSize,
-    canUndo,
-    canRedo,
-  } = deps;
+    undo,
+    redo,
+    clearRecent,
+    zoomIn,
+    zoomOut,
+    zoomReset,
+    openNewFilter,
+    bulk,
+    importFilters,
+    appendFilters,
+    saveFilters,
+    saveFiltersAs,
+    loadFilterFromPath,
+  } = useStore(
+    useShallow((s) => ({
+      undo: s.undo,
+      redo: s.redo,
+      clearRecent: s.clearRecent,
+      zoomIn: s.zoomIn,
+      zoomOut: s.zoomOut,
+      zoomReset: s.zoomReset,
+      openNewFilter: s.openNewFilter,
+      bulk: s.bulk,
+      importFilters: s.importFilters,
+      appendFilters: s.appendFilters,
+      saveFilters: s.saveFilters,
+      saveFiltersAs: s.saveFiltersAs,
+      loadFilterFromPath: s.loadFilterFromPath,
+    })),
+  );
+
+  const file = activeFile(state);
+  const set = activeSet(state);
+  const fileViewMode: "all" | "matches" = file?.viewMode ?? "all";
+  const showLineNumbers = state.showLineNumbers ?? true;
+  const fontSize = state.fontSize ?? 12;
 
   // Save Filter is disabled when the current set was already saved/loaded and
   // hasn't changed since (nothing to write).
@@ -81,7 +85,7 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
         { sep: true as const },
         {
           label: "Clear Recent Files",
-          action: () => deps.clearRecent("recentFiles"),
+          action: () => clearRecent("recentFiles"),
         },
       ]
     : [{ label: "No recent files", disabled: true }];
@@ -91,12 +95,12 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
         ...state.recentFilterFiles.map((p, i) => ({
           label: `${i + 1}   ${baseName(p)}`,
           disabled: !set,
-          action: () => void deps.loadFilterFromPath(p),
+          action: () => void loadFilterFromPath(p),
         })),
         { sep: true as const },
         {
           label: "Clear Recent Filter Files",
-          action: () => deps.clearRecent("recentFilterFiles"),
+          action: () => clearRecent("recentFilterFiles"),
         },
       ]
     : [{ label: "No recent filter files", disabled: true }];
@@ -107,22 +111,22 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
       {
         label: "Load Filters…",
         disabled: !set,
-        action: () => void deps.importFilters(),
+        action: () => void importFilters(),
       },
       {
         label: "Append Filters…",
         disabled: !set,
-        action: () => void deps.appendFilters(),
+        action: () => void appendFilters(),
       },
       {
         label: "Save Filter",
         disabled: saveFilterDisabled,
-        action: () => void deps.saveFilters(),
+        action: () => void saveFilters(),
       },
       {
         label: "Save Filter As…",
         disabled: !set,
-        action: () => void deps.saveFiltersAs(),
+        action: () => void saveFiltersAs(),
       },
       { sep: true },
       { label: "Recent Files", submenu: recentFilesMenu },
@@ -135,8 +139,8 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
       },
     ],
     Edit: [
-      { label: "Undo", key: "Ctrl Z", disabled: !canUndo, action: deps.undo },
-      { label: "Redo", key: "Ctrl Y", disabled: !canRedo, action: deps.redo },
+      { label: "Undo", key: "Ctrl Z", disabled: !canUndo, action: undo },
+      { label: "Redo", key: "Ctrl Y", disabled: !canRedo, action: redo },
       { sep: true },
       {
         label: "Select All",
@@ -179,35 +183,35 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
         action: deps.toggleLineNumbers,
       },
       { sep: true },
-      { label: "Zoom In", key: "Ctrl +", action: deps.zoomIn },
-      { label: "Zoom Out", key: "Ctrl −", action: deps.zoomOut },
+      { label: "Zoom In", key: "Ctrl +", action: zoomIn },
+      { label: "Zoom Out", key: "Ctrl −", action: zoomOut },
       {
         label: `Reset Zoom  (${fontSize}px)`,
         key: "Ctrl 0",
-        action: deps.zoomReset,
+        action: zoomReset,
       },
     ],
     Filters: [
       {
         label: "Add new filter…",
         disabled: !set,
-        action: () => deps.openNewFilter(),
+        action: () => openNewFilter(),
       },
       { sep: true },
       {
         label: "Enable all filters",
         disabled: !set,
-        action: () => deps.bulk("enableAll"),
+        action: () => bulk("enableAll"),
       },
       {
         label: "Disable all filters",
         disabled: !set,
-        action: () => deps.bulk("disableAll"),
+        action: () => bulk("disableAll"),
       },
       {
         label: "Remove all filters",
         disabled: !set,
-        action: () => deps.bulk("clear"),
+        action: () => bulk("clear"),
       },
     ],
     Help: [

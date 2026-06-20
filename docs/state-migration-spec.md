@@ -1,6 +1,13 @@
 # State migration spec — hand-rolled store → Zustand
 
-Status: proposal · Target: `src/App.tsx` + `src/hooks/*` + `src/state/*`
+Status: **implemented** (phases 1–7 + cleanup done) · Target: `src/App.tsx` +
+`src/hooks/*` + `src/state/*`
+
+> All phases landed as static-verified commits (tsc / eslint / 79 tests / vite build
+> green throughout; 8 pre-existing dnd-kit×React19 tsc errors are unrelated). The
+> running Tauri GUI has **not** been smoke-tested by the author — do that before
+> shipping (open/edit/delete filters, drag layout, save/load filter files, undo/redo,
+> "view this filter only", switch sets, bookmarks, compare/timeline, file open/drop).
 
 ## Why
 
@@ -291,9 +298,32 @@ Deps`** — the injection of `patchState`/`setState`/`stateRef` is gone, which w
    `selectPanelTab`). Verified: tsc unchanged (8 pre-existing), 79/79 tests, vite
    build green (one pre-existing `lines` exhaustive-deps warning left as-is —
    adding `file` would wrongly recompute on every edit).
-7. **`useMenuDefs` de-prop.** Read store directly; this collapses the 30-arg signature.
-8. **Cleanup:** delete `state/persistence.ts` undo/persist code now in the store;
-   update the architecture memo.
+7. **[DONE] `useMenuDefs` + `useKeyboardShortcuts` de-prop.** Both read the
+   store-resident state + actions from the store directly: `useMenuDefs` derives
+   `state`/`file`/`set`/`fileViewMode`/`showLineNumbers`/`fontSize` from the doc and
+   pulls undo/redo/canUndo/canRedo/clearRecent/zoom×3/openNewFilter/bulk/import/
+   append/save×2/loadFilterFromPath from the store — Deps **~30 → 11**;
+   `useKeyboardShortcuts` reads undo/redo/zoom×3/openNewFilter + `editing` from the
+   store — Deps **~26 → 18**. The Deps that remain are genuine non-store wiring (log
+   IO `openFiles`/`loadPaths`, App-local UI signals `openMenu`/dialog toggles/
+   `selectAllLines`/`openGoto`/`focusFilterSearch`, dock `toggleFilterCollapsed`, and
+   the thin view toggles `setViewMode`/`setFindOpen`/`toggleLineNumbers`) — these are
+   **wiring hooks**, and a moderate Deps of real collaborators is correct, not a smell.
+   App also shed the now-dead destructures (undo/redo/canUndo/canRedo/clearRecent/
+   zoom×3 and 7 filter actions only the two hooks used).
+8. **[DONE] Cleanup.** `loadState` deleted from `state/persistence.ts` (the store's
+   own `createRawStorage` reads `STATE_KEY` directly); `STATE_KEY`/`SAFE_MODE` stay.
+   Architecture memo updated.
+
+## Possible future tidy (not blocking)
+
+- Promote the thin view/layout doc-mutations (`setViewMode`, `setFindOpen`,
+  `toggleLineNumbers`, `toggleFilterCollapsed`) into the store so menus/keyboard/App
+  stop threading them; deferred because they're widely used and low-value/higher-risk.
+- `EditModal` self-subscribe `saveFilter`/`deleteFilter`/`setEditing` (App keeps them
+  for it today).
+- Extract the inline bookmark/prefs/compare/timeline slices from `store/index.ts`
+  into `store/slices/*` files (filterSlice already is one) if the file grows further.
 
 ## Risks / watch-items
 

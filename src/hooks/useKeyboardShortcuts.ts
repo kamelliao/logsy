@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { tinykeys } from "tinykeys";
-import type { EditingState } from "@/store";
+import { useStore } from "@/store";
+import { useShallow } from "zustand/react/shallow";
 
 interface OpenMenu {
   name: string;
@@ -14,18 +15,15 @@ interface Deps {
   openMenu: OpenMenu | null;
   setOpenMenu: (m: OpenMenu | null) => void;
 
-  // tinykeys-driven actions ($mod = Ctrl/Cmd).
+  // tinykeys-driven actions ($mod = Ctrl/Cmd). undo/redo/zoom/openNewFilter and
+  // `editing` are read from the store; the rest are App-local / IO handlers.
   openFiles: () => void | Promise<void>;
   fileViewMode: "all" | "matches";
   setViewMode: (m: "all" | "matches") => void;
   setFindOpen: (v: boolean) => void;
-  zoomIn: () => void;
-  zoomOut: () => void;
-  zoomReset: () => void;
 
   // Escape stack (innermost overlay first).
   findOpen: boolean;
-  editing: EditingState | null;
   openScreen: boolean;
   filesCount: number;
   setOpenScreen: (v: boolean) => void;
@@ -34,12 +32,9 @@ interface Deps {
   aboutOpen: boolean;
   setAboutOpen: (v: boolean) => void;
 
-  // Ctrl+Z/Y/B/G/R and Ctrl+Shift+N/L (plain keydown listener).
-  undo: () => void;
-  redo: () => void;
+  // Ctrl+B/G + Ctrl+Shift+L (plain keydown listener).
   toggleFilterCollapsed: () => void;
   openGoto: () => void;
-  openNewFilter: () => void;
   focusFilterSearch: () => void;
 }
 
@@ -58,11 +53,7 @@ export function useKeyboardShortcuts(deps: Deps): void {
     fileViewMode,
     setViewMode,
     setFindOpen,
-    zoomIn,
-    zoomOut,
-    zoomReset,
     findOpen,
-    editing,
     openScreen,
     filesCount,
     setOpenScreen,
@@ -71,6 +62,19 @@ export function useKeyboardShortcuts(deps: Deps): void {
     aboutOpen,
     setAboutOpen,
   } = deps;
+
+  // Undo/redo, zoom, "new filter" and the open editor draft live in the store.
+  const editing = useStore((s) => s.editing);
+  const { undo, redo, zoomIn, zoomOut, zoomReset, openNewFilter } = useStore(
+    useShallow((s) => ({
+      undo: s.undo,
+      redo: s.redo,
+      zoomIn: s.zoomIn,
+      zoomOut: s.zoomOut,
+      zoomReset: s.zoomReset,
+      openNewFilter: s.openNewFilter,
+    })),
+  );
 
   // While a menu is open, Left/Right move to the adjacent top-level menu and
   // Esc closes it (matches native menubar keyboard navigation).
@@ -171,19 +175,19 @@ export function useKeyboardShortcuts(deps: Deps): void {
   // stale closure (openNewFilter reads `set`, toggleFilterCollapsed reads the
   // current layout, etc.).
   const ref = useRef({
-    undo: deps.undo,
-    redo: deps.redo,
+    undo,
+    redo,
     toggleFilterCollapsed: deps.toggleFilterCollapsed,
     openGoto: deps.openGoto,
-    openNewFilter: deps.openNewFilter,
+    openNewFilter,
     focusFilterSearch: deps.focusFilterSearch,
   });
   ref.current = {
-    undo: deps.undo,
-    redo: deps.redo,
+    undo,
+    redo,
     toggleFilterCollapsed: deps.toggleFilterCollapsed,
     openGoto: deps.openGoto,
-    openNewFilter: deps.openNewFilter,
+    openNewFilter,
     focusFilterSearch: deps.focusFilterSearch,
   };
 
