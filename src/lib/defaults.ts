@@ -1,5 +1,5 @@
 import type { AppState, Filter } from "@/types";
-import { DEFAULT_TEXT_COLOR, DEFAULT_BG_COLOR, FONT_INITIAL } from "@/config";
+import { DEFAULT_TEXT_COLOR, DEFAULT_BG_COLOR, FONT_DEFAULT } from "@/config";
 
 let _uid = 1;
 export function uid(prefix: string): string {
@@ -69,7 +69,7 @@ export function initialState(): AppState {
     panelPos: "right",
     mapColorMode: "bg",
     mapWidth: 16,
-    fontSize: FONT_INITIAL,
+    fontSize: FONT_DEFAULT,
     fontWeight: 400,
     showLineNumbers: true,
     comparePos: "right",
@@ -180,7 +180,7 @@ export function normalizeState(state: AppState): AppState {
   if (!Array.isArray(state.recentFilterFiles)) state.recentFilterFiles = [];
   if (!state.mapColorMode) state.mapColorMode = "bg";
   if (!state.mapWidth) state.mapWidth = 16;
-  if (!state.fontSize) state.fontSize = FONT_INITIAL;
+  if (!state.fontSize) state.fontSize = FONT_DEFAULT;
   if (!state.fontWeight) state.fontWeight = 400;
   if (state.showLineNumbers === undefined) state.showLineNumbers = true;
   if (state.comparePos !== "bottom" && state.comparePos !== "right")
