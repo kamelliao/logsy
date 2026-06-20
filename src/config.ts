@@ -32,8 +32,7 @@ export const SAFE_MODE =
 export const HISTORY_CAP = 50;
 
 // --- Log-view font (zoom: Ctrl +/−/0 and Ctrl+wheel; persisted, not undoable) ---
-export const FONT_DEFAULT = 12; // fallback + zoom-reset target
-export const FONT_INITIAL = 12.5; // fresh-workspace persisted default (NOTE: differs from FONT_DEFAULT)
+export const FONT_DEFAULT = 12.5; // fresh-workspace default + fallback + zoom-reset target
 export const FONT_STEP = 1;
 export const FONT_MIN = 8;
 export const FONT_MAX = 24;
