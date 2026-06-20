@@ -1,7 +1,11 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import { Bookmark, Plus, Trash2 } from "lucide-react";
 import type { MarkerIcon } from "@/types";
-import { MARKER_ICONS, MarkerGlyph, markerColor } from "@/components/markers";
+import {
+  MARKER_ICONS,
+  MarkerGlyph,
+  markerColor,
+} from "@/components/widgets/markers";
 import { PanelEmpty } from "@/components/PanelEmpty";
 import { useStore, selectActiveMarkers } from "@/store";
 

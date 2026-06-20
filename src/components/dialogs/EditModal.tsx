@@ -72,7 +72,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
-import { RegexInput } from "@/components/RegexInput";
+import { RegexInput } from "@/components/widgets/RegexInput";
 import { Label } from "@/components/ui/label";
 import { ColorCombobox } from "@/components/ui/color-combobox";
 import { GroupCombobox } from "@/components/ui/group-combobox";
