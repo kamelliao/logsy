@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { compile, deriveFields, coerceValue, compileAll, computeView } from "@/logic";
+import { compile, deriveFields, coerceValue, compileAll, computeView } from "@/lib/engine";
 import type { Filter, FieldDef } from "@/types";
 
 function filter(id: string, pattern: string, over: Partial<Filter> = {}): Filter {

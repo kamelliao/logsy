@@ -1,6 +1,6 @@
 import type { Filter, FilterGroup, FilterSet, TimelineSource, TimeUnit, EventShape } from "@/types";
-import { makeFilter, uid, filterFromTatAttrs } from "@/data";
-import { guessUnit } from "@/logic";
+import { makeFilter, uid, filterFromTatAttrs } from "@/lib/defaults";
+import { guessUnit } from "@/lib/engine";
 
 /**
  * Parse a TextAnalysisTool.NET (.tat) filter file so users of that tool can

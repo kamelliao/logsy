@@ -1,6 +1,6 @@
 import { Combobox } from "@base-ui/react/combobox";
 import { Check, ChevronsUpDown, Search } from "lucide-react";
-import type { ColorOption } from "@/data";
+import type { ColorOption } from "@/lib/palette";
 
 interface ColorComboboxProps {
   value: string;

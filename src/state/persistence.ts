@@ -1,5 +1,5 @@
 import type { AppState } from "@/types";
-import { initialState, normalizeState } from "@/data";
+import { initialState, normalizeState } from "@/lib/defaults";
 
 export const STATE_KEY = "logsy.state.v6";
 

@@ -3,7 +3,7 @@
 // and generalizing each run. The EditModal chips UI lets the user cycle each
 // token between exact text, a generalized pattern, and a named capture group.
 
-import { escapeRegex } from "@/logic";
+import { escapeRegex } from "@/lib/engine";
 
 export type GenKind = "text" | "ws" | "int" | "float" | "hex" | "time" | "merged";
 

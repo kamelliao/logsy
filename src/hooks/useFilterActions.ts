@@ -2,9 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import type { AppState, Filter, FilterSet, FilterLayout, LogFile } from "@/types";
-import { uid, makeFilter, normalizeState } from "@/data";
+import { uid, makeFilter, normalizeState } from "@/lib/defaults";
 import { tokenize, buildPattern } from "@/lib/generalize";
-import { buildGroupFromImport, exportPayload, remapImportIds, parseTatFilters } from "@/filterFile";
+import { buildGroupFromImport, exportPayload, remapImportIds, parseTatFilters } from "@/lib/filterFile";
 import { withFile, withSet } from "@/state/selectors";
 import type { ConfirmOptions } from "@/components/ConfirmDialog";
 

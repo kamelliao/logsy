@@ -31,7 +31,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import type { LogFile, FilterSet, FilterGroup, Filter, FilterLayout, FieldDef } from "@/types";
-import { trackFieldsOf } from "@/logic";
+import { trackFieldsOf } from "@/lib/engine";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";

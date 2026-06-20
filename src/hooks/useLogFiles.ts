@@ -4,7 +4,7 @@ import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import type { AppState, LogFile, FilterSet } from "@/types";
-import { uid } from "@/data";
+import { uid } from "@/lib/defaults";
 import { baseName } from "@/lib/path";
 import type { ConfirmOptions } from "@/components/ConfirmDialog";
 

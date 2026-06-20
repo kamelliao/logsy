@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { scanMatches, groupSegments } from "@/logic";
+import { scanMatches, groupSegments } from "@/lib/engine";
 
 // --- scanMatches -------------------------------------------------------------
 

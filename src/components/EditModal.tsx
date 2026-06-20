@@ -1,13 +1,13 @@
 import { useState, useMemo, useEffect, useRef, useDeferredValue } from "react";
 import { Asterisk, Check, ChevronDown, ChevronRight, EyeOff, Parentheses, Pipette, Trash2, Wand2, X } from "lucide-react";
 import type { Filter, FilterGroup, FieldType, PaletteEntry } from "@/types";
-import { compile, scanMatches, groupSegments, deriveFields, escapeRegex } from "@/logic";
+import { compile, scanMatches, groupSegments, deriveFields, escapeRegex } from "@/lib/engine";
 import {
   tokenize, buildPattern, assignNames, generalPattern, mergeTokens, splitToken,
   type GenToken, type GenState,
 } from "@/lib/generalize";
 import { reparsePattern } from "@/lib/reparse";
-import { TEXT_SWATCHES, BG_SWATCHES } from "@/data";
+import { TEXT_SWATCHES, BG_SWATCHES } from "@/lib/palette";
 
 /** First line matching `re` (early-exit), or null. Used to dress reconstructed
  *  chips with real sample text when reopening the builder on an existing filter. */
