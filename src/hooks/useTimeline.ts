@@ -1,51 +1,39 @@
 import { useMemo } from "react";
 import { toast } from "sonner";
-import type {
-  AppState,
-  LogFile,
-  FilterSet,
-  ViewResult,
-  TimelineSource,
-} from "@/types";
+import type { LogFile, FilterSet, ViewResult, TimelineSource } from "@/types";
 import { buildTimeline, laneColor, guessUnit, isTimeLike } from "@/lib/engine";
 import { withSet } from "@/state/selectors";
+import { useStore } from "@/store";
 import type { PanelTab } from "@/hooks/useDockLayout";
 
 interface Deps {
   view: ViewResult;
   file: LogFile | null;
   set: FilterSet | null;
-  state: AppState;
-  setState: React.Dispatch<React.SetStateAction<AppState>>;
-  patchState: (
-    fn: (s: AppState) => void,
-    opts?: { undoable?: boolean; coalesce?: string },
-  ) => void;
   selectPanelTab: (tab: PanelTab) => void;
 }
 
 /**
- * The timeline: its tracks (per-set, undoable), the per-file set of plotted
- * lines (persisted, not undoable), the events those produce, and the derived
- * helpers the panel and filter-row menu need (which fields can back a time
- * axis, per-track stats, orphaned lines).
+ * The timeline: its tracks (per-set, undoable), the events its plotted lines
+ * produce, and the derived helpers the panel and filter-row menu need (which
+ * fields can back a time axis, per-track stats, orphaned lines). The plotted
+ * lines themselves (`timelineLinesByFile`, persisted, not undoable) and their
+ * add/remove/clear mutations live in the store's timeline slice; track edits are
+ * undoable document mutations, so they go through the store's `patchState`.
  */
-export function useTimeline({
-  view,
-  file,
-  set,
-  state,
-  setState,
-  patchState,
-  selectPanelTab,
-}: Deps) {
+export function useTimeline({ view, file, set, selectPanelTab }: Deps) {
+  const patchState = useStore((s) => s.patchState);
+  const addToTimeline = useStore((s) => s.addToTimeline);
+  const removeFromTimeline = useStore((s) => s.removeFromTimeline);
+  const clearTimeline = useStore((s) => s.clearTimeline);
   // Timeline tracks: a user-owned, ordered list (no auto-derivation).
   const tracks = useMemo(() => set?.sources ?? [], [set?.sources]);
   // Lines the user added to the timeline. Persisted per file (survives reload),
   // keyed by file id so a file switch naturally shows that file's own set.
+  const timelineLinesByFile = useStore((s) => s.doc.timelineLinesByFile);
   const timelineLines = useMemo(
-    () => new Set(file ? (state.timelineLinesByFile?.[file.id] ?? []) : []),
-    [state.timelineLinesByFile, file],
+    () => new Set(file ? (timelineLinesByFile?.[file.id] ?? []) : []),
+    [timelineLinesByFile, file],
   );
   // Events come from the lines the user added to the timeline (like compare).
   // `badEndTracks` flags span tracks whose end field resolved BEFORE the start
@@ -109,30 +97,6 @@ export function useTimeline({
     return result;
   }, [view, set]);
 
-  // Added lines persist per file (survive reload) but are not on the undo stack,
-  // so they go through plain setState into `timelineLinesByFile[file.id]`.
-  const mutateTimeline = (fn: (cur: Set<number>) => void) =>
-    setState((s) => {
-      const fid = (s.files.find((f) => f.id === s.activeFileId) ?? s.files[0])
-        ?.id;
-      if (!fid) return s;
-      const cur = new Set(s.timelineLinesByFile?.[fid] ?? []);
-      fn(cur);
-      return {
-        ...s,
-        timelineLinesByFile: {
-          ...(s.timelineLinesByFile ?? {}),
-          [fid]: [...cur],
-        },
-      };
-    });
-  const addToTimeline = (ns: number[]) =>
-    mutateTimeline((c) => ns.forEach((n) => c.add(n)));
-  const removeFromTimeline = (ns: number[]) =>
-    mutateTimeline((c) => ns.forEach((n) => c.delete(n)));
-  // Global clear: drop every line from the timeline (tracks stay). Mirrors
-  // `clearCompare` — the panel's dock-head "Clear" action.
-  const clearTimeline = () => mutateTimeline((c) => c.clear());
   // Tracks are a document edit → undoable; persisted on the set, keyed by id.
   const setTrack = (tr: TimelineSource) =>
     patchState((s) => {

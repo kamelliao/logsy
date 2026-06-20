@@ -175,7 +175,7 @@ export function App() {
     clearCompareGroup,
     importCompareGroup,
     exportGroupCsv,
-  } = useCompare({ view, file, state, setState });
+  } = useCompare({ view, file });
   const {
     tracks,
     timelineLines,
@@ -194,15 +194,7 @@ export function App() {
     addAllMatchingLines,
     addLinesToTimeline,
     toggleTimelineTrack,
-  } = useTimeline({
-    view,
-    file,
-    set,
-    state,
-    setState,
-    patchState,
-    selectPanelTab,
-  });
+  } = useTimeline({ view, file, set, selectPanelTab });
   const { markers, setMarker, removeMarker } = useBookmarks();
 
   // Soloing a filter ("View this filter only"): the log shows just that filter's
