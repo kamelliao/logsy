@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, FilePlus, PanelLeft, Settings, X } from "lucide-react";
 import type { AppState, FileIcon, LogFile } from "@/types";
-import { FILE_ICONS, FileGlyph } from "@/components/fileIcons";
+import { FILE_ICONS, FileGlyph } from "@/components/widgets/fileIcons";
 import { Button } from "@/components/ui/button";
 import {
   Popover,

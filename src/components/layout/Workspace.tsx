@@ -21,7 +21,7 @@ import {
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
 import type { useDockLayout, PoppedTab } from "@/hooks/useDockLayout";
-import type { useCompareCollapse } from "@/components/useCompareCollapse";
+import type { useCompareCollapse } from "@/hooks/useCompareCollapse";
 
 type DockLayout = ReturnType<typeof useDockLayout>;
 type CompareCollapse = ReturnType<typeof useCompareCollapse>;

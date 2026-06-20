@@ -4,7 +4,7 @@ import { baseName } from "@/lib/path";
 import { useStore } from "@/store";
 import { activeFile, activeSet } from "@/state/selectors";
 import { useShallow } from "zustand/react/shallow";
-import type { MenuItem } from "@/components/MenuPopup";
+import type { MenuItem } from "@/components/layout/MenuPopup";
 
 interface Deps {
   // Handlers that aren't (yet) store actions: log-file IO, App-local UI signals,

@@ -9,7 +9,7 @@ import type { AppState, Marker, MarkerIcon } from "@/types";
 import { initialState, normalizeState } from "@/lib/defaults";
 import { STATE_KEY, SAFE_MODE } from "@/state/persistence";
 import { activeFile } from "@/state/selectors";
-import type { ConfirmOptions } from "@/components/ConfirmDialog";
+import type { ConfirmOptions } from "@/components/dialogs/ConfirmDialog";
 import {
   createFilterActions,
   type FilterActions,

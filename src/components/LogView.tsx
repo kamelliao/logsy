@@ -36,7 +36,11 @@ import type {
   Filter as FilterCfg,
 } from "@/types";
 import { escapeRegex } from "@/lib/engine";
-import { MARKER_ICONS, MarkerGlyph, markerColor } from "@/components/markers";
+import {
+  MARKER_ICONS,
+  MarkerGlyph,
+  markerColor,
+} from "@/components/widgets/markers";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
