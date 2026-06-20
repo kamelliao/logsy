@@ -1,6 +1,7 @@
 import { Minus, Square, X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import type { ReactNode } from "react";
+import { APP_NAME } from "@/config";
 
 interface OpenMenu {
   name: string;
@@ -22,7 +23,7 @@ interface Props {
 export function Titlebar({ menus, openMenu, setOpenMenu }: Props): ReactNode {
   return (
     <div className="titlebar" data-tauri-drag-region>
-      <div className="brand">Logsy</div>
+      <div className="brand">{APP_NAME}</div>
       <div className="menubar">
         {menus.map((m) => (
           <div

@@ -1,4 +1,5 @@
 import type { AppState, Filter } from "@/types";
+import { DEFAULT_TEXT_COLOR, DEFAULT_BG_COLOR, FONT_INITIAL } from "@/config";
 
 let _uid = 1;
 export function uid(prefix: string): string {
@@ -17,8 +18,8 @@ export function makeFilter(
     caseSensitive: !!opts.caseSensitive,
     regex: !!opts.regex,
     exclude: !!opts.exclude,
-    textColor: opts.textColor ?? "#1c1f23",
-    bgColor: opts.bgColor ?? "#ffffff",
+    textColor: opts.textColor ?? DEFAULT_TEXT_COLOR,
+    bgColor: opts.bgColor ?? DEFAULT_BG_COLOR,
     groupId: opts.groupId ?? null,
     fields: opts.fields,
   };
@@ -51,8 +52,8 @@ export function filterFromTatAttrs(
     exclude: yes(a.excluding),
     caseSensitive: yes(a.case_sensitive),
     regex: yes(a.regex),
-    textColor: tatColor(a.foreColor, "#1c1f23"),
-    bgColor: tatColor(a.backColor, "#ffffff"),
+    textColor: tatColor(a.foreColor, DEFAULT_TEXT_COLOR),
+    bgColor: tatColor(a.backColor, DEFAULT_BG_COLOR),
   });
 }
 
@@ -68,7 +69,7 @@ export function initialState(): AppState {
     panelPos: "right",
     mapColorMode: "bg",
     mapWidth: 16,
-    fontSize: 12.5,
+    fontSize: FONT_INITIAL,
     fontWeight: 400,
     showLineNumbers: true,
     comparePos: "right",
@@ -179,7 +180,7 @@ export function normalizeState(state: AppState): AppState {
   if (!Array.isArray(state.recentFilterFiles)) state.recentFilterFiles = [];
   if (!state.mapColorMode) state.mapColorMode = "bg";
   if (!state.mapWidth) state.mapWidth = 16;
-  if (!state.fontSize) state.fontSize = 12.5;
+  if (!state.fontSize) state.fontSize = FONT_INITIAL;
   if (!state.fontWeight) state.fontWeight = 400;
   if (state.showLineNumbers === undefined) state.showLineNumbers = true;
   if (state.comparePos !== "bottom" && state.comparePos !== "right")

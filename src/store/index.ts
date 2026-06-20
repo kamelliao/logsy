@@ -7,7 +7,15 @@ import {
 import { produce, setAutoFreeze } from "immer";
 import type { AppState, Marker, MarkerIcon } from "@/types";
 import { initialState, normalizeState } from "@/lib/defaults";
-import { STATE_KEY, SAFE_MODE } from "@/state/persistence";
+import {
+  STATE_KEY,
+  STATE_VERSION,
+  SAFE_MODE,
+  HISTORY_CAP,
+  FONT_DEFAULT,
+  FONT_STEP,
+  clampFont,
+} from "@/config";
 import { activeFile } from "@/state/selectors";
 import type { ConfirmOptions } from "@/components/dialogs/ConfirmDialog";
 import {
@@ -25,14 +33,7 @@ export type { EditingState } from "@/store/filterSlice";
 // some still build new state with spreads rather than producers.
 setAutoFreeze(false);
 
-const HISTORY_CAP = 50;
-const STATE_VERSION = 6;
 const EMPTY_MARKERS: Marker[] = [];
-
-// Log-view font zoom bounds (Ctrl +/−/0 and Ctrl+wheel). Persisted, not undoable.
-const FONT_DEFAULT = 12;
-const FONT_STEP = 1;
-const clampFont = (n: number) => Math.max(8, Math.min(24, n));
 
 // Compare/timeline pinned lines: persisted per file, NOT on the undo stack. Both
 // edit a `{ [fileId]: number[] }` map on the active file via this shared mutator.

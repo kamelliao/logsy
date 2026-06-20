@@ -22,6 +22,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import type { PaletteEntry } from "@/types";
 import { DEFAULT_PALETTE, TEXT_SWATCHES, BG_SWATCHES } from "@/lib/palette";
+import { DEFAULT_TEXT_COLOR, DEFAULT_BG_COLOR } from "@/config";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -363,8 +364,8 @@ export function PaletteModal({
   onClose,
 }: PaletteModalProps) {
   const [rows, setRows] = useState<PaletteRow[]>(() => toRows(palette));
-  const [addText, setAddText] = useState("#1c1f23");
-  const [addBg, setAddBg] = useState("#ffffff");
+  const [addText, setAddText] = useState(DEFAULT_TEXT_COLOR);
+  const [addBg, setAddBg] = useState(DEFAULT_BG_COLOR);
   const [addName, setAddName] = useState("");
 
   const [resetOpen, setResetOpen] = useState(false);
