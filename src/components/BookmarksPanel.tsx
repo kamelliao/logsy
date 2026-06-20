@@ -1,8 +1,8 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import { Bookmark, Plus, Trash2 } from "lucide-react";
-import type { Marker, MarkerIcon } from "../types";
-import { MARKER_ICONS, MarkerGlyph, markerColor } from "./markers";
-import { PanelEmpty } from "./PanelEmpty";
+import type { Marker, MarkerIcon } from "@/types";
+import { MARKER_ICONS, MarkerGlyph, markerColor } from "@/components/markers";
+import { PanelEmpty } from "@/components/PanelEmpty";
 
 interface BookmarksPanelProps {
   markers: Marker[];

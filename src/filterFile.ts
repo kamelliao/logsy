@@ -1,6 +1,21 @@
-import type { Filter, FilterGroup, FilterSet, TimelineSource, TimeUnit, EventShape } from "./types";
-import { makeFilter, uid } from "./data";
-import { guessUnit } from "./logic";
+import type { Filter, FilterGroup, FilterSet, TimelineSource, TimeUnit, EventShape } from "@/types";
+import { makeFilter, uid, filterFromTatAttrs } from "@/data";
+import { guessUnit } from "@/logic";
+
+/**
+ * Parse a TextAnalysisTool.NET (.tat) filter file so users of that tool can
+ * import their filters here. Returns null when the text isn't a TAT document.
+ */
+export function parseTatFilters(text: string): ImportedFilters | null {
+  const doc = new DOMParser().parseFromString(text, "application/xml");
+  if (doc.getElementsByTagName("parsererror").length) return null;
+  if (doc.documentElement?.tagName !== "TextAnalysisTool.NET") return null;
+  const attrs = ["text", "description", "enabled", "excluding", "case_sensitive", "regex", "foreColor", "backColor"];
+  const filters = Array.from(doc.getElementsByTagName("filter")).map((el) =>
+    filterFromTatAttrs(Object.fromEntries(attrs.map((k) => [k, el.getAttribute(k)])))
+  );
+  return { filters, groups: [], order: filters.map((f) => f.id), sources: [] };
+}
 
 const TIME_UNITS: TimeUnit[] = ["hms", "s", "ms", "us", "ns"];
 const SHAPES: EventShape[] = ["circle", "square", "triangle", "diamond"];

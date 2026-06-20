@@ -1,13 +1,13 @@
 import { useState, useMemo, useEffect, useRef, useDeferredValue } from "react";
 import { Asterisk, Check, ChevronDown, ChevronRight, EyeOff, Parentheses, Pipette, Trash2, Wand2, X } from "lucide-react";
-import type { Filter, FilterGroup, FieldType, PaletteEntry } from "../types";
-import { compile, scanMatches, groupSegments, deriveFields, escapeRegex } from "../logic";
+import type { Filter, FilterGroup, FieldType, PaletteEntry } from "@/types";
+import { compile, scanMatches, groupSegments, deriveFields, escapeRegex } from "@/logic";
 import {
   tokenize, buildPattern, assignNames, generalPattern, mergeTokens, splitToken,
   type GenToken, type GenState,
-} from "../lib/generalize";
-import { reparsePattern } from "../lib/reparse";
-import { TEXT_SWATCHES, BG_SWATCHES } from "../data";
+} from "@/lib/generalize";
+import { reparsePattern } from "@/lib/reparse";
+import { TEXT_SWATCHES, BG_SWATCHES } from "@/data";
 
 /** First line matching `re` (early-exit), or null. Used to dress reconstructed
  *  chips with real sample text when reopening the builder on an existing filter. */
@@ -35,20 +35,20 @@ function luminance(hex: string): number {
   const b = parseInt(hex.slice(5, 7), 16) / 255;
   return 0.2126 * r + 0.7152 * g + 0.0722 * b;
 }
-import { Button } from "./ui/button";
-import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "./ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-} from "./ui/dropdown-menu";
-import { Input } from "./ui/input";
-import { RegexInput } from "./RegexInput";
-import { Label } from "./ui/label";
-import { ColorCombobox } from "./ui/color-combobox";
-import { GroupCombobox } from "./ui/group-combobox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
+} from "@/components/ui/dropdown-menu";
+import { Input } from "@/components/ui/input";
+import { RegexInput } from "@/components/RegexInput";
+import { Label } from "@/components/ui/label";
+import { ColorCombobox } from "@/components/ui/color-combobox";
+import { GroupCombobox } from "@/components/ui/group-combobox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 function ToggleCard({ on, ex, glyph, name, desc, onClick }: {
   on: boolean; ex?: boolean; glyph: React.ReactNode;

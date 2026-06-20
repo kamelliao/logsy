@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, FilePlus, PanelLeft, Settings, X } from "lucide-react";
-import type { AppState, FileIcon, LogFile } from "../types";
-import { FILE_ICONS, FileGlyph } from "./fileIcons";
-import { Button } from "./ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "./ui/popover";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import type { AppState, FileIcon, LogFile } from "@/types";
+import { FILE_ICONS, FileGlyph } from "@/components/fileIcons";
+import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface FileItemProps {
   file: LogFile;

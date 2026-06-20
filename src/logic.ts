@@ -1,7 +1,7 @@
 import type {
   Filter, CompiledFilter, ViewResult, ViewRow, Segment,
   FieldType, FieldDef, FieldValue, TimeUnit, TimelineSource, EventMark,
-} from "./types";
+} from "@/types";
 
 export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");

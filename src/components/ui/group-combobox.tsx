@@ -1,6 +1,6 @@
 import { Combobox } from "@base-ui/react/combobox";
 import { Check, ChevronDown, Search } from "lucide-react";
-import type { FilterGroup } from "../../types";
+import type { FilterGroup } from "@/types";
 
 // Sentinel item value standing in for "no group"; the public API still speaks
 // `null` for ungrouped, so it's mapped at the onChange / value boundary.

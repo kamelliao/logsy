@@ -2,11 +2,11 @@ import { useState, useMemo, useRef, useEffect, CSSProperties, ReactNode } from "
 import { ArrowDown, ArrowUp, Bookmark, ChartGantt, ChevronDown, ChevronRight, Columns3, Copy, Download, Eye, FileText, Filter, Minus, Search, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import type { LogFile, ViewResult, FieldValue, Marker, MarkerIcon, Filter as FilterCfg } from "../types";
-import { escapeRegex } from "../logic";
-import { MARKER_ICONS, MarkerGlyph, markerColor } from "./markers";
-import { Button } from "./ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
+import type { LogFile, ViewResult, FieldValue, Marker, MarkerIcon, Filter as FilterCfg } from "@/types";
+import { escapeRegex } from "@/logic";
+import { MARKER_ICONS, MarkerGlyph, markerColor } from "@/components/markers";
+import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 const _charWCache = new Map<number, number>();
 function charWidth(fontSize: number): number {

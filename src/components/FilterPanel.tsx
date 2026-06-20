@@ -30,12 +30,12 @@ import {
   horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { LogFile, FilterSet, FilterGroup, Filter, FilterLayout, FieldDef } from "../types";
-import { trackFieldsOf } from "../logic";
-import { Button } from "./ui/button";
-import { Checkbox } from "./ui/checkbox";
-import { ScrollArea } from "./ui/scroll-area";
-import { HoverCard, HoverCardContent, HoverCardTrigger } from "./ui/hover-card";
+import type { LogFile, FilterSet, FilterGroup, Filter, FilterLayout, FieldDef } from "@/types";
+import { trackFieldsOf } from "@/logic";
+import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { HoverCard, HoverCardContent, HoverCardTrigger } from "@/components/ui/hover-card";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -45,12 +45,12 @@ import {
   DropdownMenuSub,
   DropdownMenuSubTrigger,
   DropdownMenuSubContent,
-} from "./ui/dropdown-menu";
+} from "@/components/ui/dropdown-menu";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuTrigger,
-} from "./ui/context-menu";
+} from "@/components/ui/context-menu";
 
 // Shared empty array so rows whose filter has no tracks all get the same
 // reference — keeps FilterRow's memo from breaking on every panel render.

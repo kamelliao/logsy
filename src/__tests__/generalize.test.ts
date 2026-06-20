@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { tokenize, buildPattern, assignNames, mergeTokens, splitToken, type GenToken } from "../lib/generalize";
+import { tokenize, buildPattern, assignNames, mergeTokens, splitToken, type GenToken } from "@/lib/generalize";
 
 const kinds = (s: string) => tokenize(s).map((t) => `${t.kind}:${t.raw}`);
 
