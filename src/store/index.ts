@@ -1,30 +1,38 @@
-import { create } from "zustand";
+import { create, type StoreApi } from "zustand";
 import {
   persist,
   type PersistStorage,
   type StorageValue,
 } from "zustand/middleware";
 import { produce, setAutoFreeze } from "immer";
-import type { AppState, Marker, MarkerIcon } from "@/types";
+import type { AppState } from "@/types";
 import { initialState, normalizeState } from "@/lib/defaults";
-import {
-  STATE_KEY,
-  STATE_VERSION,
-  SAFE_MODE,
-  HISTORY_CAP,
-  FONT_DEFAULT,
-  FONT_STEP,
-  clampFont,
-} from "@/config";
-import { activeFile } from "@/state/selectors";
+import { STATE_KEY, STATE_VERSION, SAFE_MODE, HISTORY_CAP } from "@/config";
 import type { ConfirmOptions } from "@/components/dialogs/ConfirmDialog";
 import {
   createFilterActions,
   type FilterActions,
-  type EditingState,
-} from "@/store/filterSlice";
+} from "@/store/slices/filterSlice";
+import { createUiSlice, type UiSlice } from "@/store/slices/uiSlice";
+import {
+  createPrefsActions,
+  type PrefsActions,
+} from "@/store/slices/prefsSlice";
+import {
+  createRecentsActions,
+  type RecentsActions,
+} from "@/store/slices/recentsSlice";
+import {
+  createBookmarkActions,
+  type BookmarkActions,
+} from "@/store/slices/bookmarkSlice";
+import {
+  createLinesActions,
+  type LinesActions,
+} from "@/store/slices/linesSlice";
 
-export type { EditingState } from "@/store/filterSlice";
+export type { EditingState } from "@/store/slices/filterSlice";
+export { selectActiveMarkers } from "@/store/slices/bookmarkSlice";
 
 // The prior engine cloned whole state via structuredClone, so snapshots were never
 // frozen. immer's `produce` gives us structural sharing (cheap snapshots) with the
@@ -33,44 +41,25 @@ export type { EditingState } from "@/store/filterSlice";
 // some still build new state with spreads rather than producers.
 setAutoFreeze(false);
 
-const EMPTY_MARKERS: Marker[] = [];
-
-// Compare/timeline pinned lines: persisted per file, NOT on the undo stack. Both
-// edit a `{ [fileId]: number[] }` map on the active file via this shared mutator.
-type LinesKey = "compareLinesByFile" | "timelineLinesByFile";
-function mutateLines(
-  set: (updater: (st: Store) => Partial<Store>) => void,
-  key: LinesKey,
-  fn: (cur: Set<number>) => void,
-) {
-  set((st) => {
-    const fid = activeFile(st.doc)?.id;
-    if (!fid) return {};
-    const cur = new Set(st.doc[key]?.[fid] ?? []);
-    fn(cur);
-    return {
-      doc: { ...st.doc, [key]: { ...(st.doc[key] ?? {}), [fid]: [...cur] } },
-    };
-  });
-}
-
-type RecentKey = "recentFiles" | "recentFilterFiles";
 type PatchOpts = { undoable?: boolean; coalesce?: string };
 
-export interface Store extends FilterActions {
+/** Typed `set`/`get` handed to the slice factories in `@/store/slices/*`. */
+export type StoreSet = StoreApi<Store>["setState"];
+export type StoreGet = StoreApi<Store>["getState"];
+
+export interface Store
+  extends
+    FilterActions,
+    UiSlice,
+    PrefsActions,
+    RecentsActions,
+    BookmarkActions,
+    LinesActions {
   /** The persisted, undoable workspace document (everything that used to be AppState). */
   doc: AppState;
   /** Menu-enablement flags, mirrored into store state so selectors re-render on change. */
   canUndo: boolean;
   canRedo: boolean;
-
-  // ---- ui slice (non-persisted, transient) ----
-  /** The draft open in the filter editor modal (null when closed). */
-  editing: EditingState | null;
-  setEditing: (e: EditingState | null) => void;
-  /** "View this filter only" — ephemeral focus on a single filter's matches. */
-  soloFilterId: string | null;
-  setSoloFilterId: (id: string | null) => void;
 
   // ---- runtime collaborators (bound by App; not state we can compute) ----
   /** App-styled confirm() replacement; bound from useConfirm. */
@@ -82,6 +71,7 @@ export interface Store extends FilterActions {
     runTransition?: (fn: () => void) => void;
   }) => void;
 
+  // ---- undo engine ----
   /**
    * Mutate the document immutably. Recorded for undo by default; pass
    * { undoable: false } for navigation / view-only / persisted-but-not-undoable
@@ -93,28 +83,6 @@ export interface Store extends FilterActions {
   setDoc: React.Dispatch<React.SetStateAction<AppState>>;
   undo: () => void;
   redo: () => void;
-  pushRecent: (key: RecentKey, path: string) => void;
-  clearRecent: (key: RecentKey) => void;
-
-  // ---- prefs slice ----
-  zoomIn: () => void;
-  zoomOut: () => void;
-  zoomReset: () => void;
-
-  // ---- bookmark slice ----
-  setMarker: (n: number, icon: MarkerIcon, note: string) => void;
-  removeMarker: (n: number) => void;
-  clearMarkers: () => void;
-
-  // ---- compare slice (persisted lines, non-undoable) ----
-  addToCompare: (ns: number[]) => void;
-  removeFromCompare: (ns: number[]) => void;
-  clearCompare: () => void;
-
-  // ---- timeline slice (persisted lines, non-undoable) ----
-  addToTimeline: (ns: number[]) => void;
-  removeFromTimeline: (ns: number[]) => void;
-  clearTimeline: () => void;
 }
 
 // Undo history is memory-only — never persisted, never rendered — so it lives in
@@ -187,12 +155,6 @@ export const useStore = create<Store>()(
       canUndo: false,
       canRedo: false,
 
-      // ---- ui slice ----
-      editing: null,
-      setEditing: (e) => set({ editing: e }),
-      soloFilterId: null,
-      setSoloFilterId: (id) => set({ soloFilterId: id }),
-
       // ---- runtime collaborators (safe fallbacks until App binds the real ones) ----
       confirm: (o) =>
         Promise.resolve(
@@ -203,9 +165,15 @@ export const useStore = create<Store>()(
       runTransition: (fn) => fn(),
       setRuntime: (rt) => set(rt),
 
-      // ---- filter slice ----
+      // ---- slices (see @/store/slices/*) ----
+      ...createUiSlice(set),
       ...createFilterActions(set, get),
+      ...createPrefsActions(set),
+      ...createRecentsActions(set),
+      ...createBookmarkActions(get),
+      ...createLinesActions(set),
 
+      // ---- undo engine ----
       patchState: (fn, opts) => {
         const base = get().doc;
         if (opts?.undoable !== false) {
@@ -252,109 +220,6 @@ export const useStore = create<Store>()(
         coalesceKey = null;
         set({ doc: next, canUndo: true, canRedo: future.length > 0 });
       },
-
-      // ---- prefs slice: font zoom (persisted, off the undo stack) ----
-      zoomIn: () =>
-        set((st) => ({
-          doc: {
-            ...st.doc,
-            fontSize: clampFont((st.doc.fontSize ?? FONT_DEFAULT) + FONT_STEP),
-          },
-        })),
-      zoomOut: () =>
-        set((st) => ({
-          doc: {
-            ...st.doc,
-            fontSize: clampFont((st.doc.fontSize ?? FONT_DEFAULT) - FONT_STEP),
-          },
-        })),
-      zoomReset: () =>
-        set((st) => ({ doc: { ...st.doc, fontSize: FONT_DEFAULT } })),
-
-      pushRecent: (key, path) =>
-        set((st) => {
-          const cur = (st.doc[key] ?? []).filter((p) => p !== path);
-          cur.unshift(path);
-          return { doc: { ...st.doc, [key]: cur.slice(0, 10) } };
-        }),
-      clearRecent: (key) => set((st) => ({ doc: { ...st.doc, [key]: [] } })),
-
-      // ---- bookmark slice: pinned to the active file, persisted, off the undo stack ----
-      setMarker: (n, icon, note) =>
-        get().patchState(
-          (s) => {
-            const f = activeFile(s);
-            if (!f) return;
-            if (!Array.isArray(f.markers)) f.markers = [];
-            const m = f.markers.find((x) => x.n === n);
-            if (m) {
-              m.icon = icon;
-              m.note = note;
-            } else f.markers.push({ n, icon, note });
-            f.markers.sort((a, b) => a.n - b.n);
-          },
-          { undoable: false },
-        ),
-      removeMarker: (n) =>
-        get().patchState(
-          (s) => {
-            const f = activeFile(s);
-            if (f && Array.isArray(f.markers))
-              f.markers = f.markers.filter((m) => m.n !== n);
-          },
-          { undoable: false },
-        ),
-      clearMarkers: () =>
-        get().patchState(
-          (s) => {
-            const f = activeFile(s);
-            if (f) f.markers = [];
-          },
-          { undoable: false },
-        ),
-
-      // ---- compare slice: pinned lines per file (persisted, off the undo stack) ----
-      addToCompare: (ns) => {
-        mutateLines(set, "compareLinesByFile", (c) =>
-          ns.forEach((n) => c.add(n)),
-        );
-        // Surface the comparison: focus its tab, or expand it if it's popped out.
-        set((st) =>
-          st.doc.comparePopped
-            ? {
-                doc: {
-                  ...st.doc,
-                  poppedCollapsed: false,
-                  poppedActiveTab: "compare" as const,
-                },
-              }
-            : {
-                doc: {
-                  ...st.doc,
-                  activePanelTab: "compare" as const,
-                  filterCollapsed: false,
-                },
-              },
-        );
-      },
-      removeFromCompare: (ns) =>
-        mutateLines(set, "compareLinesByFile", (c) =>
-          ns.forEach((n) => c.delete(n)),
-        ),
-      clearCompare: () =>
-        mutateLines(set, "compareLinesByFile", (c) => c.clear()),
-
-      // ---- timeline slice: plotted lines per file (persisted, off the undo stack) ----
-      addToTimeline: (ns) =>
-        mutateLines(set, "timelineLinesByFile", (c) =>
-          ns.forEach((n) => c.add(n)),
-        ),
-      removeFromTimeline: (ns) =>
-        mutateLines(set, "timelineLinesByFile", (c) =>
-          ns.forEach((n) => c.delete(n)),
-        ),
-      clearTimeline: () =>
-        mutateLines(set, "timelineLinesByFile", (c) => c.clear()),
     }),
     {
       name: STATE_KEY,
@@ -367,7 +232,3 @@ export const useStore = create<Store>()(
     },
   ),
 );
-
-/** Markers of the active file (stable empty array when none, to avoid render loops). */
-export const selectActiveMarkers = (s: Store): Marker[] =>
-  activeFile(s.doc)?.markers ?? EMPTY_MARKERS;
