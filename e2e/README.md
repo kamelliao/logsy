@@ -66,6 +66,9 @@ panels are covered; Playwright still parallelizes individual tests across worker
   - find in view (Ctrl+F): hit count, next/wrap, no-match, case & regex options
   - matches-only (Ctrl+H) toggle + toolbar button + disabled-without-highlights
   - match map presence; go to line (Ctrl+G); zoom in/out/reset (Ctrl +/-/0)
+- `bookmarks.spec.ts` — the Bookmarks panel:
+  - add from the gutter marker + editor popover (icon, note)
+  - panel listing, note preview, jump-to-line, remove, clear all, icon filter
 
 ### Driving dnd-kit drags
 
@@ -77,5 +80,5 @@ would otherwise show up as duplicate `.fr-pattern` nodes.
 
 ## Planned next (not yet implemented)
 
-- `bookmarks.spec.ts`, `timeline.spec.ts`, `compare.spec.ts`.
+- `timeline.spec.ts`, `compare.spec.ts`.
 - Menu bar + remaining keyboard shortcuts; CSV export.
