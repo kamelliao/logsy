@@ -68,8 +68,7 @@ export interface FilterSet {
 export type MarkerIcon = "bookmark" | "star" | "flag" | "bug" | "pin" | "alert";
 
 /** The set of glyphs a log file's sidebar entry can use. */
-export type FileIcon =
-  | "file" | "star" | "flag" | "bug" | "zap" | "alert";
+export type FileIcon = "file" | "star" | "flag" | "bug" | "zap" | "alert";
 
 /** A user-placed bookmark pinned to one log line, with an optional note. */
 export interface Marker {

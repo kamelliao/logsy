@@ -1,28 +1,34 @@
-import { Select as SelectPrimitive } from "@base-ui/react/select"
-import { Check, ChevronDown } from "lucide-react"
+import { Select as SelectPrimitive } from "@base-ui/react/select";
+import { Check, ChevronDown } from "lucide-react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 function Select({ ...props }: SelectPrimitive.Root.Props<string>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />
+  return <SelectPrimitive.Root data-slot="select" {...props} />;
 }
 
 function SelectValue({ ...props }: SelectPrimitive.Value.Props) {
-  return <SelectPrimitive.Value data-slot="select-value" {...props} />
+  return <SelectPrimitive.Value data-slot="select-value" {...props} />;
 }
 
 function SelectGroup({ ...props }: SelectPrimitive.Group.Props) {
-  return <SelectPrimitive.Group data-slot="select-group" {...props} />
+  return <SelectPrimitive.Group data-slot="select-group" {...props} />;
 }
 
-function SelectLabel({ className, ...props }: SelectPrimitive.GroupLabel.Props) {
+function SelectLabel({
+  className,
+  ...props
+}: SelectPrimitive.GroupLabel.Props) {
   return (
     <SelectPrimitive.GroupLabel
       data-slot="select-label"
-      className={cn("px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground", className)}
+      className={cn(
+        "px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground",
+        className,
+      )}
       {...props}
     />
-  )
+  );
 }
 
 function SelectTrigger({
@@ -44,7 +50,7 @@ function SelectTrigger({
         // truncate a value that's wider than a width-constrained trigger (w-fit
         // triggers grow to content, so nothing truncates there)
         "[&>[data-slot=select-value]]:min-w-0 [&>[data-slot=select-value]]:truncate",
-        className
+        className,
       )}
       {...props}
     >
@@ -53,18 +59,26 @@ function SelectTrigger({
         <ChevronDown />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
-  )
+  );
 }
 
-function SelectContent({ className, children, ...props }: SelectPrimitive.Popup.Props) {
+function SelectContent({
+  className,
+  children,
+  ...props
+}: SelectPrimitive.Popup.Props) {
   return (
     <SelectPrimitive.Portal>
-      <SelectPrimitive.Positioner sideOffset={4} style={{ zIndex: 200 }} alignItemWithTrigger={false}>
+      <SelectPrimitive.Positioner
+        sideOffset={4}
+        style={{ zIndex: 200 }}
+        alignItemWithTrigger={false}
+      >
         <SelectPrimitive.Popup
           data-slot="select-content"
           className={cn(
             "bg-popover text-popover-foreground max-h-(--available-height) min-w-(--anchor-width) overflow-y-auto rounded-md border p-1 shadow-md outline-none",
-            className
+            className,
           )}
           {...props}
         >
@@ -72,17 +86,21 @@ function SelectContent({ className, children, ...props }: SelectPrimitive.Popup.
         </SelectPrimitive.Popup>
       </SelectPrimitive.Positioner>
     </SelectPrimitive.Portal>
-  )
+  );
 }
 
-function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Props) {
+function SelectItem({
+  className,
+  children,
+  ...props
+}: SelectPrimitive.Item.Props) {
   return (
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
         "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-7 pl-2 text-sm outline-none select-none",
         "data-[highlighted]:bg-accent data-[highlighted]:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
-        className
+        className,
       )}
       {...props}
     >
@@ -93,7 +111,15 @@ function SelectItem({ className, children, ...props }: SelectPrimitive.Item.Prop
         </SelectPrimitive.ItemIndicator>
       </span>
     </SelectPrimitive.Item>
-  )
+  );
 }
 
-export { Select, SelectValue, SelectGroup, SelectLabel, SelectTrigger, SelectContent, SelectItem }
+export {
+  Select,
+  SelectValue,
+  SelectGroup,
+  SelectLabel,
+  SelectTrigger,
+  SelectContent,
+  SelectItem,
+};

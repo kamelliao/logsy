@@ -60,14 +60,14 @@ generic regex tools don't have — the corpus is already loaded. Two features:
 
 ## Files
 
-| File | Change |
-|---|---|
-| `src/logic.ts` | `scanMatches`, `groupSegments` |
-| `src/lib/generalize.ts` | new: tokenizer + `buildPattern` + name assignment |
-| `src/components/EditModal.tsx` | preview pane, chips row, `genSeed` prop |
-| `src/components/LogView.tsx` | second sel-menu button, `onBuildFilter` mode arg |
-| `src/components/RegexInput.tsx` | per-named-group tint classes `g0…g5` |
-| `src/App.tsx` | `openFilterFromPattern` mode + `genSeed` in editing state |
-| `src/styles/logsy.css` | `--rxg-*` palette, `.mp-pane`, `.gen-chips` |
-| `src/__tests__/logic.preview.test.ts` | scanMatches / groupSegments |
-| `src/__tests__/generalize.test.ts` | tokenizer / buildPattern |
+| File                                  | Change                                                    |
+| ------------------------------------- | --------------------------------------------------------- |
+| `src/logic.ts`                        | `scanMatches`, `groupSegments`                            |
+| `src/lib/generalize.ts`               | new: tokenizer + `buildPattern` + name assignment         |
+| `src/components/EditModal.tsx`        | preview pane, chips row, `genSeed` prop                   |
+| `src/components/LogView.tsx`          | second sel-menu button, `onBuildFilter` mode arg          |
+| `src/components/RegexInput.tsx`       | per-named-group tint classes `g0…g5`                      |
+| `src/App.tsx`                         | `openFilterFromPattern` mode + `genSeed` in editing state |
+| `src/styles/logsy.css`                | `--rxg-*` palette, `.mp-pane`, `.gen-chips`               |
+| `src/__tests__/logic.preview.test.ts` | scanMatches / groupSegments                               |
+| `src/__tests__/generalize.test.ts`    | tokenizer / buildPattern                                  |

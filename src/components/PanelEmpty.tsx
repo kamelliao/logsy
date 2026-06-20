@@ -3,7 +3,11 @@ import type { ReactNode } from "react";
 /** Shared empty-state for the dock panels (Compare, Timeline): a dashed card,
  *  pinned to the top of the panel (not vertically centered). Content varies per
  *  panel; the card frame / type scale stay consistent across them. */
-export function PanelEmpty({ icon, title, children }: {
+export function PanelEmpty({
+  icon,
+  title,
+  children,
+}: {
   icon?: ReactNode;
   title: ReactNode;
   children?: ReactNode;

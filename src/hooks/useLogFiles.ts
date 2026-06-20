@@ -1,4 +1,11 @@
-import { useState, useMemo, useEffect, useCallback, useRef, useTransition } from "react";
+import {
+  useState,
+  useMemo,
+  useEffect,
+  useCallback,
+  useRef,
+  useTransition,
+} from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -22,11 +29,16 @@ function splitLines(text: string): string[] {
 // Yield a paint so a just-set loading overlay actually renders before a heavy
 // synchronous step (splitting a large file into lines) blocks the main thread.
 function nextPaint(): Promise<void> {
-  return new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
+  return new Promise((r) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => r())),
+  );
 }
 
 interface Deps {
-  patchState: (fn: (s: AppState) => void, opts?: { undoable?: boolean; coalesce?: string }) => void;
+  patchState: (
+    fn: (s: AppState) => void,
+    opts?: { undoable?: boolean; coalesce?: string },
+  ) => void;
   setState: React.Dispatch<React.SetStateAction<AppState>>;
   stateRef: React.RefObject<AppState>;
   pushRecent: (key: "recentFiles" | "recentFilterFiles", path: string) => void;
@@ -59,7 +71,14 @@ export interface LogFilesApi {
  * Mutations funnel through the passed `patchState` / `setState` so file actions
  * sit on the same state + undo model as the rest of the app.
  */
-export function useLogFiles({ patchState, setState, stateRef, pushRecent, appConfirm, file }: Deps): LogFilesApi {
+export function useLogFiles({
+  patchState,
+  setState,
+  stateRef,
+  pushRecent,
+  appConfirm,
+  file,
+}: Deps): LogFilesApi {
   // Bumped whenever a file's lines land in `linesStore`, to re-derive `lines`.
   const [linesVersion, setLinesVersion] = useState(0);
   // When set, a log file is being read from disk — drives the loading overlay.
@@ -79,13 +98,15 @@ export function useLogFiles({ patchState, setState, stateRef, pushRecent, appCon
   appConfirmRef.current = appConfirm;
 
   const lines = useMemo(
-    () => (file ? linesStore[file.id] ?? EMPTY_LINES : EMPTY_LINES),
-    [file?.id, linesVersion]
+    () => (file ? (linesStore[file.id] ?? EMPTY_LINES) : EMPTY_LINES),
+    [file?.id, linesVersion],
   );
 
   const selectFile = (fid: string) => {
     setOpenScreen(false);
-    startFileSwitchTransition(() => setState((s) => ({ ...s, activeFileId: fid })));
+    startFileSwitchTransition(() =>
+      setState((s) => ({ ...s, activeFileId: fid })),
+    );
   };
 
   // Closing a log discards its workspace (filters, sets) — confirm first.
@@ -94,14 +115,19 @@ export function useLogFiles({ patchState, setState, stateRef, pushRecent, appCon
     const ok = await appConfirm({
       title: "Close log?",
       message: `Close "${f?.name ?? "this log"}"? Its filters in this workspace will be discarded.`,
-      okLabel: "Close", cancelLabel: "Cancel", danger: true,
+      okLabel: "Close",
+      cancelLabel: "Cancel",
+      danger: true,
     });
     if (!ok) return;
-    patchState((s) => {
-      s.files = s.files.filter((x) => x.id !== fid);
-      if (s.activeFileId === fid) s.activeFileId = s.files[0]?.id ?? null;
-      delete linesStore[fid];
-    }, { undoable: false });
+    patchState(
+      (s) => {
+        s.files = s.files.filter((x) => x.id !== fid);
+        if (s.activeFileId === fid) s.activeFileId = s.files[0]?.id ?? null;
+        delete linesStore[fid];
+      },
+      { undoable: false },
+    );
   };
 
   // Read each path from disk and add it as a log file. The same path may be
@@ -109,63 +135,93 @@ export function useLogFiles({ patchState, setState, stateRef, pushRecent, appCon
   // "(n)" suffix so the sidebar stays readable). When `inheritFilters` is set
   // (e.g. for drag-and-drop) the new file starts with a copy of the current
   // set's filters instead of an empty one.
-  const loadPaths = useCallback(async (paths: string[], inheritFilters = false) => {
-    let lastErr = "";
-    // Snapshot the active set's filters once, up front, so every dropped file
-    // inherits the same starting point.
-    const inherited = (() => {
-      if (!inheritFilters) return null;
-      const cur = stateRef.current;
-      const cf = cur.files.find((f) => f.id === cur.activeFileId) ?? cur.files[0] ?? null;
-      const cg = cf ? (cf.sets.find((g) => g.id === cf.activeSetId) ?? cf.sets[0]) : null;
-      return cg ?? null;
-    })();
-    const makeSets = (): FilterSet[] =>
-      inherited
-        ? [{ ...(JSON.parse(JSON.stringify(inherited)) as FilterSet), id: uid("g") }]
-        : [{ id: uid("g"), name: "Filters", filters: [], groups: [], order: [] }];
-    try {
-    for (const path of paths) {
-      let text: string;
-      let encoding: string;
-      setBusy({ name: baseName(path) });
-      await nextPaint();   // let the overlay paint before the read/split blocks
+  const loadPaths = useCallback(
+    async (paths: string[], inheritFilters = false) => {
+      let lastErr = "";
+      // Snapshot the active set's filters once, up front, so every dropped file
+      // inherits the same starting point.
+      const inherited = (() => {
+        if (!inheritFilters) return null;
+        const cur = stateRef.current;
+        const cf =
+          cur.files.find((f) => f.id === cur.activeFileId) ??
+          cur.files[0] ??
+          null;
+        const cg = cf
+          ? (cf.sets.find((g) => g.id === cf.activeSetId) ?? cf.sets[0])
+          : null;
+        return cg ?? null;
+      })();
+      const makeSets = (): FilterSet[] =>
+        inherited
+          ? [
+              {
+                ...(JSON.parse(JSON.stringify(inherited)) as FilterSet),
+                id: uid("g"),
+              },
+            ]
+          : [
+              {
+                id: uid("g"),
+                name: "Filters",
+                filters: [],
+                groups: [],
+                order: [],
+              },
+            ];
       try {
-        const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
-        text = res.text;
-        encoding = res.encoding;
-      } catch (e) {
-        lastErr = `${baseName(path)} — ${String(e)}`;
-        continue;
+        for (const path of paths) {
+          let text: string;
+          let encoding: string;
+          setBusy({ name: baseName(path) });
+          await nextPaint(); // let the overlay paint before the read/split blocks
+          try {
+            const res = await invoke<{ text: string; encoding: string }>(
+              "read_text_file",
+              { path },
+            );
+            text = res.text;
+            encoding = res.encoding;
+          } catch (e) {
+            lastErr = `${baseName(path)} — ${String(e)}`;
+            continue;
+          }
+          pushRecent("recentFiles", path);
+          await nextPaint(); // yield again so the overlay stays visible before the synchronous line-split
+          const lns = splitLines(text);
+          const id = uid("file");
+          linesStore[id] = lns;
+          patchState(
+            (s) => {
+              // Disambiguate repeated opens of the same path: "log" → "log (2)" → …
+              const dupes = s.files.filter((f) => f.path === path).length;
+              const f: LogFile = {
+                id,
+                name:
+                  dupes > 0
+                    ? `${baseName(path)} (${dupes + 1})`
+                    : baseName(path),
+                path,
+                lineCount: lns.length,
+                encoding,
+                sets: makeSets(),
+                activeSetId: null,
+              };
+              f.activeSetId = f.sets[0].id;
+              s.files.push(f);
+              s.activeFileId = f.id;
+            },
+            { undoable: false },
+          );
+        }
+      } finally {
+        setBusy(null);
       }
-      pushRecent("recentFiles", path);
-      await nextPaint();   // yield again so the overlay stays visible before the synchronous line-split
-      const lns = splitLines(text);
-      const id = uid("file");
-      linesStore[id] = lns;
-      patchState((s) => {
-        // Disambiguate repeated opens of the same path: "log" → "log (2)" → …
-        const dupes = s.files.filter((f) => f.path === path).length;
-        const f: LogFile = {
-          id,
-          name: dupes > 0 ? `${baseName(path)} (${dupes + 1})` : baseName(path),
-          path,
-          lineCount: lns.length,
-          encoding,
-          sets: makeSets(),
-          activeSetId: null,
-        };
-        f.activeSetId = f.sets[0].id;
-        s.files.push(f);
-        s.activeFileId = f.id;
-      }, { undoable: false });
-    }
-    } finally {
-      setBusy(null);
-    }
-    setLinesVersion((v) => v + 1);
-    if (lastErr) toast.error("Could not open file: " + lastErr);
-  }, [patchState, pushRecent, stateRef]);
+      setLinesVersion((v) => v + 1);
+      if (lastErr) toast.error("Could not open file: " + lastErr);
+    },
+    [patchState, pushRecent, stateRef],
+  );
 
   const openFiles = useCallback(async () => {
     const sel = await open({ multiple: true });
@@ -177,38 +233,64 @@ export function useLogFiles({ patchState, setState, stateRef, pushRecent, appCon
   // Replace the active file's contents in place (same workspace slot, keeping its
   // filters/groups) with a file from disk — used by drag-and-drop so a dropped
   // log loads into the current workspace instead of spawning a new file entry.
-  const replaceActiveFile = useCallback(async (path: string) => {
-    const cur = stateRef.current;
-    const active = cur.files.find((f) => f.id === cur.activeFileId) ?? cur.files[0] ?? null;
-    if (!active) { await loadPaths([path]); return; }
-    let text: string;
-    let encoding: string;
-    setBusy({ name: baseName(path) });
-    await nextPaint();   // let the overlay paint before the read/split blocks
-    try {
-      const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
-      text = res.text;
-      encoding = res.encoding;
-    }
-    catch (e) { setBusy(null); toast.error("Could not open file: " + baseName(path) + " — " + String(e)); return; }
-    const lns = splitLines(text);
-    linesStore[active.id] = lns;
-    patchState((s) => {
-      const f = s.files.find((x) => x.id === active.id);
-      if (!f) return;
-      f.path = path;
-      f.name = baseName(path);
-      f.lineCount = lns.length;
-      f.encoding = encoding;
-      s.activeFileId = f.id;
-    }, { undoable: false });
-    pushRecent("recentFiles", path);
-    // The slot keeps its file id but gets new contents, so its old line numbers
-    // are stale — drop this file's compare lines (timeline does the same on reload).
-    setState((s) => ({ ...s, compareLinesByFile: { ...(s.compareLinesByFile ?? {}), [active.id]: [] } }));
-    setLinesVersion((v) => v + 1);
-    setBusy(null);
-  }, [loadPaths, patchState, pushRecent, setState, stateRef]);
+  const replaceActiveFile = useCallback(
+    async (path: string) => {
+      const cur = stateRef.current;
+      const active =
+        cur.files.find((f) => f.id === cur.activeFileId) ??
+        cur.files[0] ??
+        null;
+      if (!active) {
+        await loadPaths([path]);
+        return;
+      }
+      let text: string;
+      let encoding: string;
+      setBusy({ name: baseName(path) });
+      await nextPaint(); // let the overlay paint before the read/split blocks
+      try {
+        const res = await invoke<{ text: string; encoding: string }>(
+          "read_text_file",
+          { path },
+        );
+        text = res.text;
+        encoding = res.encoding;
+      } catch (e) {
+        setBusy(null);
+        toast.error(
+          "Could not open file: " + baseName(path) + " — " + String(e),
+        );
+        return;
+      }
+      const lns = splitLines(text);
+      linesStore[active.id] = lns;
+      patchState(
+        (s) => {
+          const f = s.files.find((x) => x.id === active.id);
+          if (!f) return;
+          f.path = path;
+          f.name = baseName(path);
+          f.lineCount = lns.length;
+          f.encoding = encoding;
+          s.activeFileId = f.id;
+        },
+        { undoable: false },
+      );
+      pushRecent("recentFiles", path);
+      // The slot keeps its file id but gets new contents, so its old line numbers
+      // are stale — drop this file's compare lines (timeline does the same on reload).
+      setState((s) => ({
+        ...s,
+        compareLinesByFile: {
+          ...(s.compareLinesByFile ?? {}),
+          [active.id]: [],
+        },
+      }));
+      setLinesVersion((v) => v + 1);
+      setBusy(null);
+    },
+    [loadPaths, patchState, pushRecent, setState, stateRef],
+  );
 
   // On restart the persisted file list has paths but no cached lines; reload the
   // active file's contents from disk when they're missing.
@@ -221,10 +303,19 @@ export function useLogFiles({ patchState, setState, stateRef, pushRecent, appCon
     setBusy({ name });
     (async () => {
       try {
-        const res = await invoke<{ text: string; encoding: string }>("read_text_file", { path });
+        const res = await invoke<{ text: string; encoding: string }>(
+          "read_text_file",
+          { path },
+        );
         if (cancelled) return;
         linesStore[id] = splitLines(res.text);
-        patchState((s) => { const f = s.files.find((x) => x.id === id); if (f) f.encoding = res.encoding; }, { undoable: false });
+        patchState(
+          (s) => {
+            const f = s.files.find((x) => x.id === id);
+            if (f) f.encoding = res.encoding;
+          },
+          { undoable: false },
+        );
         setLinesVersion((v) => v + 1);
       } catch (e) {
         if (!cancelled) toast.error(`Could not reload ${name}: ${String(e)}`);
@@ -232,7 +323,10 @@ export function useLogFiles({ patchState, setState, stateRef, pushRecent, appCon
         if (!cancelled) setBusy(null);
       }
     })();
-    return () => { cancelled = true; setBusy(null); };
+    return () => {
+      cancelled = true;
+      setBusy(null);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file?.id, file?.path]);
 
@@ -251,9 +345,11 @@ export function useLogFiles({ patchState, setState, stateRef, pushRecent, appCon
           // Only show the drop overlay for genuine file drags (which carry
           // `paths`). In-webview drags — e.g. dragging to select log text — also
           // emit enter/over events but with no paths, and must be ignored.
-          const hasFiles = "paths" in p && Array.isArray(p.paths) && p.paths.length > 0;
-          if (p.type === "enter" || p.type === "over") { if (hasFiles) setDragOver(true); }
-          else if (p.type === "drop") {
+          const hasFiles =
+            "paths" in p && Array.isArray(p.paths) && p.paths.length > 0;
+          if (p.type === "enter" || p.type === "over") {
+            if (hasFiles) setDragOver(true);
+          } else if (p.type === "drop") {
             setDragOver(false);
             if (!p.paths.length) return;
             const paths = p.paths;
@@ -271,12 +367,15 @@ export function useLogFiles({ patchState, setState, stateRef, pushRecent, appCon
                 const ok = await appConfirmRef.current({
                   title: "Replace current log?",
                   message: `A log is already open. Replace it with the dropped file${paths.length > 1 ? "s" : ""}?`,
-                  okLabel: "Replace", cancelLabel: "Cancel", danger: true,
+                  okLabel: "Replace",
+                  cancelLabel: "Cancel",
+                  danger: true,
                 });
                 if (!ok) return;
                 await replaceActiveFileRef.current(paths[0]);
                 // Any extra dropped files open as additional entries.
-                if (paths.length > 1) await loadPathsRef.current(paths.slice(1), true);
+                if (paths.length > 1)
+                  await loadPathsRef.current(paths.slice(1), true);
               } else {
                 await loadPathsRef.current(paths);
               }
@@ -285,12 +384,33 @@ export function useLogFiles({ patchState, setState, stateRef, pushRecent, appCon
             setDragOver(false);
           }
         })
-        .then((un) => { if (disposed) un(); else unlisten = un; })
-        .catch(() => { /* not running under Tauri */ });
-    } catch { /* not running under Tauri */ }
-    return () => { disposed = true; unlisten?.(); };
+        .then((un) => {
+          if (disposed) un();
+          else unlisten = un;
+        })
+        .catch(() => {
+          /* not running under Tauri */
+        });
+    } catch {
+      /* not running under Tauri */
+    }
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  return { lines, busy, isSwitchingFile, dragOver, openScreen, setOpenScreen, selectFile, deleteFile, openFiles, loadPaths };
+  return {
+    lines,
+    busy,
+    isSwitchingFile,
+    dragOver,
+    openScreen,
+    setOpenScreen,
+    selectFile,
+    deleteFile,
+    openFiles,
+    loadPaths,
+  };
 }

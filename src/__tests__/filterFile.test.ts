@@ -1,5 +1,9 @@
 import { test, expect } from "bun:test";
-import { exportPayload, buildGroupFromImport, remapImportIds } from "@/lib/filterFile";
+import {
+  exportPayload,
+  buildGroupFromImport,
+  remapImportIds,
+} from "@/lib/filterFile";
 import type { ImportedFilters } from "@/lib/filterFile";
 import { makeFilter } from "@/lib/defaults";
 import type { Filter, FilterGroup, FilterSet } from "@/types";
@@ -11,7 +15,14 @@ function roundTrip(set: FilterSet) {
 }
 
 function makeSet(over: Partial<FilterSet> = {}): FilterSet {
-  return { id: "set1", name: "My Set", filters: [], groups: [], order: [], ...over };
+  return {
+    id: "set1",
+    name: "My Set",
+    filters: [],
+    groups: [],
+    order: [],
+    ...over,
+  };
 }
 
 // --- the regression this guards against -------------------------------------
@@ -21,10 +32,30 @@ test("export → load round-trips filters, groups, and order intact", () => {
     { id: "g1", name: "Boot", collapsed: false },
     { id: "g2", name: "Errors", collapsed: true },
   ];
-  const f1 = makeFilter("mount ok", { id: "f1", groupId: "g1", description: "boot ok", textColor: "#166534", bgColor: "#dcfce7" } as Partial<Filter>);
-  const f2 = makeFilter("ERR", { id: "f2", groupId: "g2", exclude: true, caseSensitive: true, regex: true, enabled: false } as Partial<Filter>);
-  const f3 = makeFilter("loose", { id: "f3", groupId: null } as Partial<Filter>);
-  const set = makeSet({ groups, filters: [f1, f2, f3], order: ["f3", "g1", "g2"] });
+  const f1 = makeFilter("mount ok", {
+    id: "f1",
+    groupId: "g1",
+    description: "boot ok",
+    textColor: "#166534",
+    bgColor: "#dcfce7",
+  } as Partial<Filter>);
+  const f2 = makeFilter("ERR", {
+    id: "f2",
+    groupId: "g2",
+    exclude: true,
+    caseSensitive: true,
+    regex: true,
+    enabled: false,
+  } as Partial<Filter>);
+  const f3 = makeFilter("loose", {
+    id: "f3",
+    groupId: null,
+  } as Partial<Filter>);
+  const set = makeSet({
+    groups,
+    filters: [f1, f2, f3],
+    order: ["f3", "g1", "g2"],
+  });
 
   const built = roundTrip(set);
   expect(built).not.toBeNull();
@@ -36,36 +67,98 @@ test("export → load round-trips filters, groups, and order intact", () => {
 
 test("round-trip preserves structured-field definitions", () => {
   const f = makeFilter("(?<ts>\\d+) (?<lvl>\\w+)", {
-    id: "f1", regex: true,
-    fields: [{ name: "ts", type: "time" }, { name: "lvl", type: "string" }],
+    id: "f1",
+    regex: true,
+    fields: [
+      { name: "ts", type: "time" },
+      { name: "lvl", type: "string" },
+    ],
   } as Partial<Filter>);
   const built = roundTrip(makeSet({ filters: [f], order: ["f1"] }));
-  expect(built!.filters[0].fields).toEqual([{ name: "ts", type: "time" }, { name: "lvl", type: "string" }]);
+  expect(built!.filters[0].fields).toEqual([
+    { name: "ts", type: "time" },
+    { name: "lvl", type: "string" },
+  ]);
 });
 
 test("round-trip preserves every boolean/color attribute", () => {
   const f = makeFilter("x", {
-    id: "f1", enabled: false, caseSensitive: true, regex: true, exclude: true,
-    textColor: "#b42318", bgColor: "#fce4e4", description: "note", groupId: null,
+    id: "f1",
+    enabled: false,
+    caseSensitive: true,
+    regex: true,
+    exclude: true,
+    textColor: "#b42318",
+    bgColor: "#fce4e4",
+    description: "note",
+    groupId: null,
   } as Partial<Filter>);
   const built = roundTrip(makeSet({ filters: [f], order: ["f1"] }));
   expect(built!.filters[0]).toEqual(f);
 });
 
 test("round-trip preserves timeline tracks and de-dupes by filterId:timeField", () => {
-  const f = makeFilter("(?<a>\\d+) (?<b>\\d+)", { regex: true } as Partial<Filter>);
+  const f = makeFilter("(?<a>\\d+) (?<b>\\d+)", {
+    regex: true,
+  } as Partial<Filter>);
   const set = makeSet({
-    filters: [f], order: [f.id],
+    filters: [f],
+    order: [f.id],
     sources: [
-      { id: "tl1", filterId: f.id, timeField: "a", lane: "req", kind: "span", endField: "b", unit: "ms", color: "#abc" },
-      { id: "tl2", filterId: f.id, timeField: "a", lane: "dup", kind: "point", unit: "hms" }, // same pair → dropped
-      { id: "tl3", filterId: "other", timeField: "a", lane: "ok", kind: "point", unit: "ns" }, // diff filter → kept
+      {
+        id: "tl1",
+        filterId: f.id,
+        timeField: "a",
+        lane: "req",
+        kind: "span",
+        endField: "b",
+        unit: "ms",
+        color: "#abc",
+      },
+      {
+        id: "tl2",
+        filterId: f.id,
+        timeField: "a",
+        lane: "dup",
+        kind: "point",
+        unit: "hms",
+      }, // same pair → dropped
+      {
+        id: "tl3",
+        filterId: "other",
+        timeField: "a",
+        lane: "ok",
+        kind: "point",
+        unit: "ns",
+      }, // diff filter → kept
     ],
   });
   const built = roundTrip(set);
   expect(built!.sources).toEqual([
-    { id: "tl1", filterId: f.id, timeField: "a", lane: "req", kind: "span", endField: "b", unit: "ms", color: "#abc", collapsed: undefined, hidden: undefined },
-    { id: "tl3", filterId: "other", timeField: "a", lane: "ok", kind: "point", endField: undefined, unit: "ns", color: undefined, collapsed: undefined, hidden: undefined },
+    {
+      id: "tl1",
+      filterId: f.id,
+      timeField: "a",
+      lane: "req",
+      kind: "span",
+      endField: "b",
+      unit: "ms",
+      color: "#abc",
+      collapsed: undefined,
+      hidden: undefined,
+    },
+    {
+      id: "tl3",
+      filterId: "other",
+      timeField: "a",
+      lane: "ok",
+      kind: "point",
+      endField: undefined,
+      unit: "ns",
+      color: undefined,
+      collapsed: undefined,
+      hidden: undefined,
+    },
   ]);
 });
 
@@ -80,8 +173,22 @@ test("remapImportIds gives fresh ids and rewires groupId, order, and sources", (
     ],
     order: ["f2", "g1"],
     sources: [
-      { id: "tl1", filterId: "f1", timeField: "a", lane: "req", kind: "point", unit: "ms" },
-      { id: "tl-orphan", filterId: "gone", timeField: "a", lane: "x", kind: "point", unit: "ms" },
+      {
+        id: "tl1",
+        filterId: "f1",
+        timeField: "a",
+        lane: "req",
+        kind: "point",
+        unit: "ms",
+      },
+      {
+        id: "tl-orphan",
+        filterId: "gone",
+        timeField: "a",
+        lane: "x",
+        kind: "point",
+        unit: "ms",
+      },
     ],
   })!;
   const out = remapImportIds(built);

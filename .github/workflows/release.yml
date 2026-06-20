@@ -5,7 +5,7 @@ name: Release
 on:
   push:
     tags:
-      - 'v*'
+      - "v*"
 
 # tauri-action needs write access to create the release and upload assets.
 permissions:
@@ -22,9 +22,9 @@ jobs:
             args: --target universal-apple-darwin
           # Linux: build on 22.04 for the widest glibc compatibility.
           - platform: ubuntu-22.04
-            args: ''
+            args: ""
           - platform: windows-latest
-            args: ''
+            args: ""
 
     runs-on: ${{ matrix.platform }}
 

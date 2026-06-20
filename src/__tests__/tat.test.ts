@@ -16,8 +16,14 @@ test("tatColor maps 6-digit hex, strips ARGB alpha, and falls back", () => {
 
 test("filterFromTatAttrs maps the y/n flags, text, and colours", () => {
   const f = filterFromTatAttrs({
-    text: "littlefs mount ok", description: "boot", enabled: "y", excluding: "n",
-    case_sensitive: "n", regex: "y", foreColor: "808000", backColor: "ffa500",
+    text: "littlefs mount ok",
+    description: "boot",
+    enabled: "y",
+    excluding: "n",
+    case_sensitive: "n",
+    regex: "y",
+    foreColor: "808000",
+    backColor: "ffa500",
   });
   expect(f.pattern).toBe("littlefs mount ok");
   expect(f.description).toBe("boot");
@@ -30,7 +36,12 @@ test("filterFromTatAttrs maps the y/n flags, text, and colours", () => {
 });
 
 test("filterFromTatAttrs honours excluding=y, disabled, and case_sensitive=y", () => {
-  const f = filterFromTatAttrs({ text: "ERR", enabled: "n", excluding: "y", case_sensitive: "y" });
+  const f = filterFromTatAttrs({
+    text: "ERR",
+    enabled: "n",
+    excluding: "y",
+    case_sensitive: "y",
+  });
   expect(f.enabled).toBe(false);
   expect(f.exclude).toBe(true);
   expect(f.caseSensitive).toBe(true);

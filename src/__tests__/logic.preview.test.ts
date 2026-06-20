@@ -4,7 +4,9 @@ import { scanMatches, groupSegments } from "@/lib/engine";
 // --- scanMatches -------------------------------------------------------------
 
 test("scanMatches counts every hit but caps samples at the limit", () => {
-  const lines = Array.from({ length: 50 }, (_, i) => (i % 2 === 0 ? `err ${i}` : `ok ${i}`));
+  const lines = Array.from({ length: 50 }, (_, i) =>
+    i % 2 === 0 ? `err ${i}` : `ok ${i}`,
+  );
   const { count, samples } = scanMatches(lines, /err/g, 10);
   expect(count).toBe(25);
   expect(samples.length).toBe(10);
@@ -27,7 +29,7 @@ test("scanMatches on no hits returns empty", () => {
 const joined = (segs: { t: string }[]) => segs.map((s) => s.t).join("");
 
 test("groupSegments tags named-group spans with their palette index", () => {
-  const re = /err=(?<code>0x[0-9A-F]+) at (?<ts>\d+)/gd;
+  const re = /err=(?<code>0x[0-9A-F]+) at (?<ts>\d+)/dg;
   const text = "boot err=0x1A at 123 done";
   const segs = groupSegments(text, re, ["code", "ts"]);
   expect(joined(segs)).toBe(text);
@@ -42,13 +44,13 @@ test("groupSegments tags named-group spans with their palette index", () => {
 });
 
 test("groupSegments handles multiple matches per line", () => {
-  const re = /id=(?<id>\d+)/gd;
+  const re = /id=(?<id>\d+)/dg;
   const segs = groupSegments("id=1 x id=2", re, ["id"]);
   expect(segs.filter((s) => s.group === 0).map((s) => s.t)).toEqual(["1", "2"]);
 });
 
 test("groupSegments with no named groups degrades to plain hit spans", () => {
-  const segs = groupSegments("a err b", /err/gd, []);
+  const segs = groupSegments("a err b", /err/dg, []);
   expect(segs).toEqual([
     { t: "a ", hit: false },
     { t: "err", hit: true },
@@ -57,19 +59,19 @@ test("groupSegments with no named groups degrades to plain hit spans", () => {
 });
 
 test("groupSegments survives optional groups that did not participate", () => {
-  const re = /a(?<x>\d+)?b/gd;
+  const re = /a(?<x>\d+)?b/dg;
   const segs = groupSegments("ab", re, ["x"]);
   expect(joined(segs)).toBe("ab");
   expect(segs.some((s) => s.group !== undefined)).toBe(false);
 });
 
 test("groupSegments does not loop on zero-width matches", () => {
-  const segs = groupSegments("abc", /(?<e>)/gd, ["e"]);
+  const segs = groupSegments("abc", /(?<e>)/dg, ["e"]);
   expect(joined(segs)).toBe("abc");
 });
 
 test("nested named groups: inner (later) group wins the overlap", () => {
-  const re = /(?<outer>a(?<inner>\d+)z)/gd;
+  const re = /(?<outer>a(?<inner>\d+)z)/dg;
   const segs = groupSegments("-a42z-", re, ["outer", "inner"]);
   expect(segs).toEqual([
     { t: "-", hit: false },
@@ -81,5 +83,5 @@ test("nested named groups: inner (later) group wins the overlap", () => {
 });
 
 test("groupSegments on empty text", () => {
-  expect(groupSegments("", /x/gd, [])).toEqual([{ t: "", hit: false }]);
+  expect(groupSegments("", /x/dg, [])).toEqual([{ t: "", hit: false }]);
 });

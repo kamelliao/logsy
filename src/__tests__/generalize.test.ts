@@ -1,5 +1,12 @@
 import { test, expect } from "bun:test";
-import { tokenize, buildPattern, assignNames, mergeTokens, splitToken, type GenToken } from "@/lib/generalize";
+import {
+  tokenize,
+  buildPattern,
+  assignNames,
+  mergeTokens,
+  splitToken,
+  type GenToken,
+} from "@/lib/generalize";
 
 const kinds = (s: string) => tokenize(s).map((t) => `${t.kind}:${t.raw}`);
 
@@ -7,8 +14,16 @@ const kinds = (s: string) => tokenize(s).map((t) => `${t.kind}:${t.raw}`);
 
 test("firmware-ish line tokenizes into typed runs", () => {
   expect(kinds("err=0x1A2B retry 3 at 12:30:01.442")).toEqual([
-    "text:err=", "hex:0x1A2B", "ws: ", "text:retry", "ws: ",
-    "int:3", "ws: ", "text:at", "ws: ", "time:12:30:01.442",
+    "text:err=",
+    "hex:0x1A2B",
+    "ws: ",
+    "text:retry",
+    "ws: ",
+    "int:3",
+    "ws: ",
+    "text:at",
+    "ws: ",
+    "time:12:30:01.442",
   ]);
 });
 
@@ -94,7 +109,9 @@ test("merge folds a range into one exact chip; split restores it", () => {
   expect(merged[0].raw).toBe("boot: jump to app @ ");
   expect(merged[0].state).toBe("exact");
   // exact merge keeps matching the sample literally
-  expect(new RegExp(buildPattern(merged)).test("boot: jump to app @ 0x08004000")).toBe(true);
+  expect(
+    new RegExp(buildPattern(merged)).test("boot: jump to app @ 0x08004000"),
+  ).toBe(true);
   expect(splitToken(merged, 0)).toEqual(toks);
 });
 
@@ -124,7 +141,12 @@ test("default capture names dedupe with numeric suffixes", () => {
 });
 
 test("user names are kept when valid, replaced when invalid", () => {
-  const mk = (name?: string): GenToken => ({ raw: "7", kind: "int", state: "capture", name });
+  const mk = (name?: string): GenToken => ({
+    raw: "7",
+    kind: "int",
+    state: "capture",
+    name,
+  });
   expect(assignNames([mk("addr")])).toEqual(["addr"]);
   expect(assignNames([mk("9bad")])).toEqual(["num"]); // invalid → default
   expect(assignNames([mk("a"), mk("a")])).toEqual(["a", "a2"]); // collision

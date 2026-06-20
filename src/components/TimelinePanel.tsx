@@ -1,24 +1,71 @@
 import { useCallback, useState, useRef, useEffect, CSSProperties } from "react";
 import {
-  Eye, EyeOff, GripVertical, Trash2, Plus, ListPlus, ListX, MoveRight, X,
-  Circle, Square, Triangle, Diamond, ChartGantt, ChevronDown, ChevronUp,
-  AlertTriangle, MoreHorizontal,
+  Eye,
+  EyeOff,
+  GripVertical,
+  Trash2,
+  Plus,
+  ListPlus,
+  ListX,
+  MoveRight,
+  X,
+  Circle,
+  Square,
+  Triangle,
+  Diamond,
+  ChartGantt,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  MoreHorizontal,
 } from "lucide-react";
 import {
-  DndContext, closestCenter, PointerSensor, useSensor, useSensors,
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
   type DragEndEvent,
 } from "@dnd-kit/core";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import {
-  SortableContext, useSortable, arrayMove, verticalListSortingStrategy,
+  SortableContext,
+  useSortable,
+  arrayMove,
+  verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import type { Filter, FieldDef, TimelineSource, TimeUnit, EventMark, EventShape } from "@/types";
+import type {
+  Filter,
+  FieldDef,
+  TimelineSource,
+  TimeUnit,
+  EventMark,
+  EventShape,
+} from "@/types";
 import { trackFieldsOf } from "@/lib/engine";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectLabel,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { PanelEmpty } from "@/components/PanelEmpty";
 import { TimelineCanvas } from "@/components/TimelineCanvas";
 
@@ -26,9 +73,22 @@ const UNITS: TimeUnit[] = ["hms", "s", "ms", "us", "ns"];
 
 // Compact track palette + the four point shapes for the per-row color/shape picker.
 const TRACK_COLORS = [
-  "#dbeafe", "#bfdbfe", "#60a5fa", "#a7f3d0", "#86efac", "#4ade80",
-  "#fde68a", "#fcd34d", "#fdba74", "#fca5a5", "#f9a8d4", "#d8b4fe",
-  "#c7d2fe", "#99f6e4", "#cbd5e1", "#94a3b8",
+  "#dbeafe",
+  "#bfdbfe",
+  "#60a5fa",
+  "#a7f3d0",
+  "#86efac",
+  "#4ade80",
+  "#fde68a",
+  "#fcd34d",
+  "#fdba74",
+  "#fca5a5",
+  "#f9a8d4",
+  "#d8b4fe",
+  "#c7d2fe",
+  "#99f6e4",
+  "#cbd5e1",
+  "#94a3b8",
 ];
 const SHAPES: { id: EventShape; Icon: typeof Circle; label: string }[] = [
   { id: "circle", Icon: Circle, label: "Circle" },
@@ -97,11 +157,26 @@ const COMPACT =
   "[&_[data-slot=select-label]]:px-1.5";
 
 export function TimelinePanel({
-  tracks, filters, timeFields, marks, badEndTracks, lineCount,
-  onSetTrack, onRemoveTrack, onReorderTracks, onAddMatchingLines,
-  onImportTrackLines, onClearTrackLines, trackLineStats,
-  orphanLines, onRemoveLines, onJump, onFocusFilter,
-  sheetH, onSetSheetH, iconSize,
+  tracks,
+  filters,
+  timeFields,
+  marks,
+  badEndTracks,
+  lineCount,
+  onSetTrack,
+  onRemoveTrack,
+  onReorderTracks,
+  onAddMatchingLines,
+  onImportTrackLines,
+  onClearTrackLines,
+  trackLineStats,
+  orphanLines,
+  onRemoveLines,
+  onJump,
+  onFocusFilter,
+  sheetH,
+  onSetSheetH,
+  iconSize,
 }: Props) {
   // The bottom sheet's height is driven locally during a drag (no per-move
   // round-trip through app state); the final value is committed on release.
@@ -111,7 +186,9 @@ export function TimelinePanel({
   hRef.current = h;
   const drag = useRef<{ y: number; h: number } | null>(null);
   // Adopt an externally changed height only while not dragging (e.g. on reload).
-  useEffect(() => { if (!drag.current) setH(sheetH); }, [sheetH]);
+  useEffect(() => {
+    if (!drag.current) setH(sheetH);
+  }, [sheetH]);
 
   // Track the panel's height so a persisted sheet height taller than the current
   // panel (e.g. a short bottom dock) can't push the handle out of reach.
@@ -146,7 +223,12 @@ export function TimelinePanel({
     if (!d) return;
     setH(Math.min(maxH, Math.max(HANDLE_H, d.h + (d.y - e.clientY))));
   };
-  const onHandleUp = () => { if (drag.current) { drag.current = null; onSetSheetH(hRef.current); } };
+  const onHandleUp = () => {
+    if (drag.current) {
+      drag.current = null;
+      onSetSheetH(hRef.current);
+    }
+  };
 
   const lanes = tracks.filter((t) => !t.hidden).map((t) => t.lane);
   // A filter's fields that may back a time field: restricted to the numeric /
@@ -158,7 +240,9 @@ export function TimelinePanel({
     },
     [timeFields],
   );
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+  );
 
   function onDragEnd(e: DragEndEvent) {
     const { active, over } = e;
@@ -173,14 +257,16 @@ export function TimelinePanel({
   // Short centered placeholder on the (always-rendered) empty canvas, plus a
   // longer guidance line below it.
   const placeholder =
-    tracks.length === 0 ? "Add a track, then add log lines — events appear here"
-    : lineCount === 0 ? "Right-click log lines → Add to timeline"
-    : marks.length === 0 ? "Added lines expose no field for these tracks"
-    : undefined;
+    tracks.length === 0
+      ? "Add a track, then add log lines — events appear here"
+      : lineCount === 0
+        ? "Right-click log lines → Add to timeline"
+        : marks.length === 0
+          ? "Added lines expose no field for these tracks"
+          : undefined;
   const hint =
     // No tracks → the Tracks empty state below carries the guidance.
-    tracks.length === 0 ? null
-    : lineCount === 0 ? (
+    tracks.length === 0 ? null : lineCount === 0 ? (
       <>
         Right-click log lines → <b>Add to timeline</b>, or{" "}
         <button
@@ -189,15 +275,21 @@ export function TimelinePanel({
           onClick={onAddMatchingLines}
         >
           add all matching lines
-        </button>
-        {" "}now.
+        </button>{" "}
+        now.
       </>
     ) : marks.length === 0 ? (
-      <>The added lines don't match any track's filter, or expose no track field.</>
+      <>
+        The added lines don't match any track's filter, or expose no track
+        field.
+      </>
     ) : null;
 
   return (
-    <div ref={rootRef} className="relative flex flex-1 min-h-0 flex-col overflow-hidden text-xs text-foreground">
+    <div
+      ref={rootRef}
+      className="relative flex flex-1 min-h-0 flex-col overflow-hidden text-xs text-foreground"
+    >
       {/* canvas fills the whole panel; bottom padding reserves room for the
           always-present (collapsed) sheet handle so no lane hides under it */}
       {/* The canvas stays full height; the sheet overlays its bottom. We pass the
@@ -206,8 +298,12 @@ export function TimelinePanel({
           into view, while the canvas itself never resizes (no jump on sheet drag). */}
       <div className="min-h-0 flex-1 pt-2" style={{ paddingBottom: HANDLE_H }}>
         <TimelineCanvas
-          marks={marks} lanes={lanes} onJump={onJump} placeholder={placeholder}
-          bottomInset={Math.max(0, renderH - HANDLE_H)} iconSize={iconSize}
+          marks={marks}
+          lanes={lanes}
+          onJump={onJump}
+          placeholder={placeholder}
+          bottomInset={Math.max(0, renderH - HANDLE_H)}
+          iconSize={iconSize}
         />
       </div>
 
@@ -222,26 +318,32 @@ export function TimelinePanel({
         >
           <span className="tl-sheet-grip" />
           <span className="tl-sheet-counts">
-            {marks.length} event{marks.length === 1 ? "" : "s"} · {lineCount} line{lineCount === 1 ? "" : "s"}
+            {marks.length} event{marks.length === 1 ? "" : "s"} · {lineCount}{" "}
+            line{lineCount === 1 ? "" : "s"}
           </span>
           {hint && <span className="tl-sheet-counts">{hint}</span>}
           <Button
-            variant="ghost" size="icon-xs" className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
+            variant="ghost"
+            size="icon-xs"
+            className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
             title={collapsed ? "Expand tracks" : "Collapse tracks"}
             onClick={toggleCollapse}
           >
             {collapsed ? <ChevronUp /> : <ChevronDown />}
           </Button>
         </div>
-        
+
         {/* The one thing not visible elsewhere: lines on the timeline that no track
             plots (added, but nothing shows). Bounded to a count + actions. */}
         {/* TODO: should not show this warning when "hide track" */}
+        {/* eslint-disable-next-line no-constant-binary-expression */}
         {false && orphanLines.length > 0 && (
           <p className="tl-sheet-hint flex items-center gap-1.5">
             <AlertTriangle className="size-3 shrink-0 text-amber-500" />
             <span>
-              <b className="font-semibold tabular-nums">{orphanLines.length}</b> added line{orphanLines.length === 1 ? "" : "s"} not plotted by any track.
+              <b className="font-semibold tabular-nums">{orphanLines.length}</b>{" "}
+              added line{orphanLines.length === 1 ? "" : "s"} not plotted by any
+              track.
             </span>
             <button
               type="button"
@@ -267,12 +369,17 @@ export function TimelinePanel({
             <PanelEmpty icon={<ChartGantt size={22} />} title="No tracks yet">
               <ol className="mt-1 space-y-1.5 text-left text-xs text-muted-foreground">
                 <li>
-                  <span className="mr-1 font-semibold text-foreground tabular-nums">1.</span>
-                  In the <b className="text-foreground">Filters</b> tab, right-click a filter →{" "}
+                  <span className="mr-1 font-semibold text-foreground tabular-nums">
+                    1.
+                  </span>
+                  In the <b className="text-foreground">Filters</b> tab,
+                  right-click a filter →{" "}
                   <b className="text-foreground">Add to timeline track</b>.
                 </li>
                 <li>
-                  <span className="mr-1 font-semibold text-foreground tabular-nums">2.</span>
+                  <span className="mr-1 font-semibold text-foreground tabular-nums">
+                    2.
+                  </span>
                   In the log view, right-click the lines you want →{" "}
                   <b className="text-foreground">Add to timeline</b>.
                 </li>
@@ -281,21 +388,37 @@ export function TimelinePanel({
           </div>
         ) : (
           <div className="tl-sheet-body scroll">
-            <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} modifiers={[restrictToVerticalAxis]}>
-              <SortableContext items={tracks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={onDragEnd}
+              modifiers={[restrictToVerticalAxis]}
+            >
+              <SortableContext
+                items={tracks.map((t) => t.id)}
+                strategy={verticalListSortingStrategy}
+              >
                 {tracks.map((tr) => {
                   const st = trackLineStats.get(tr.id);
                   return (
-                  <TrackRow
-                    key={tr.id} tr={tr} filters={filters} fieldsOf={fieldsOf}
-                    onSet={onSetTrack} onRemove={() => onRemoveTrack(tr.id)}
-                    onImport={() => onImportTrackLines(tr)} onClearLines={() => onClearTrackLines(tr)}
-                    onFocusFilter={onFocusFilter}
-                    badEnd={badEndTracks.has(tr.id)}
-                    inTl={st?.inTl ?? 0} matching={st?.matching ?? 0}
-                    canImport={!!st && st.matching > 0 && st.inTl < st.matching}
-                    canClear={!!st && st.inTl > 0}
-                  />
+                    <TrackRow
+                      key={tr.id}
+                      tr={tr}
+                      filters={filters}
+                      fieldsOf={fieldsOf}
+                      onSet={onSetTrack}
+                      onRemove={() => onRemoveTrack(tr.id)}
+                      onImport={() => onImportTrackLines(tr)}
+                      onClearLines={() => onClearTrackLines(tr)}
+                      onFocusFilter={onFocusFilter}
+                      badEnd={badEndTracks.has(tr.id)}
+                      inTl={st?.inTl ?? 0}
+                      matching={st?.matching ?? 0}
+                      canImport={
+                        !!st && st.matching > 0 && st.inTl < st.matching
+                      }
+                      canClear={!!st && st.inTl > 0}
+                    />
                   );
                 })}
               </SortableContext>
@@ -307,19 +430,47 @@ export function TimelinePanel({
   );
 }
 
-function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLines, onFocusFilter, badEnd, inTl, matching, canImport, canClear }: {
-  tr: TimelineSource; filters: Filter[]; fieldsOf: (f: Filter) => FieldDef[];
-  onSet: (tr: TimelineSource) => void; onRemove: () => void;
-  onImport: () => void; onClearLines: () => void;
+function TrackRow({
+  tr,
+  filters,
+  fieldsOf,
+  onSet,
+  onRemove,
+  onImport,
+  onClearLines,
+  onFocusFilter,
+  badEnd,
+  inTl,
+  matching,
+  canImport,
+  canClear,
+}: {
+  tr: TimelineSource;
+  filters: Filter[];
+  fieldsOf: (f: Filter) => FieldDef[];
+  onSet: (tr: TimelineSource) => void;
+  onRemove: () => void;
+  onImport: () => void;
+  onClearLines: () => void;
   onFocusFilter: (filterId: string) => void;
   badEnd: boolean;
-  inTl: number; matching: number; canImport: boolean; canClear: boolean;
+  inTl: number;
+  matching: number;
+  canImport: boolean;
+  canClear: boolean;
 }) {
   // "Add end field" opens an (empty) end picker rather than auto-selecting a
   // field — picking a wrong field can produce an end-before-start span. The span
   // is only committed once the user explicitly chooses the end field.
   const [addingEnd, setAddingEnd] = useState(false);
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: tr.id });
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: tr.id });
   const style: CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition,
@@ -330,7 +481,13 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(tr.lane);
   const inputRef = useRef<HTMLInputElement>(null);
-  useEffect(() => { if (editing) { setDraft(tr.lane); inputRef.current?.focus(); inputRef.current?.select(); } }, [editing, tr.lane]);
+  useEffect(() => {
+    if (editing) {
+      setDraft(tr.lane);
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [editing, tr.lane]);
   const commitRename = () => {
     const v = draft.trim();
     if (v && v !== tr.lane) onSet({ ...tr, lane: v });
@@ -343,12 +500,22 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
   const filter = filterIndex >= 0 ? filters[filterIndex] : undefined;
   const fields = filter ? fieldsOf(filter) : [];
   const otherFields = fields.filter((d) => d.name !== tr.timeField);
-  const filterName = filter ? (filter.description?.trim() || filter.pattern || filter.id) : "missing filter";
+  const filterName = filter
+    ? filter.description?.trim() || filter.pattern || filter.id
+    : "missing filter";
   const serial = filterIndex >= 0 ? `#${filterIndex + 1}` : "#?";
 
   return (
-    <div ref={setNodeRef} style={style} className="@container mb-1 flex flex-wrap items-center gap-1.5 rounded border border-border/60 bg-card/40 px-1.5 py-1">
-      <span className="cursor-grab text-muted-foreground/60 hover:text-muted-foreground" {...attributes} {...listeners}>
+    <div
+      ref={setNodeRef}
+      style={style}
+      className="@container mb-1 flex flex-wrap items-center gap-1.5 rounded border border-border/60 bg-card/40 px-1.5 py-1"
+    >
+      <span
+        className="cursor-grab text-muted-foreground/60 hover:text-muted-foreground"
+        {...attributes}
+        {...listeners}
+      >
         <GripVertical size={12} />
       </span>
       <ColorShapePicker tr={tr} onSet={onSet} />
@@ -360,8 +527,13 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
           onChange={(e) => setDraft(e.target.value)}
           onBlur={commitRename}
           onKeyDown={(e) => {
-            if (e.key === "Enter") { e.preventDefault(); commitRename(); }
-            else if (e.key === "Escape") { e.preventDefault(); setEditing(false); }
+            if (e.key === "Enter") {
+              e.preventDefault();
+              commitRename();
+            } else if (e.key === "Escape") {
+              e.preventDefault();
+              setEditing(false);
+            }
           }}
         />
       ) : (
@@ -383,7 +555,8 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
           onClick={() => onFocusFilter(tr.filterId)}
         >
           <span className="min-w-0 truncate">
-            <span className="font-semibold tabular-nums">{serial}</span> · {filterName}
+            <span className="font-semibold tabular-nums">{serial}</span> ·{" "}
+            {filterName}
           </span>
         </span>
       ) : (
@@ -391,7 +564,8 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
           className="max-w-[150px] min-w-0 truncate px-1 text-[11px] font-normal text-muted-foreground/70"
           title="Filter not found"
         >
-          <span className="font-semibold tabular-nums">{serial}</span> · {filterName}
+          <span className="font-semibold tabular-nums">{serial}</span> ·{" "}
+          {filterName}
         </span>
       )}
 
@@ -402,7 +576,8 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
         className="ml-auto shrink-0 tabular-nums text-[10px] text-muted-foreground"
         title={`${inTl} on the timeline / ${matching} matchable line${matching === 1 ? "" : "s"}`}
       >
-        {inTl}<span className="opacity-50">/{matching}</span>
+        {inTl}
+        <span className="opacity-50">/{matching}</span>
       </span>
 
       {/* Field pill: the start time field and — for a span — the end field, grouped
@@ -411,24 +586,52 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
           one. The unit select stays OUTSIDE the pill so it can't be mistaken for a
           span target. */}
       <div className="inline-flex items-center gap-0.5 rounded-md border border-input bg-background px-0.5">
-        <Select value={tr.timeField} onValueChange={(v) => v != null && onSet({ ...tr, timeField: v })}>
-          <SelectTrigger size="xs" className="w-[68px] border-0 bg-transparent shadow-none hover:bg-muted/60 data-[size=xs]:h-5"><SelectValue placeholder="field…" /></SelectTrigger>
+        <Select
+          value={tr.timeField}
+          onValueChange={(v) => v != null && onSet({ ...tr, timeField: v })}
+        >
+          <SelectTrigger
+            size="xs"
+            className="w-[68px] border-0 bg-transparent shadow-none hover:bg-muted/60 data-[size=xs]:h-5"
+          >
+            <SelectValue placeholder="field…" />
+          </SelectTrigger>
           <SelectContent className={COMPACT}>
             <SelectGroup>
-              <SelectLabel>{tr.endField ? "Start field" : "Time field"}</SelectLabel>
-              {fields.map((d) => <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>)}
+              <SelectLabel>
+                {tr.endField ? "Start field" : "Time field"}
+              </SelectLabel>
+              {fields.map((d) => (
+                <SelectItem key={d.name} value={d.name}>
+                  {d.name}
+                </SelectItem>
+              ))}
             </SelectGroup>
           </SelectContent>
         </Select>
         {tr.endField ? (
           <>
             <MoveRight className="size-3 shrink-0 text-muted-foreground/60" />
-            <Select value={tr.endField ?? ""} onValueChange={(v) => v != null && onSet({ ...tr, kind: "span", endField: v })}>
-              <SelectTrigger size="xs" className="w-[68px] border-0 bg-transparent shadow-none hover:bg-muted/60 data-[size=xs]:h-5"><SelectValue placeholder="end…" /></SelectTrigger>
+            <Select
+              value={tr.endField ?? ""}
+              onValueChange={(v) =>
+                v != null && onSet({ ...tr, kind: "span", endField: v })
+              }
+            >
+              <SelectTrigger
+                size="xs"
+                className="w-[68px] border-0 bg-transparent shadow-none hover:bg-muted/60 data-[size=xs]:h-5"
+              >
+                <SelectValue placeholder="end…" />
+              </SelectTrigger>
               <SelectContent className={COMPACT}>
                 <SelectGroup>
                   <SelectLabel>End field</SelectLabel>
-                  {otherFields.map((d) => <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>)}
+                  {otherFields.map((d) => (
+                    <SelectItem key={d.name} value={d.name}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
                 </SelectGroup>
               </SelectContent>
             </Select>
@@ -447,7 +650,9 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
               size="icon-xs"
               className="size-4 shrink-0 rounded text-muted-foreground hover:text-foreground"
               title="Remove end field (make it a point)"
-              onClick={() => onSet({ ...tr, kind: "point", endField: undefined })}
+              onClick={() =>
+                onSet({ ...tr, kind: "point", endField: undefined })
+              }
             >
               <X className="size-3" />
             </Button>
@@ -461,13 +666,27 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
             <Select
               defaultOpen
               value=""
-              onValueChange={(v) => { if (v) { onSet({ ...tr, kind: "span", endField: v }); setAddingEnd(false); } }}
+              onValueChange={(v) => {
+                if (v) {
+                  onSet({ ...tr, kind: "span", endField: v });
+                  setAddingEnd(false);
+                }
+              }}
             >
-              <SelectTrigger size="xs" className="w-[68px] border-0 bg-transparent shadow-none hover:bg-muted/60 data-[size=xs]:h-5"><SelectValue placeholder="end…" /></SelectTrigger>
+              <SelectTrigger
+                size="xs"
+                className="w-[68px] border-0 bg-transparent shadow-none hover:bg-muted/60 data-[size=xs]:h-5"
+              >
+                <SelectValue placeholder="end…" />
+              </SelectTrigger>
               <SelectContent className={COMPACT}>
                 <SelectGroup>
                   <SelectLabel>End field</SelectLabel>
-                  {otherFields.map((d) => <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>)}
+                  {otherFields.map((d) => (
+                    <SelectItem key={d.name} value={d.name}>
+                      {d.name}
+                    </SelectItem>
+                  ))}
                 </SelectGroup>
               </SelectContent>
             </Select>
@@ -494,12 +713,23 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
           </Button>
         )}
       </div>
-      <Select value={tr.unit} onValueChange={(v) => v != null && onSet({ ...tr, unit: v as TimeUnit })}>
-        <SelectTrigger size="xs" className="w-[58px]"><SelectValue /></SelectTrigger>
+      <Select
+        value={tr.unit}
+        onValueChange={(v) =>
+          v != null && onSet({ ...tr, unit: v as TimeUnit })
+        }
+      >
+        <SelectTrigger size="xs" className="w-[58px]">
+          <SelectValue />
+        </SelectTrigger>
         <SelectContent className={COMPACT}>
           <SelectGroup>
             <SelectLabel>Unit</SelectLabel>
-            {UNITS.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
+            {UNITS.map((u) => (
+              <SelectItem key={u} value={u}>
+                {u}
+              </SelectItem>
+            ))}
           </SelectGroup>
         </SelectContent>
       </Select>
@@ -509,7 +739,9 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
           so single icons never wrap onto a second line. */}
       <div className="hidden items-center gap-0.5 @[340px]:flex">
         <Button
-          variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground hover:text-foreground"
           title="Import this track's matching lines onto the timeline"
           disabled={!canImport}
           onClick={onImport}
@@ -517,7 +749,9 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
           <ListPlus />
         </Button>
         <Button
-          variant="ghost" size="icon-xs" className="text-muted-foreground hover:text-foreground"
+          variant="ghost"
+          size="icon-xs"
+          className="text-muted-foreground hover:text-foreground"
           title="Remove this track's lines from the timeline"
           disabled={!canClear}
           onClick={onClearLines}
@@ -525,15 +759,21 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
           <ListX />
         </Button>
         <Button
-          variant="ghost" size="icon-xs"
+          variant="ghost"
+          size="icon-xs"
           className={`${tr.hidden ? "text-muted-foreground/50" : "text-muted-foreground"}`}
           title={tr.hidden ? "Show track" : "Hide track"}
           onClick={() => onSet({ ...tr, hidden: tr.hidden ? undefined : true })}
         >
           {tr.hidden ? <EyeOff /> : <Eye />}
         </Button>
-        <Button variant="ghost" size="icon-xs" className="size-[24px] text-muted-foreground hover:text-destructive"
-          title="Delete track" onClick={onRemove}>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className="size-[24px] text-muted-foreground hover:text-destructive"
+          title="Delete track"
+          onClick={onRemove}
+        >
           <Trash2 />
         </Button>
       </div>
@@ -541,7 +781,8 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
         <DropdownMenuTrigger
           render={
             <Button
-              variant="ghost" size="icon-xs"
+              variant="ghost"
+              size="icon-xs"
               className="text-muted-foreground hover:text-foreground @[340px]:hidden"
               title="Track actions"
             />
@@ -551,17 +792,33 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
           <DropdownMenuItem disabled={!canImport} onClick={onImport}>
-            <span className="mi-ico"><ListPlus size={15} /></span>Import matching lines
+            <span className="mi-ico">
+              <ListPlus size={15} />
+            </span>
+            Import matching lines
           </DropdownMenuItem>
           <DropdownMenuItem disabled={!canClear} onClick={onClearLines}>
-            <span className="mi-ico"><ListX size={15} /></span>Remove lines from timeline
+            <span className="mi-ico">
+              <ListX size={15} />
+            </span>
+            Remove lines from timeline
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => onSet({ ...tr, hidden: tr.hidden ? undefined : true })}>
-            <span className="mi-ico">{tr.hidden ? <EyeOff size={15} /> : <Eye size={15} />}</span>{tr.hidden ? "Show track" : "Hide track"}
+          <DropdownMenuItem
+            onClick={() =>
+              onSet({ ...tr, hidden: tr.hidden ? undefined : true })
+            }
+          >
+            <span className="mi-ico">
+              {tr.hidden ? <EyeOff size={15} /> : <Eye size={15} />}
+            </span>
+            {tr.hidden ? "Show track" : "Hide track"}
           </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onClick={onRemove}>
-            <span className="mi-ico"><Trash2 size={15} /></span>Delete track
+            <span className="mi-ico">
+              <Trash2 size={15} />
+            </span>
+            Delete track
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
@@ -570,7 +827,13 @@ function TrackRow({ tr, filters, fieldsOf, onSet, onRemove, onImport, onClearLin
 }
 
 /** The swatch left of the track title: opens a popover to pick color + shape. */
-function ColorShapePicker({ tr, onSet }: { tr: TimelineSource; onSet: (tr: TimelineSource) => void }) {
+function ColorShapePicker({
+  tr,
+  onSet,
+}: {
+  tr: TimelineSource;
+  onSet: (tr: TimelineSource) => void;
+}) {
   const color = tr.color || "#cdd3da";
   const shape = tr.shape ?? "circle";
   const Active = SHAPES.find((s) => s.id === shape)?.Icon ?? Circle;

@@ -1,11 +1,29 @@
 import { test, expect } from "bun:test";
-import { compile, deriveFields, coerceValue, compileAll, computeView } from "@/lib/engine";
+import {
+  compile,
+  deriveFields,
+  coerceValue,
+  compileAll,
+  computeView,
+} from "@/lib/engine";
 import type { Filter, FieldDef } from "@/types";
 
-function filter(id: string, pattern: string, over: Partial<Filter> = {}): Filter {
+function filter(
+  id: string,
+  pattern: string,
+  over: Partial<Filter> = {},
+): Filter {
   return {
-    id, pattern, description: "", enabled: true, caseSensitive: false,
-    regex: true, exclude: false, textColor: "#000", bgColor: "#fff", groupId: null,
+    id,
+    pattern,
+    description: "",
+    enabled: true,
+    caseSensitive: false,
+    regex: true,
+    exclude: false,
+    textColor: "#000",
+    bgColor: "#fff",
+    groupId: null,
     ...over,
   };
 }
@@ -22,7 +40,10 @@ test("deriveFields lists named groups once and guesses time for ts/time names", 
 });
 
 test("deriveFields de-duplicates repeated group names", () => {
-  expect(deriveFields("(?<a>x)(?<a>y)(?<b>z)").map((f) => f.name)).toEqual(["a", "b"]);
+  expect(deriveFields("(?<a>x)(?<a>y)(?<b>z)").map((f) => f.name)).toEqual([
+    "a",
+    "b",
+  ]);
 });
 
 // --- compile ------------------------------------------------------------------
@@ -66,11 +87,18 @@ const structural = (id: string, pattern: string, over: Partial<Filter> = {}) =>
 
 test("a regex filter with named groups extracts coerced fields on matching lines", () => {
   const lines = ["12.0 E boom", "plain line"];
-  const view = computeView(lines, compileAll([
-    structural("p1", "(?<ts>\\d+\\.\\d+)\\s+(?<lvl>[EWID])\\s+(?<msg>.*)", {
-      fields: F({ name: "ts", type: "float" }, { name: "lvl", type: "string" }, { name: "msg", type: "string" }),
-    }),
-  ]));
+  const view = computeView(
+    lines,
+    compileAll([
+      structural("p1", "(?<ts>\\d+\\.\\d+)\\s+(?<lvl>[EWID])\\s+(?<msg>.*)", {
+        fields: F(
+          { name: "ts", type: "float" },
+          { name: "lvl", type: "string" },
+          { name: "msg", type: "string" },
+        ),
+      }),
+    ]),
+  );
   expect(view.fieldsFor(1)?.ts).toEqual({ raw: "12.0", value: 12 });
   expect(view.fieldsFor(1)?.lvl.value).toBe("E");
   expect(view.rows[0].fieldsFromId).toBe("p1");
@@ -86,24 +114,40 @@ test("a plain (non-named-group) filter highlights but extracts nothing", () => {
 
 test("field extraction is first-structural-filter-wins, independent of the colour winner", () => {
   const lines = ["12.0 E i2c boom"];
-  const view = computeView(lines, compileAll([
-    filter("color", "boom", { regex: false }), // colour winner, no fields
-    structural("specific", "^(?<ts>\\d+\\.\\d+)\\s+(?<lvl>E)\\s+(?<tag>\\w+)", {
-      fields: F({ name: "ts", type: "float" }, { name: "lvl", type: "string" }, { name: "tag", type: "string" }),
-    }),
-    structural("generic", "(?<all>.*)", { fields: F({ name: "all", type: "string" }) }),
-  ]));
-  expect(view.rows[0].winner?.f.id).toBe("color");      // highlight from the plain filter
-  expect(view.rows[0].fieldsFromId).toBe("specific");   // fields from the first structural match
+  const view = computeView(
+    lines,
+    compileAll([
+      filter("color", "boom", { regex: false }), // colour winner, no fields
+      structural(
+        "specific",
+        "^(?<ts>\\d+\\.\\d+)\\s+(?<lvl>E)\\s+(?<tag>\\w+)",
+        {
+          fields: F(
+            { name: "ts", type: "float" },
+            { name: "lvl", type: "string" },
+            { name: "tag", type: "string" },
+          ),
+        },
+      ),
+      structural("generic", "(?<all>.*)", {
+        fields: F({ name: "all", type: "string" }),
+      }),
+    ]),
+  );
+  expect(view.rows[0].winner?.f.id).toBe("color"); // highlight from the plain filter
+  expect(view.rows[0].fieldsFromId).toBe("specific"); // fields from the first structural match
   expect(view.fieldsFor(1)?.tag.value).toBe("i2c");
 });
 
 test("counts cover every line and include disabled filters", () => {
   const lines = ["error a", "ok b", "error c"];
-  const view = computeView(lines, compileAll([
-    filter("on", "error", { regex: false }),
-    filter("off", "error", { regex: false, enabled: false }),
-  ]));
+  const view = computeView(
+    lines,
+    compileAll([
+      filter("on", "error", { regex: false }),
+      filter("off", "error", { regex: false, enabled: false }),
+    ]),
+  );
   // Both filters match the same two lines; the disabled one still gets a count.
   expect(view.counts.on).toBe(2);
   expect(view.counts.off).toBe(2);
@@ -112,9 +156,14 @@ test("counts cover every line and include disabled filters", () => {
 });
 
 test("excluded lines are removed and never used as field providers", () => {
-  const view = computeView(["drop 12.0 E boom"], compileAll([
-    filter("x", "drop", { regex: false, exclude: true }),
-    structural("p", "(?<ts>\\d+\\.\\d+)", { fields: F({ name: "ts", type: "float" }) }),
-  ]));
+  const view = computeView(
+    ["drop 12.0 E boom"],
+    compileAll([
+      filter("x", "drop", { regex: false, exclude: true }),
+      structural("p", "(?<ts>\\d+\\.\\d+)", {
+        fields: F({ name: "ts", type: "float" }),
+      }),
+    ]),
+  );
   expect(view.rows[0].excluded).toBe(true);
 });

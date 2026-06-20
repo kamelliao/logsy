@@ -5,23 +5,28 @@
 
 export type RegexTokenType =
   | "literal"
-  | "escape"      // \d  \w  \.  \\  …
-  | "class"       // [ …contents… ]  brackets + body
-  | "group"       // ( ) (?: (?= (?! (?<= (?<! (?< >
-  | "groupname"   // the NAME in (?<name>…)
-  | "anchor"      // ^  $
-  | "quant"       // *  +  ?  {n,m}  (plus a trailing lazy ?)
-  | "alt"         // |
-  | "meta";       // .
+  | "escape" // \d  \w  \.  \\  …
+  | "class" // [ …contents… ]  brackets + body
+  | "group" // ( ) (?: (?= (?! (?<= (?<! (?< >
+  | "groupname" // the NAME in (?<name>…)
+  | "anchor" // ^  $
+  | "quant" // *  +  ?  {n,m}  (plus a trailing lazy ?)
+  | "alt" // |
+  | "meta"; // .
 
-export interface RegexToken { t: RegexTokenType; s: string }
+export interface RegexToken {
+  t: RegexTokenType;
+  s: string;
+}
 
 const QUANT_BRACE = /^\{\d+(?:,\d*)?\}/;
 
 /** Break a regex pattern into typed tokens for colourised rendering. */
 export function tokenizeRegex(src: string): RegexToken[] {
   const toks: RegexToken[] = [];
-  const push = (t: RegexTokenType, s: string) => { if (s) toks.push({ t, s }); };
+  const push = (t: RegexTokenType, s: string) => {
+    if (s) toks.push({ t, s });
+  };
   const n = src.length;
   let i = 0;
   let inClass = false;
@@ -38,8 +43,10 @@ export function tokenizeRegex(src: string): RegexToken[] {
     }
 
     if (inClass) {
-      if (c === "]") { push("class", c); inClass = false; }
-      else push("class", c);
+      if (c === "]") {
+        push("class", c);
+        inClass = false;
+      } else push("class", c);
       i++;
       continue;
     }
@@ -48,7 +55,10 @@ export function tokenizeRegex(src: string): RegexToken[] {
       case "[": {
         let s = "[";
         i++;
-        if (src[i] === "^") { s += "^"; i++; }
+        if (src[i] === "^") {
+          s += "^";
+          i++;
+        }
         push("class", s);
         inClass = true;
         continue;
@@ -57,19 +67,31 @@ export function tokenizeRegex(src: string): RegexToken[] {
         let j = i + 1;
         let s = "(";
         if (src[j] === "?") {
-          s += "?"; j++;
+          s += "?";
+          j++;
           const k = src[j];
-          if (k === ":" || k === "=" || k === "!") { s += k; j++; }
-          else if (k === "<") {
-            s += "<"; j++;
-            if (src[j] === "=" || src[j] === "!") { s += src[j]; j++; }
-            else {
+          if (k === ":" || k === "=" || k === "!") {
+            s += k;
+            j++;
+          } else if (k === "<") {
+            s += "<";
+            j++;
+            if (src[j] === "=" || src[j] === "!") {
+              s += src[j];
+              j++;
+            } else {
               // Named capture group: (?<name>…)
               push("group", s);
               let name = "";
-              while (j < n && src[j] !== ">") { name += src[j]; j++; }
+              while (j < n && src[j] !== ">") {
+                name += src[j];
+                j++;
+              }
               push("groupname", name);
-              if (src[j] === ">") { push("group", ">"); j++; }
+              if (src[j] === ">") {
+                push("group", ">");
+                j++;
+              }
               i = j;
               continue;
             }
@@ -79,31 +101,55 @@ export function tokenizeRegex(src: string): RegexToken[] {
         i = j;
         continue;
       }
-      case ")": push("group", c); i++; continue;
-      case "|": push("alt", c); i++; continue;
+      case ")":
+        push("group", c);
+        i++;
+        continue;
+      case "|":
+        push("alt", c);
+        i++;
+        continue;
       case "^":
-      case "$": push("anchor", c); i++; continue;
-      case ".": push("meta", c); i++; continue;
+      case "$":
+        push("anchor", c);
+        i++;
+        continue;
+      case ".":
+        push("meta", c);
+        i++;
+        continue;
       case "*":
       case "+":
       case "?": {
-        let s = c; i++;
-        if (src[i] === "?" || src[i] === "+") { s += src[i]; i++; } // lazy / possessive
+        let s = c;
+        i++;
+        if (src[i] === "?" || src[i] === "+") {
+          s += src[i];
+          i++;
+        } // lazy / possessive
         push("quant", s);
         continue;
       }
       case "{": {
         const m = QUANT_BRACE.exec(src.slice(i));
         if (m) {
-          let s = m[0]; i += m[0].length;
-          if (src[i] === "?") { s += "?"; i++; }
+          let s = m[0];
+          i += m[0].length;
+          if (src[i] === "?") {
+            s += "?";
+            i++;
+          }
           push("quant", s);
           continue;
         }
-        push("literal", c); i++; continue;
+        push("literal", c);
+        i++;
+        continue;
       }
       default:
-        push("literal", c); i++; continue;
+        push("literal", c);
+        i++;
+        continue;
     }
   }
 

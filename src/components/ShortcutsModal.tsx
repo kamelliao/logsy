@@ -51,7 +51,10 @@ const SECTIONS: Section[] = [
     rows: [
       { keys: ["Ctrl", "Shift", "N"], label: "New filter" },
       { keys: ["Ctrl", "Shift", "L"], label: "Focus filter search" },
-      { keys: ["Ctrl", "Click"], label: "Select filters (enter selection mode)" },
+      {
+        keys: ["Ctrl", "Click"],
+        label: "Select filters (enter selection mode)",
+      },
       { keys: ["Shift", "Click"], label: "Extend the selection by range" },
       { keys: ["Esc"], label: "Leave selection mode" },
     ],
@@ -95,7 +98,12 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
   return (
     <div className="about-overlay" onMouseDown={onClose}>
       <div className="shortcuts-box" onMouseDown={(e) => e.stopPropagation()}>
-        <Button variant="ghost" size="icon" className="about-x" onClick={onClose}>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="about-x"
+          onClick={onClose}
+        >
           <X size={18} />
         </Button>
         <div className="shortcuts-title">Keyboard shortcuts</div>
@@ -107,7 +115,9 @@ export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
                 <div key={i} className="shortcuts-row">
                   <span className="shortcuts-label">{row.label}</span>
                   <span className="shortcuts-keys">
-                    {row.keys.map((k, j) => <Kbd key={j}>{k}</Kbd>)}
+                    {row.keys.map((k, j) => (
+                      <Kbd key={j}>{k}</Kbd>
+                    ))}
                   </span>
                 </div>
               ))}
