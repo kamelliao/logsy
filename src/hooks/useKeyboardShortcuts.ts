@@ -1,0 +1,245 @@
+import { useEffect, useRef } from "react";
+import { tinykeys } from "tinykeys";
+import type { EditingState } from "@/hooks/useFilterActions";
+
+interface OpenMenu {
+  name: string;
+  x: number;
+  y: number;
+}
+
+interface Deps {
+  // Menubar keyboard navigation.
+  menus: readonly string[];
+  openMenu: OpenMenu | null;
+  setOpenMenu: (m: OpenMenu | null) => void;
+
+  // tinykeys-driven actions ($mod = Ctrl/Cmd).
+  openFiles: () => void | Promise<void>;
+  fileViewMode: "all" | "matches";
+  setViewMode: (m: "all" | "matches") => void;
+  setFindOpen: (v: boolean) => void;
+  zoomIn: () => void;
+  zoomOut: () => void;
+  zoomReset: () => void;
+
+  // Escape stack (innermost overlay first).
+  findOpen: boolean;
+  editing: EditingState | null;
+  openScreen: boolean;
+  filesCount: number;
+  setOpenScreen: (v: boolean) => void;
+  shortcutsOpen: boolean;
+  setShortcutsOpen: (v: boolean) => void;
+  aboutOpen: boolean;
+  setAboutOpen: (v: boolean) => void;
+
+  // Ctrl+Z/Y/B/G/R and Ctrl+Shift+N/L (plain keydown listener).
+  undo: () => void;
+  redo: () => void;
+  toggleFilterCollapsed: () => void;
+  openGoto: () => void;
+  openNewFilter: () => void;
+  focusFilterSearch: () => void;
+}
+
+/**
+ * All app-global keyboard handling: the tinykeys map, the menubar arrow-key
+ * navigation, the plain Ctrl+Z/Y/B/G/R + Ctrl+Shift+N/L listener, and the
+ * native context-menu suppression. Split out of App so the component body stays
+ * about state and rendering rather than event wiring.
+ */
+export function useKeyboardShortcuts(deps: Deps): void {
+  const {
+    menus,
+    openMenu,
+    setOpenMenu,
+    openFiles,
+    fileViewMode,
+    setViewMode,
+    setFindOpen,
+    zoomIn,
+    zoomOut,
+    zoomReset,
+    findOpen,
+    editing,
+    openScreen,
+    filesCount,
+    setOpenScreen,
+    shortcutsOpen,
+    setShortcutsOpen,
+    aboutOpen,
+    setAboutOpen,
+  } = deps;
+
+  // While a menu is open, Left/Right move to the adjacent top-level menu and
+  // Esc closes it (matches native menubar keyboard navigation).
+  useEffect(() => {
+    if (!openMenu) return;
+    const close = () => setOpenMenu(null);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setOpenMenu(null);
+        return;
+      }
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      const i = menus.indexOf(openMenu.name);
+      if (i < 0) return;
+      const ni =
+        (i + (e.key === "ArrowRight" ? 1 : -1) + menus.length) % menus.length;
+      const el = document.querySelector(`[data-menu="${menus[ni]}"]`);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        setOpenMenu({ name: menus[ni], x: r.left, y: r.bottom });
+      }
+    };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", close);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [openMenu, menus, setOpenMenu]);
+
+  useEffect(() => {
+    return tinykeys(window, {
+      "$mod+o": (e) => {
+        e.preventDefault();
+        void openFiles();
+      },
+      "$mod+f": (e) => {
+        e.preventDefault();
+        setFindOpen(true);
+      },
+      "$mod+F": (e) => {
+        e.preventDefault();
+        setFindOpen(true);
+      },
+      "$mod+h": (e) => {
+        e.preventDefault();
+        setViewMode(fileViewMode === "all" ? "matches" : "all");
+      },
+      "$mod+H": (e) => {
+        e.preventDefault();
+        setViewMode(fileViewMode === "all" ? "matches" : "all");
+      },
+      "$mod+=": (e) => {
+        e.preventDefault();
+        zoomIn();
+      },
+      "$mod+shift+=": (e) => {
+        e.preventDefault();
+        zoomIn();
+      },
+      "$mod+-": (e) => {
+        e.preventDefault();
+        zoomOut();
+      },
+      "$mod+0": (e) => {
+        e.preventDefault();
+        zoomReset();
+      },
+      Escape: () => {
+        if (shortcutsOpen) setShortcutsOpen(false);
+        else if (aboutOpen) setAboutOpen(false);
+        else if (findOpen && !editing) setFindOpen(false);
+        // Leave the open screen (back to the active file) if there's one to show.
+        else if (openScreen && filesCount > 0) setOpenScreen(false);
+      },
+    });
+  }, [
+    findOpen,
+    editing,
+    openScreen,
+    filesCount,
+    fileViewMode,
+    zoomIn,
+    zoomOut,
+    zoomReset,
+    shortcutsOpen,
+    aboutOpen,
+    openFiles,
+    setFindOpen,
+    setViewMode,
+    setOpenScreen,
+    setShortcutsOpen,
+    setAboutOpen,
+  ]);
+
+  // Latest handlers for the once-mounted listeners below, so they never call a
+  // stale closure (openNewFilter reads `set`, toggleFilterCollapsed reads the
+  // current layout, etc.).
+  const ref = useRef({
+    undo: deps.undo,
+    redo: deps.redo,
+    toggleFilterCollapsed: deps.toggleFilterCollapsed,
+    openGoto: deps.openGoto,
+    openNewFilter: deps.openNewFilter,
+    focusFilterSearch: deps.focusFilterSearch,
+  });
+  ref.current = {
+    undo: deps.undo,
+    redo: deps.redo,
+    toggleFilterCollapsed: deps.toggleFilterCollapsed,
+    openGoto: deps.openGoto,
+    openNewFilter: deps.openNewFilter,
+    focusFilterSearch: deps.focusFilterSearch,
+  };
+
+  // Ctrl+B (toggle filter panel), Ctrl+G (go to line) and Ctrl+R (reload) on a
+  // plain keydown listener — robust regardless of focus or keymap quirks. Kept
+  // off tinykeys so there's exactly one handler (no double-toggle).
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      const k = e.key.toLowerCase();
+      // Undo / redo — but let the browser's native undo handle editable fields
+      // (filter editor, inline rename) so typing isn't clobbered.
+      if (k === "z" || k === "y") {
+        const t = e.target as HTMLElement | null;
+        if (t && t.closest('input, textarea, [contenteditable="true"]')) return;
+        e.preventDefault();
+        if (k === "y" || e.shiftKey) ref.current.redo();
+        else ref.current.undo();
+        return;
+      }
+      if (e.shiftKey) {
+        // Ctrl+Shift+N: new filter · Ctrl+Shift+L: focus the filter search box.
+        if (k === "n") {
+          e.preventDefault();
+          ref.current.openNewFilter();
+        } else if (k === "l") {
+          e.preventDefault();
+          ref.current.focusFilterSearch();
+        }
+        return;
+      }
+      if (k === "b") {
+        e.preventDefault();
+        ref.current.toggleFilterCollapsed();
+      } else if (k === "g") {
+        e.preventDefault();
+        ref.current.openGoto();
+      } else if (k === "r") {
+        e.preventDefault();
+        location.reload();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // Suppress the native browser context menu app-wide, except inside editable
+  // fields (so right-click copy/paste still works there). The app's own
+  // right-click menus are React handlers and are unaffected.
+  useEffect(() => {
+    function onCtx(e: MouseEvent) {
+      const t = e.target as HTMLElement | null;
+      if (t && t.closest('input, textarea, [contenteditable="true"]')) return;
+      e.preventDefault();
+    }
+    window.addEventListener("contextmenu", onCtx);
+    return () => window.removeEventListener("contextmenu", onCtx);
+  }, []);
+}
