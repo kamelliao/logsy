@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef, useReducer, useCallback } from "react";
+import { useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import type { AppState } from "@/types";
-import { STATE_KEY, SAFE_MODE, loadState } from "@/state/persistence";
-
-const HISTORY_CAP = 50;
+import { SAFE_MODE } from "@/state/persistence";
+import { useStore } from "@/store";
 
 export interface UndoableState {
   state: AppState;
@@ -29,12 +28,34 @@ export interface UndoableState {
 }
 
 /**
- * Owns the whole AppState: the React state, localStorage persistence, and the
- * undo/redo history engine. Everything that mutates the workspace funnels
- * through `patchState` / `setState` returned here.
+ * Thin adapter exposing the Zustand store under the legacy useUndoableState shape,
+ * so App.tsx and the action hooks keep working unchanged while the migration to
+ * slice-by-slice store subscriptions proceeds. The actual state, persistence, and
+ * undo/redo engine now live in `@/store`.
  */
 export function useUndoableState(): UndoableState {
-  const [state, setState] = useState<AppState>(loadState);
+  const state = useStore((s) => s.doc);
+  const canUndo = useStore((s) => s.canUndo);
+  const canRedo = useStore((s) => s.canRedo);
+  const patchState = useStore((s) => s.patchState);
+  const setState = useStore((s) => s.setDoc);
+  const undo = useStore((s) => s.undo);
+  const redo = useStore((s) => s.redo);
+  const pushRecent = useStore((s) => s.pushRecent);
+  const clearRecent = useStore((s) => s.clearRecent);
+
+  // A stable ref whose `.current` always reads the freshest document from the
+  // store — replaces the old `stateRef.current = state` so async callbacks (file
+  // loading, undo) never close over a stale snapshot.
+  const stateRef = useMemo(
+    () =>
+      ({
+        get current() {
+          return useStore.getState().doc;
+        },
+      }) as React.RefObject<AppState>,
+    [],
+  );
 
   // Tell the user when this session is running in safe mode (started with --safe):
   // their saved workspace is untouched on disk and will return on a normal launch.
@@ -46,117 +67,6 @@ export function useUndoableState(): UndoableState {
       );
     }
   }, []);
-
-  // Persist on a short debounce — serializing the whole state synchronously on
-  // every edit added a fixed cost to each action on large filter sets. The
-  // unload flush (below) covers the trailing edits.
-  useEffect(() => {
-    if (SAFE_MODE) return; // never write over the preserved state in safe mode
-    const t = setTimeout(() => {
-      try {
-        localStorage.setItem(STATE_KEY, JSON.stringify(state));
-      } catch {
-        /* ignore */
-      }
-    }, 300);
-    return () => clearTimeout(t);
-  }, [state]);
-
-  // Latest state, readable from async callbacks (file loading) and from
-  // patchState / undo without stale closures.
-  const stateRef = useRef(state);
-  stateRef.current = state;
-
-  // Flush the debounced persist when the window goes away (reload / close), so
-  // edits made within the debounce window aren't lost.
-  useEffect(() => {
-    const flush = () => {
-      if (SAFE_MODE) return; // see SAFE_MODE: don't persist this session
-      try {
-        localStorage.setItem(STATE_KEY, JSON.stringify(stateRef.current));
-      } catch {
-        /* ignore */
-      }
-    };
-    window.addEventListener("beforeunload", flush);
-    window.addEventListener("pagehide", flush);
-    return () => {
-      window.removeEventListener("beforeunload", flush);
-      window.removeEventListener("pagehide", flush);
-    };
-  }, []);
-
-  // ---------- undo / redo ----------
-  // Whole-AppState snapshots. Snapshots are immutable (patchState clones before
-  // mutating), so stacking the prior reference is cheap. Memory-only (not
-  // persisted); `bumpHistory` re-renders so menu enablement stays in sync.
-  const past = useRef<AppState[]>([]);
-  const future = useRef<AppState[]>([]);
-  const coalesceKey = useRef<string | null>(null);
-  const [, bumpHistory] = useReducer((x: number) => x + 1, 0);
-
-  const patchState = useCallback(
-    (
-      fn: (s: AppState) => void,
-      opts?: { undoable?: boolean; coalesce?: string },
-    ) => {
-      if (opts?.undoable !== false) {
-        const base = stateRef.current;
-        const top = past.current[past.current.length - 1];
-        const fold = !!opts?.coalesce && coalesceKey.current === opts.coalesce;
-        // Skip when folding, or when an earlier edit this tick already pushed the
-        // same base (so a single user action is one undo step).
-        if (!fold && top !== base) {
-          past.current.push(base);
-          if (past.current.length > HISTORY_CAP) past.current.shift();
-        }
-        future.current = [];
-        coalesceKey.current = opts?.coalesce ?? null;
-        bumpHistory();
-      }
-      setState((s) => {
-        const n = structuredClone(s);
-        fn(n);
-        return n;
-      });
-    },
-    [],
-  );
-
-  const undo = useCallback(() => {
-    if (past.current.length === 0) return;
-    const prev = past.current.pop()!;
-    future.current.push(stateRef.current);
-    coalesceKey.current = null;
-    bumpHistory();
-    setState(prev);
-  }, []);
-  const redo = useCallback(() => {
-    if (future.current.length === 0) return;
-    const next = future.current.pop()!;
-    past.current.push(stateRef.current);
-    coalesceKey.current = null;
-    bumpHistory();
-    setState(next);
-  }, []);
-  const canUndo = past.current.length > 0;
-  const canRedo = future.current.length > 0;
-
-  const pushRecent = useCallback(
-    (key: "recentFiles" | "recentFilterFiles", path: string) => {
-      setState((s) => {
-        const cur = (s[key] ?? []).filter((p) => p !== path);
-        cur.unshift(path);
-        return { ...s, [key]: cur.slice(0, 10) };
-      });
-    },
-    [],
-  );
-  const clearRecent = useCallback(
-    (key: "recentFiles" | "recentFilterFiles") =>
-      setState((s) => ({ ...s, [key]: [] })),
-    [],
-  );
 
   return {
     state,

@@ -149,7 +149,7 @@ export function App() {
   const view = useMemo(() => computeView(lines, compiled), [lines, compiled]);
 
   // ---------- dock layout ----------
-  const dock = useDockLayout({ state, setState, stateRef });
+  const dock = useDockLayout();
   // The three the App body itself drives; the rest of the bundle is consumed by
   // <Workspace> (the dock chrome) via the `dock` prop.
   const { startPanelTransition, selectPanelTab, toggleFilterCollapsed } = dock;
@@ -192,10 +192,7 @@ export function App() {
     patchState,
     selectPanelTab,
   });
-  const { markers, setMarker, removeMarker, clearMarkers } = useBookmarks({
-    file,
-    patchState,
-  });
+  const { markers, setMarker, removeMarker } = useBookmarks();
 
   // Soloing a filter ("View this filter only"): the log shows just that filter's
   // matches (forced enabled, never excluding), while the filter panel keeps its
@@ -355,10 +352,7 @@ export function App() {
   const toggleLineNumbers = () =>
     setState((s) => ({ ...s, showLineNumbers: !(s.showLineNumbers ?? true) }));
 
-  const { fontSize, zoomIn, zoomOut, zoomReset } = useFontZoom({
-    state,
-    setState,
-  });
+  const { fontSize, zoomIn, zoomOut, zoomReset } = useFontZoom();
 
   const fontWeight = state.fontWeight ?? 400;
   const showLineNumbers = state.showLineNumbers ?? true;
@@ -536,15 +530,8 @@ export function App() {
     );
     const bookmarksBody = (
       <BookmarksPanel
-        markers={markers}
         lineText={(n) => view.rows[n - 1]?.text ?? ""}
         onJump={jumpToMarker}
-        onSetNote={(n, note) => {
-          const m = markers.find((x) => x.n === n);
-          setMarker(n, m?.icon ?? "bookmark", note);
-        }}
-        onRemove={removeMarker}
-        onClearAll={clearMarkers}
       />
     );
 

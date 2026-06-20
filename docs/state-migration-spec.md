@@ -1,0 +1,267 @@
+# State migration spec — hand-rolled store → Zustand
+
+Status: proposal · Target: `src/App.tsx` + `src/hooks/*` + `src/state/*`
+
+## Why
+
+`useUndoableState` is a hand-rolled single store (one `useState<AppState>` +
+`structuredClone` writes + undo stack + localStorage persistence). The action
+hooks (`useFilterActions`, `useTimeline`, …) are not state — they are **action
+modules** wrapped around the central `patchState`. The pattern is sound; it costs
+us two things only:
+
+1. **Prop threading.** `App.tsx` destructures ~100 functions/values out of hooks
+   and re-passes them into components. `useMenuDefs` takes ~30 params; `FilterPanel`
+   ~25 callbacks. Every new action touches 3 sites.
+2. **Re-render / clone granularity.** One `useState<AppState>` → any edit re-renders
+   the App subtree; `patchState` clones the whole state per edit. No selector
+   subscription.
+
+Goal of this migration: **selector subscriptions** (kills 1 and 2) while keeping
+the ergonomics we already like (`patchState(s => { s.x = y })`, 50-step undo,
+localStorage persist, safe mode).
+
+## Target stack
+
+```
+zustand@5
+zustand/middleware        → persist
+zustand/middleware/immer  → immer-style set (replaces structuredClone)
+src/store/undo.ts         → our own temporal middleware (see "tricky mapping #1")
+```
+
+**No zundo.** It's been effectively unmaintained for a while, and we already own a
+working undo engine (`useUndoableState.ts:89-143`: past/future ref-stacks, coalesce,
+undoable opt-out, 50-cap). Porting _our_ logic into a small zustand middleware is
+lower-risk than bending it to fit a third-party temporal API — and it's one fewer
+dependency. The undo engine is ~50 lines; we keep its exact semantics.
+
+No Context, no Redux. Rationale and rejected options: see the survey that preceded
+this spec (Context/useReducer doesn't fix re-render; Jotai's undo+persist story is
+DIY and atomic is wrong for a document-with-undo; RTK is heavier for a single-window
+Tauri app).
+
+## What moves vs. what stays
+
+**Decision rule: persisted/undoable state → store. Transient UI signal → local
+`useState`. Runtime-derived (depends on `lines`) → memo/selector, never persisted.**
+
+### → Store (the persisted `AppState` document)
+
+Everything currently in `AppState` (`src/types.ts:102`). Split into slices by concern:
+
+| Slice           | Owns (AppState keys)                                                                                                                                                                   | Replaces hook                                       |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `documentSlice` | `files`, `activeFileId`, `recentFiles`, `recentFilterFiles`                                                                                                                            | `useUndoableState` recents + parts of `useLogFiles` |
+| `filterSlice`   | mutations over `files[].sets` (filters/groups/sets/layout/bulk) + filter-file IO                                                                                                       | `useFilterActions` (579 LOC, 1:1)                   |
+| `layoutSlice`   | `panelPos`, `splitRatio`, `sidebarCollapsed`, `filterCollapsed`, `activePanelTab`, `comparePos`, `comparePopped`, `timelinePopped`, `poppedActiveTab`, `poppedCollapsed`, `panelSizes` | `useDockLayout`                                     |
+| `prefsSlice`    | `fontSize`, `fontWeight`, `showLineNumbers`, `mapColorMode`, `mapWidth`, `customPalette`, `timelineSheetH`, `timelineIconSize`                                                         | `useFontZoom` (value only)                          |
+| `compareSlice`  | `compareLinesByFile`                                                                                                                                                                   | `useCompare` (persist part)                         |
+| `timelineSlice` | `timelineLinesByFile`                                                                                                                                                                  | `useTimeline` (persist part)                        |
+| `bookmarkSlice` | `files[].markers`                                                                                                                                                                      | `useBookmarks` (1:1)                                |
+
+Slices compose via the standard Zustand slice pattern (`StateCreator` per slice,
+merged in `createStore`). Each slice's actions take `set`/`get` instead of
+`patchState`/`stateRef` — **the action bodies are copy-paste**; only the wrapper
+changes (see "patchState → set mapping" below).
+
+### Stays a hook (runtime, not store state)
+
+- **`useLogFiles`** — keep. The in-memory `linesStore` (line bodies, deliberately
+  NOT persisted — `useLogFiles.ts:18`), `busy`, `dragOver`, `useTransition`, the
+  `requestAnimationFrame` paint yield, and the Tauri drag-drop listeners are runtime
+  concerns. After migration it _reads/writes_ the store (add/remove file, push
+  recent) but still owns IO + transient IO state.
+- **`useFontZoom`** — keep the ctrl+wheel listener; the `fontSize` _value_ lives in
+  `prefsSlice`. Hook becomes a thin listener calling `zoomIn/out/reset` store actions.
+- **`useKeyboardShortcuts`** — keep. Pure side-effect; switch from props to reading
+  store actions via the latest-ref it already uses.
+- **`useMenuDefs`** — keep as a hook but **stop taking 30 params**: read state +
+  actions from the store directly. This is the single biggest prop-threading win.
+
+### Stays local `useState` (transient UI — do NOT centralize)
+
+`editing`, `filterFlash`, `openMenu`, `aboutOpen`, `shortcutsOpen`, `gotoOpen`,
+`gotoSignal`, `markerJump`, `selectAllNonce`, `focusSearchNonce`, `paletteModalOpen`,
+`appVersion`. These never persist and never undo. Putting them in a global store is
+the classic over-centralization mistake.
+
+**Borderline: `soloFilterId`.** Read in 4+ places (LogView, FilterPanel,
+useFilterActions, derived `soloView`) but ephemeral (not persisted, not undoable).
+Recommendation: put it in a **non-persisted `uiSlice`** so consumers subscribe
+directly instead of threading `setSoloFilterId`. Keep `partialize` excluding it.
+
+### Stays a memo (runtime-derived, depends on `lines`)
+
+`compiled`, `view`, `soloView`, `soloFilter`, `compareRows`, timeline `tracks`/
+`marks`/`orphanLines`. These derive from the in-memory `lines` + store slices; they
+can't live in the persisted store. Keep in a small `useDerivedView` hook (or
+`zustand` computed via selector + `useMemo` at call site). `useCompare`/`useTimeline`
+shrink to: persisted lines (store) + derived rows (memo over `view`).
+
+## The three tricky mappings
+
+### 1. `patchState` semantics → our own `undo` middleware
+
+We keep the current engine almost verbatim, repackaged as a zustand middleware so
+every slice's `set` flows through it. `patchState(fn, opts)` does three jobs today
+(a) immer mutate, (b) push undo unless `undoable:false`, (c) coalesce via
+`opts.coalesce` — all three carry over unchanged.
+
+**Shape:** `undo(immer(slices))` exposes, alongside the normal store, a `patchState`
+on the store API that mirrors today's signature so slice actions read identically:
+
+```ts
+// src/store/undo.ts — sketch, ~50 lines, ported from useUndoableState.ts:89-143
+type PatchOpts = { undoable?: boolean; coalesce?: string };
+interface UndoApi {
+  patchState: (fn: (s: AppState) => void, opts?: PatchOpts) => void;
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean; // kept in store state so selectors re-render menus
+}
+```
+
+- **(a) mutate** → delegate to the `immer` middleware's `set(fn)`. Drop the manual
+  `structuredClone` in `patchState` (line 118).
+- **(b) undoable opt-out** → keep the exact `past`/`future` arrays. On a tracked
+  patch, push the prior state before applying; `{undoable:false}` skips the push
+  (view mode, find bar, file icon, bookmarks, recents — same call sites as today).
+  Snapshots stay cheap: immer gives a new frozen reference, so stacking the prior
+  ref costs nothing (same property the current code relies on at line 92-94).
+- **(c) coalesce** → keep the `coalesceKey` ref and the "same base already pushed
+  this tick" dedupe verbatim (`useUndoableState.ts:104-114`). Nothing about zustand
+  changes this logic.
+- **limit 50** → keep `HISTORY_CAP` + `shift()`.
+- **`canUndo`/`canRedo`** → today they're derived from ref lengths + `bumpHistory`
+  re-render. In the middleware, store them as real store fields updated on every
+  push/undo/redo, so menu enablement re-renders via a normal selector (no manual
+  bump needed).
+
+**Undo scope = whole workspace**, exactly as now. There is no separate "temporal
+partialize" to get wrong — the engine snapshots the same `AppState` the current
+code does. The only audit needed: confirm the set of actions calling
+`{undoable:false}` is unchanged after the port (they are 1:1 copy from the hooks).
+
+> Note: `past`/`future` hold whole-`AppState` snapshots and are **memory-only** (not
+> persisted) — same as today. They live in the middleware closure, not in the
+> persisted partition.
+
+### 2. Persistence + SAFE_MODE → persist middleware
+
+- `persist` with `name: STATE_KEY`, `version`, and a `partialize` that mirrors what
+  we serialize today (whole `AppState`; line bodies already aren't in state).
+- **Debounce:** current code debounces writes 300ms (`useUndoableState.ts:55`) +
+  flushes on `beforeunload`/`pagehide`. persist writes synchronously by default —
+  wrap `createJSONStorage` in a **debounced storage adapter** to preserve the
+  large-state write optimization. Keep the `pagehide` flush as a manual
+  `store.persist.rehydrate`-independent flush, or set debounce trailing + a flush on
+  `pagehide`.
+- **SAFE_MODE** (`--safe`): today = skip load + skip save (`persistence.ts`). Map to
+  `skipHydration: true` when `SAFE_MODE` and a storage whose `setItem` is a no-op in
+  safe mode. Keep the existing safe-mode toast.
+- `loadState`/`normalizeState` migration logic → persist `migrate`/`merge`.
+
+### 3. Derived state that hooks currently return
+
+`useCompare`/`useTimeline` return BOTH persisted lines and derived rows. Split:
+persisted half → slice; derived half (`compareRows`, `tracks`, `marks`) → `useMemo`
+over `view` + the slice's lines, colocated where consumed.
+
+## File layout after migration
+
+```
+src/store/
+  index.ts           # createStore: persist( undo( immer( ...slices ) ) ), exports useStore + selectors
+  undo.ts            # our temporal middleware (ported from useUndoableState undo engine)
+  slices/
+    document.ts      # files, activeFileId, recents
+    filter.ts        # ex-useFilterActions
+    layout.ts        # ex-useDockLayout
+    prefs.ts         # font/map/palette/timeline prefs
+    compare.ts       # compareLinesByFile + actions
+    timeline.ts      # timelineLinesByFile + actions
+    bookmark.ts      # markers
+    ui.ts            # non-persisted: soloFilterId (+ maybe openMenu later)
+  persist.ts         # debounced storage adapter + SAFE_MODE handling + migrate
+  selectors.ts       # withFile/activeFile/withSet (moved from state/, now store-aware)
+src/hooks/           # SHRINK: useLogFiles (IO only), useFontZoom (listener),
+                     #         useKeyboardShortcuts, useMenuDefs, useDerivedView
+```
+
+## Phased rollout (each phase ships green; tests pass between phases)
+
+1. **[DONE] Scaffold store, no behavior change.** `src/store/index.ts`: zustand +
+   `persist` + immer `produce` + the ported undo engine (past/future module refs,
+   coalesce, `{undoable:false}`, 50-cap). `useUndoableState` is now a thin adapter
+   over the store, so `App.tsx` is untouched. On-disk format kept byte-compatible
+   (bare `AppState` JSON under `STATE_KEY`) via a custom debounced raw-storage
+   adapter; `--safe` honored via `skipHydration` + no-op writes. `setAutoFreeze(false)`
+   to match the old non-frozen snapshot profile.
+2. **[DONE] Move one leaf slice end-to-end: `bookmarkSlice`.** Store gained
+   `setMarker`/`removeMarker`/`clearMarkers`; `useBookmarks()` is now arg-less and
+   store-backed (still feeds `LogView` + marker counts from App); `BookmarksPanel`
+   subscribes via `selectActiveMarkers` + action selectors and lost 4 props (now
+   takes only `lineText` + `onJump`). PoC for the prop-elimination + selector
+   pattern. Verified: tsc clean on changed files, 79/79 tests pass, vite build green.
+3. **[DONE] `prefsSlice` + `layoutSlice`.** Font zoom → store (`zoomIn`/`zoomOut`/
+   `zoomReset`); `useFontZoom()` is now arg-less (keeps only the Ctrl+wheel listener).
+   `useDockLayout()` is arg-less too — it reads `doc`/`setDoc` from the store
+   internally and uses `useStore.getState().doc` in place of the old `stateRef`;
+   the dock write logic and the `useTransition`/refs/resize effects are unchanged
+   (they must stay in the hook, not the store). **Both hooks lost their `interface
+Deps`** — the injection of `patchState`/`setState`/`stateRef` is gone, which was
+   the real smell behind `Deps`, not the named-param-object itself.
+   _Tail (deferred):_ the inline prefs setters still in App/Sidebar
+   (`onSetPanelPos`, `onSetMapColorMode`, `onSetMapWidth`, `onSetFontWeight`,
+   `toggleSidebar`, `toggleLineNumbers`, `applyPalette`, timeline icon/sheet) already
+   route through the store via the adapter's `setDoc`; promoting them to named slice
+   actions is cosmetic and can ride along with later phases.
+
+   > **On `interface Deps` generally:** a named param-object type is fine; the
+   > anti-pattern is _what_ gets injected. Every hook whose `Deps` carries
+   > `patchState`/`setState`/`stateRef` loses that `Deps` entirely as it migrates
+   > (bookmarks, font, dock done). `useFilterActions`/`useLogFiles`/`useCompare`/
+   > `useTimeline` keep theirs only until their phase lands — do **not** rename
+   > `Deps` cosmetically in the meantime; the fix is removal, not renaming.
+
+4. **`filterSlice` (the big one).** Port `useFilterActions` 1:1; `FilterPanel`
+   subscribes; drop ~25 props from App. Heaviest undo/coalesce surface — validate
+   undo grouping (typing, drag) carefully here.
+5. **`compareSlice` + `timelineSlice`** with the derived-rows split.
+6. **`documentSlice` + retire `useUndoableState`.** `useLogFiles` keeps IO only.
+   Delete the adapter from phase 1.
+7. **`useMenuDefs` de-prop.** Read store directly; this collapses the 30-arg signature.
+8. **Cleanup:** delete `state/persistence.ts` undo/persist code now in the store;
+   update the architecture memo.
+
+## Risks / watch-items
+
+- **Undo scope drift.** Easiest place to break behavior. The engine is ported 1:1,
+  so the guard is simply: confirm every `{undoable:false}` call site survives the
+  port unchanged (grep both before and after). The whole-`AppState` snapshot scope
+  is identical to today, so there's no new partition to mis-specify.
+- **Coalesce fidelity.** Typing/drag currently fold into one undo step. Verify after
+  phase 3–4 that a burst still = one step.
+- **Persist payload compatibility.** Keep `STATE_KEY` and the same JSON shape so
+  existing users' saved workspaces survive the upgrade (add a `migrate` if shape
+  shifts). Test a load of a pre-migration localStorage blob.
+- **React 19.** zustand v5 supports React 19. (Orthogonal option: React Compiler
+  would auto-memo and ease re-render pressure, but does NOT fix prop threading —
+  selectors still needed.)
+- **Custom middleware correctness.** The one thing we now own that a library would
+  have given us: the undo middleware. Mitigated by porting it verbatim and landing
+  it behind the phase-1 adapter (old `useUndoableState` API delegates to it) so undo
+  is exercised by the existing app before any slice moves.
+- **Over-pull selectors.** Subscribing to `s => s.files` re-renders on any file
+  edit. Use `useShallow` for multi-field selects and narrow selectors per component.
+
+## Definition of done
+
+- `App.tsx` no longer threads action props into `FilterPanel`/`BookmarksPanel`/
+  `TimelinePanel`/`CompareTable`/menus; they subscribe to the store.
+- `useUndoableState`, `state/persistence.ts` undo/persist code deleted.
+- Undo (50-step, coalesced), localStorage persist, and `--safe` mode behave
+  identically (manual parity check + existing tests green).
+- Components re-render only on their own slice (spot-check with React DevTools).
