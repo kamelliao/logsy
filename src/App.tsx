@@ -237,27 +237,13 @@ export function App() {
   const showCompare = compareRows.length > 0;
 
   // ---------- filter actions ----------
+  // Filter actions FilterPanel now reads from the store itself; App keeps only the
+  // ones it still wires elsewhere (menus, keyboard, EditModal, LogView, focusFilter).
   const {
-    switchSet,
-    addSet,
-    renameSet,
-    deleteSet,
-    reorderSets,
-    duplicateSet,
-    addGroup,
-    renameGroup,
     toggleGroup,
-    deleteGroup,
-    applyLayout,
-    setGroupEnabled,
-    updateFilter,
     deleteFilter,
-    deleteFilters,
-    setFiltersEnabled,
-    duplicateFilter,
     openNewFilter,
     openFilterFromPattern,
-    openEditFilter,
     saveFilter,
     saveFiltersAs,
     saveFilters,
@@ -267,26 +253,10 @@ export function App() {
     bulk,
   } = useStore(
     useShallow((s) => ({
-      switchSet: s.switchSet,
-      addSet: s.addSet,
-      renameSet: s.renameSet,
-      deleteSet: s.deleteSet,
-      reorderSets: s.reorderSets,
-      duplicateSet: s.duplicateSet,
-      addGroup: s.addGroup,
-      renameGroup: s.renameGroup,
       toggleGroup: s.toggleGroup,
-      deleteGroup: s.deleteGroup,
-      applyLayout: s.applyLayout,
-      setGroupEnabled: s.setGroupEnabled,
-      updateFilter: s.updateFilter,
       deleteFilter: s.deleteFilter,
-      deleteFilters: s.deleteFilters,
-      setFiltersEnabled: s.setFiltersEnabled,
-      duplicateFilter: s.duplicateFilter,
       openNewFilter: s.openNewFilter,
       openFilterFromPattern: s.openFilterFromPattern,
-      openEditFilter: s.openEditFilter,
       saveFilter: s.saveFilter,
       saveFiltersAs: s.saveFiltersAs,
       saveFilters: s.saveFilters,
@@ -509,28 +479,7 @@ export function App() {
         file={file!}
         set={set!}
         counts={view.counts}
-        onSwitchSet={switchSet}
-        onAddSet={addSet}
-        onRenameSet={renameSet}
-        onDeleteSet={deleteSet}
-        onDuplicateSet={duplicateSet}
-        onReorderSet={reorderSets}
-        onAddGroup={addGroup}
-        onRenameGroup={renameGroup}
-        onToggleGroup={toggleGroup}
-        onDeleteGroup={deleteGroup}
-        onSetGroupEnabled={setGroupEnabled}
-        onUpdateFilter={updateFilter}
-        onAddFilter={openNewFilter}
-        onDeleteFilter={deleteFilter}
-        onDeleteFilters={deleteFilters}
-        onSetFiltersEnabled={setFiltersEnabled}
-        onDuplicateFilter={duplicateFilter}
-        onViewFilterOnly={setSoloFilterId}
-        onEditFilter={openEditFilter}
         onToggleTimelineTrack={toggleTimelineTrack}
-        onApplyLayout={applyLayout}
-        onBulk={bulk}
         flashFilterId={filterFlash?.id ?? null}
         flashNonce={filterFlash?.nonce ?? 0}
         onFlashConsumed={() => setFilterFlash(null)}

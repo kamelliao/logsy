@@ -248,9 +248,16 @@ Deps`** — the injection of `patchState`/`setState`/`stateRef` is gone, which w
    (unchanged call sites). Verified: 8 pre-existing tsc errors unchanged, eslint
    clean, 79/79 tests, vite build green.
 
-   **4b (remaining):** `FilterPanel` + `EditModal` self-subscribe to the store for
-   these actions, dropping ~20 props from App's wiring. Mechanical (same local
-   names, body untouched) but a large-component edit, so split out from the logic move.
+   **[DONE] 4b — FilterPanel de-prop.** `FilterPanel` now reads the 21 filter
+   actions from the store via `useStore` selectors (same local `on*` names → the
+   2000-line body is untouched); its props interface dropped from ~30 to 9
+   (file/set/counts/style + `onToggleTimelineTrack` [phase 5] + flash×3 +
+   focusSearchNonce). App's `<FilterPanel>` call lost 21 props, and App's filter-action
+   `useShallow` block shrank from 27 to the 11 it still wires into menus / keyboard /
+   EditModal / LogView / focusFilter. Verified: tsc unchanged (8 pre-existing), eslint
+   clean, 79/79 tests, vite build green.
+   _Optional tail:_ `EditModal` could likewise self-subscribe `saveFilter`/
+   `deleteFilter`/`setEditing` (minor; App keeps those 2 actions for it for now).
 
 5. **`compareSlice` + `timelineSlice`** with the derived-rows split.
 6. **`documentSlice` + retire `useUndoableState`.** `useLogFiles` keeps IO only.

@@ -69,6 +69,7 @@ import type {
   FieldDef,
 } from "@/types";
 import { trackFieldsOf } from "@/lib/engine";
+import { useStore } from "@/store";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -1255,33 +1256,9 @@ interface FilterPanelProps {
   set: FilterSet;
   counts: Record<string, number>;
   style?: CSSProperties;
-  onSwitchSet: (id: string) => void;
-  onAddSet: () => void;
-  onRenameSet: (id: string, name: string) => void;
-  onDeleteSet: (id: string) => void;
-  onDuplicateSet: (id: string) => void;
-  onReorderSet: (from: number, to: number) => void;
-  onAddGroup: () => void;
-  onRenameGroup: (id: string, name: string) => void;
-  onToggleGroup: (id: string) => void;
-  onDeleteGroup: (id: string) => void;
-  onSetGroupEnabled: (id: string, enabled: boolean) => void;
-  onUpdateFilter: (id: string, patch: Partial<Filter>) => void;
-  onAddFilter: (groupId?: string | null) => void;
-  onDeleteFilter: (id: string) => void;
-  /** Batch delete the given filter ids in one undoable step; resolves true if it
-   *  went through (false if the user cancelled the confirm). */
-  onDeleteFilters: (ids: string[]) => Promise<boolean>;
-  /** Batch enable/disable the given filter ids in one undoable step. */
-  onSetFiltersEnabled: (ids: string[], enabled: boolean) => void;
-  onDuplicateFilter: (id: string) => void;
-  onViewFilterOnly: (id: string) => void;
-  onEditFilter: (id: string) => void;
-  /** Toggle a timeline track bound to (filterId, timeField): add if absent, remove if present. */
+  /** Toggle a timeline track bound to (filterId, timeField): add if absent, remove
+   *  if present. Still a prop — owned by useTimeline, not yet in the store. */
   onToggleTimelineTrack: (filterId: string, timeField: string) => void;
-  /** Commit a whole-group drag arrangement in one undoable step. */
-  onApplyLayout: (model: FilterLayout) => void;
-  onBulk: (action: string) => void;
   /** Filter row to scroll into view + flash (e.g. from a Compare group header). */
   flashFilterId?: string | null;
   /** Bumps to re-trigger the flash even when the same id is re-requested. */
@@ -1298,33 +1275,36 @@ export function FilterPanel({
   set,
   counts,
   style,
-  onSwitchSet,
-  onAddSet,
-  onRenameSet,
-  onDeleteSet,
-  onDuplicateSet,
-  onReorderSet,
-  onAddGroup,
-  onRenameGroup,
-  onToggleGroup,
-  onDeleteGroup,
-  onSetGroupEnabled,
-  onUpdateFilter,
-  onAddFilter,
-  onDeleteFilter,
-  onDeleteFilters,
-  onSetFiltersEnabled,
-  onDuplicateFilter,
-  onViewFilterOnly,
-  onEditFilter,
   onToggleTimelineTrack,
-  onApplyLayout,
-  onBulk,
   flashFilterId,
   flashNonce,
   onFlashConsumed,
   focusSearchNonce,
 }: FilterPanelProps) {
+  // Filter actions come straight from the store (stable refs); the panel no longer
+  // receives them as props. Names are kept identical to the old props so the body
+  // below is unchanged.
+  const onSwitchSet = useStore((s) => s.switchSet);
+  const onAddSet = useStore((s) => s.addSet);
+  const onRenameSet = useStore((s) => s.renameSet);
+  const onDeleteSet = useStore((s) => s.deleteSet);
+  const onDuplicateSet = useStore((s) => s.duplicateSet);
+  const onReorderSet = useStore((s) => s.reorderSets);
+  const onAddGroup = useStore((s) => s.addGroup);
+  const onRenameGroup = useStore((s) => s.renameGroup);
+  const onToggleGroup = useStore((s) => s.toggleGroup);
+  const onDeleteGroup = useStore((s) => s.deleteGroup);
+  const onSetGroupEnabled = useStore((s) => s.setGroupEnabled);
+  const onUpdateFilter = useStore((s) => s.updateFilter);
+  const onAddFilter = useStore((s) => s.openNewFilter);
+  const onDeleteFilter = useStore((s) => s.deleteFilter);
+  const onDeleteFilters = useStore((s) => s.deleteFilters);
+  const onSetFiltersEnabled = useStore((s) => s.setFiltersEnabled);
+  const onDuplicateFilter = useStore((s) => s.duplicateFilter);
+  const onViewFilterOnly = useStore((s) => s.setSoloFilterId);
+  const onEditFilter = useStore((s) => s.openEditFilter);
+  const onApplyLayout = useStore((s) => s.applyLayout);
+  const onBulk = useStore((s) => s.bulk);
   const [search, setSearch] = useState("");
   const searchInputRef = useRef<HTMLInputElement>(null);
 
