@@ -10,15 +10,19 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { AppState, LogFile, FilterSet } from "@/types";
+import type { LogFile, FilterSet } from "@/types";
 import { uid } from "@/lib/defaults";
 import { baseName } from "@/lib/path";
-import type { ConfirmOptions } from "@/components/ConfirmDialog";
+import { useStore } from "@/store";
 
 // In-memory log contents, keyed by file id. Log bodies are *not* persisted to
 // localStorage (they can be huge) — on restart we reload them from `file.path`.
 const linesStore: Record<string, string[]> = {};
 const EMPTY_LINES: string[] = [];
+
+// The live document, read without a render dependency — the old `stateRef.current`.
+// Module-level so it's a stable reference (safe to use inside useCallback bodies).
+const getDoc = () => useStore.getState().doc;
 
 function splitLines(text: string): string[] {
   const arr = text.split(/\r\n|\n|\r/);
@@ -35,14 +39,6 @@ function nextPaint(): Promise<void> {
 }
 
 interface Deps {
-  patchState: (
-    fn: (s: AppState) => void,
-    opts?: { undoable?: boolean; coalesce?: string },
-  ) => void;
-  setState: React.Dispatch<React.SetStateAction<AppState>>;
-  stateRef: React.RefObject<AppState>;
-  pushRecent: (key: "recentFiles" | "recentFilterFiles", path: string) => void;
-  appConfirm: (opts: ConfirmOptions) => Promise<boolean>;
   /** The active log file resolved at render time (drives the reload-on-restart effect). */
   file: LogFile | null;
 }
@@ -68,17 +64,13 @@ export interface LogFilesApi {
 /**
  * Owns log-file IO: reading files from disk (open dialog, OS drag-and-drop,
  * reload-on-restart), the in-memory line cache, and the loading/drag overlays.
- * Mutations funnel through the passed `patchState` / `setState` so file actions
- * sit on the same state + undo model as the rest of the app.
+ * Document mutations and the confirm dialog come from the store; only the active
+ * `file` (a render-time derivation) is passed in.
  */
-export function useLogFiles({
-  patchState,
-  setState,
-  stateRef,
-  pushRecent,
-  appConfirm,
-  file,
-}: Deps): LogFilesApi {
+export function useLogFiles({ file }: Deps): LogFilesApi {
+  const patchState = useStore((s) => s.patchState);
+  const setState = useStore((s) => s.setDoc);
+  const pushRecent = useStore((s) => s.pushRecent);
   // Bumped whenever a file's lines land in `linesStore`, to re-derive `lines`.
   const [linesVersion, setLinesVersion] = useState(0);
   // When set, a log file is being read from disk — drives the loading overlay.
@@ -92,10 +84,6 @@ export function useLogFiles({
   const [openScreen, setOpenScreen] = useState(false);
   const openScreenRef = useRef(false);
   openScreenRef.current = openScreen;
-  // Latest appConfirm, for the once-mounted drag-drop listener (which can't close
-  // over a fresh handler each render).
-  const appConfirmRef = useRef(appConfirm);
-  appConfirmRef.current = appConfirm;
 
   const lines = useMemo(
     () => (file ? (linesStore[file.id] ?? EMPTY_LINES) : EMPTY_LINES),
@@ -111,8 +99,8 @@ export function useLogFiles({
 
   // Closing a log discards its workspace (filters, sets) — confirm first.
   const deleteFile = async (fid: string) => {
-    const f = stateRef.current.files.find((x) => x.id === fid);
-    const ok = await appConfirm({
+    const f = getDoc().files.find((x) => x.id === fid);
+    const ok = await useStore.getState().confirm({
       title: "Close log?",
       message: `Close "${f?.name ?? "this log"}"? Its filters in this workspace will be discarded.`,
       okLabel: "Close",
@@ -142,7 +130,7 @@ export function useLogFiles({
       // inherits the same starting point.
       const inherited = (() => {
         if (!inheritFilters) return null;
-        const cur = stateRef.current;
+        const cur = getDoc();
         const cf =
           cur.files.find((f) => f.id === cur.activeFileId) ??
           cur.files[0] ??
@@ -220,7 +208,7 @@ export function useLogFiles({
       setLinesVersion((v) => v + 1);
       if (lastErr) toast.error("Could not open file: " + lastErr);
     },
-    [patchState, pushRecent, stateRef],
+    [patchState, pushRecent],
   );
 
   const openFiles = useCallback(async () => {
@@ -235,7 +223,7 @@ export function useLogFiles({
   // log loads into the current workspace instead of spawning a new file entry.
   const replaceActiveFile = useCallback(
     async (path: string) => {
-      const cur = stateRef.current;
+      const cur = getDoc();
       const active =
         cur.files.find((f) => f.id === cur.activeFileId) ??
         cur.files[0] ??
@@ -289,7 +277,7 @@ export function useLogFiles({
       setLinesVersion((v) => v + 1);
       setBusy(null);
     },
-    [loadPaths, patchState, pushRecent, setState, stateRef],
+    [loadPaths, patchState, pushRecent, setState],
   );
 
   // On restart the persisted file list has paths but no cached lines; reload the
@@ -363,8 +351,8 @@ export function useLogFiles({
               // A log is already open: confirm, then load into the current
               // workspace (replace the active file in place, keeping its filters)
               // rather than spawning a new file entry.
-              if (stateRef.current.files.length > 0) {
-                const ok = await appConfirmRef.current({
+              if (getDoc().files.length > 0) {
+                const ok = await useStore.getState().confirm({
                   title: "Replace current log?",
                   message: `A log is already open. Replace it with the dropped file${paths.length > 1 ? "s" : ""}?`,
                   okLabel: "Replace",
@@ -398,7 +386,6 @@ export function useLogFiles({
       disposed = true;
       unlisten?.();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return {
