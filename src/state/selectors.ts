@@ -17,3 +17,14 @@ export function activeFile(s: AppState): LogFile | null {
 export function withSet(s: AppState, fid: string, gid: string): FilterSet {
   return withFile(s, fid).sets.find((g) => g.id === gid)!;
 }
+
+/**
+ * The active filter set of the active file (mirrors the render-time `set`
+ * derivation) — for store actions that must resolve set/file from a fresh
+ * snapshot instead of closing over render-time values.
+ */
+export function activeSet(s: AppState): FilterSet | null {
+  const f = activeFile(s);
+  if (!f) return null;
+  return f.sets.find((g) => g.id === f.activeSetId) ?? f.sets[0] ?? null;
+}

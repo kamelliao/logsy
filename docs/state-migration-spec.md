@@ -226,9 +226,32 @@ Deps`** — the injection of `patchState`/`setState`/`stateRef` is gone, which w
    > `useTimeline` keep theirs only until their phase lands — do **not** rename
    > `Deps` cosmetically in the meantime; the fix is removal, not renaming.
 
-4. **`filterSlice` (the big one).** Port `useFilterActions` 1:1; `FilterPanel`
-   subscribes; drop ~25 props from App. Heaviest undo/coalesce surface — validate
-   undo grouping (typing, drag) carefully here.
+4. **[DONE — logic; FilterPanel de-prop deferred to 4b] `filterSlice` (the big one).**
+   `useFilterActions` (579 LOC) ported 1:1 into `src/store/filterSlice.ts`
+   (`createFilterActions(set, get)`, spread into the store) and **deleted**. file/set
+   are resolved from the live document (`activeFile`/`activeSet` selectors) instead
+   of render-time props. The mixed `interface Deps` is gone; its contents split by
+   kind:
+   - document/recents (`patchState`/`pushRecent`) → store internals.
+   - **UI state** `editing` + `soloFilterId` → a non-persisted **ui slice** in the
+     store (`setEditing`/`setSoloFilterId`); App now reads them via selectors, its
+     render logic otherwise unchanged.
+   - **React/UI primitives** that can't be store state — the confirm dialog
+     (`appConfirm`) and the panel `useTransition` — are **bound into the store once**
+     via `setRuntime({ confirm, runTransition })` in an App effect, with safe
+     fallbacks (`window.confirm` / run-sync) until bound. This is the deliberate
+     line: injecting the _document_ was the smell; injecting genuine UI collaborators
+     is normal, and we localize it to one binding point.
+
+   App sources the 27 filter actions from the store via a `useShallow` block and
+   still threads them to `FilterPanel`/`EditModal`/`useMenuDefs`/`useKeyboardShortcuts`
+   (unchanged call sites). Verified: 8 pre-existing tsc errors unchanged, eslint
+   clean, 79/79 tests, vite build green.
+
+   **4b (remaining):** `FilterPanel` + `EditModal` self-subscribe to the store for
+   these actions, dropping ~20 props from App's wiring. Mechanical (same local
+   names, body untouched) but a large-component edit, so split out from the logic move.
+
 5. **`compareSlice` + `timelineSlice`** with the derived-rows split.
 6. **`documentSlice` + retire `useUndoableState`.** `useLogFiles` keeps IO only.
    Delete the adapter from phase 1.
