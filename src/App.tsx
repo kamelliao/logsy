@@ -7,7 +7,7 @@ import {
   CSSProperties,
   ReactNode,
 } from "react";
-import { FolderOpen, Minus, Square, Upload, X } from "lucide-react";
+import { FolderOpen, Upload } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -34,6 +34,7 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Workspace } from "@/components/Workspace";
+import { Titlebar } from "@/components/Titlebar";
 import { useUndoableState } from "@/hooks/useUndoableState";
 import { useFontZoom } from "@/hooks/useFontZoom";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -628,59 +629,7 @@ export function App() {
         }
       >
         {/* titlebar */}
-        <div className="titlebar" data-tauri-drag-region>
-          <div className="brand">Logsy</div>
-          <div className="menubar">
-            {MENUS.map((m) => (
-              <div
-                key={m}
-                data-menu={m}
-                className={"menu" + (openMenu?.name === m ? " active" : "")}
-                onMouseDown={(e) => e.stopPropagation()}
-                onClick={(e) => {
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setOpenMenu(
-                    openMenu?.name === m
-                      ? null
-                      : { name: m, x: rect.left, y: rect.bottom },
-                  );
-                }}
-                // Once any menu is open, hovering a sibling switches to it
-                // (standard menubar behaviour — no extra click needed).
-                onMouseEnter={(e) => {
-                  if (!openMenu || openMenu.name === m) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  setOpenMenu({ name: m, x: rect.left, y: rect.bottom });
-                }}
-              >
-                {m}
-              </div>
-            ))}
-          </div>
-          <div
-            className="win-controls"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div
-              className="wc"
-              onClick={() => invoke("window_controls", { action: "minimize" })}
-            >
-              <Minus size={15} />
-            </div>
-            <div
-              className="wc"
-              onClick={() => invoke("window_controls", { action: "maximize" })}
-            >
-              <Square size={13} />
-            </div>
-            <div
-              className="wc close"
-              onClick={() => invoke("window_controls", { action: "close" })}
-            >
-              <X size={15} />
-            </div>
-          </div>
-        </div>
+        <Titlebar menus={MENUS} openMenu={openMenu} setOpenMenu={setOpenMenu} />
 
         {/* body */}
         <div className="body">
