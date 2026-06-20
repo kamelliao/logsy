@@ -53,18 +53,11 @@ const MENUS = ["File", "Edit", "View", "Filters", "Help"] as const;
 const DOCS_URL = "https://github.com/kamelliao/logsy#readme";
 
 export function App() {
-  // Workspace state + undo/redo come straight from the store now.
+  // Workspace state comes straight from the store now. Undo/redo + their enabled
+  // flags are read where they're used (menus, keyboard) directly from the store.
   const state = useStore((s) => s.doc);
-  const canUndo = useStore((s) => s.canUndo);
-  const canRedo = useStore((s) => s.canRedo);
-  const { setState, patchState, undo, redo, clearRecent } = useStore(
-    useShallow((s) => ({
-      setState: s.setDoc,
-      patchState: s.patchState,
-      undo: s.undo,
-      redo: s.redo,
-      clearRecent: s.clearRecent,
-    })),
+  const { setState, patchState } = useStore(
+    useShallow((s) => ({ setState: s.setDoc, patchState: s.patchState })),
   );
 
   // Safe mode (launched with --safe): the saved workspace is untouched on disk and
@@ -233,35 +226,19 @@ export function App() {
   const showCompare = compareRows.length > 0;
 
   // ---------- filter actions ----------
-  // Filter actions FilterPanel now reads from the store itself; App keeps only the
-  // ones it still wires elsewhere (menus, keyboard, EditModal, LogView, focusFilter).
-  const {
-    toggleGroup,
-    deleteFilter,
-    openNewFilter,
-    openFilterFromPattern,
-    saveFilter,
-    saveFiltersAs,
-    saveFilters,
-    loadFilterFromPath,
-    importFilters,
-    appendFilters,
-    bulk,
-  } = useStore(
-    useShallow((s) => ({
-      toggleGroup: s.toggleGroup,
-      deleteFilter: s.deleteFilter,
-      openNewFilter: s.openNewFilter,
-      openFilterFromPattern: s.openFilterFromPattern,
-      saveFilter: s.saveFilter,
-      saveFiltersAs: s.saveFiltersAs,
-      saveFilters: s.saveFilters,
-      loadFilterFromPath: s.loadFilterFromPath,
-      importFilters: s.importFilters,
-      appendFilters: s.appendFilters,
-      bulk: s.bulk,
-    })),
-  );
+  // Filter actions are read from the store where used (FilterPanel, menus, keyboard
+  // self-subscribe). App keeps only the few it still wires into its own render:
+  // focusFilter (toggleGroup), EditModal (deleteFilter/saveFilter), LogView
+  // (openFilterFromPattern).
+  const { toggleGroup, deleteFilter, openFilterFromPattern, saveFilter } =
+    useStore(
+      useShallow((s) => ({
+        toggleGroup: s.toggleGroup,
+        deleteFilter: s.deleteFilter,
+        openFilterFromPattern: s.openFilterFromPattern,
+        saveFilter: s.saveFilter,
+      })),
+    );
 
   // ---------- palette ----------
   const effectivePalette: PaletteEntry[] =
@@ -349,7 +326,9 @@ export function App() {
   const toggleLineNumbers = () =>
     setState((s) => ({ ...s, showLineNumbers: !(s.showLineNumbers ?? true) }));
 
-  const { fontSize, zoomIn, zoomOut, zoomReset } = useFontZoom();
+  // useFontZoom still runs for its Ctrl+wheel listener; the zoom actions themselves
+  // are read from the store by the menus/keyboard that use them.
+  const { fontSize } = useFontZoom();
 
   const fontWeight = state.fontWeight ?? 400;
   const showLineNumbers = state.showLineNumbers ?? true;
@@ -373,11 +352,7 @@ export function App() {
     fileViewMode,
     setViewMode,
     setFindOpen,
-    zoomIn,
-    zoomOut,
-    zoomReset,
     findOpen,
-    editing,
     openScreen,
     filesCount: state.files.length,
     setOpenScreen,
@@ -385,44 +360,20 @@ export function App() {
     setShortcutsOpen,
     aboutOpen,
     setAboutOpen,
-    undo,
-    redo,
     toggleFilterCollapsed,
     openGoto,
-    openNewFilter,
     focusFilterSearch,
   });
 
   const menuDefs = useMenuDefs({
-    state,
-    file,
-    set,
-    fileViewMode,
-    showLineNumbers,
-    fontSize,
-    canUndo,
-    canRedo,
     openFiles,
-    importFilters,
-    appendFilters,
-    saveFilters,
-    saveFiltersAs,
     loadPaths,
-    loadFilterFromPath,
-    clearRecent,
-    undo,
-    redo,
     selectAllLines,
     setFindOpen,
     openGoto,
     toggleFilterCollapsed,
     setViewMode,
     toggleLineNumbers,
-    zoomIn,
-    zoomOut,
-    zoomReset,
-    openNewFilter,
-    bulk,
     openDocs,
     setShortcutsOpen,
     setAboutOpen,

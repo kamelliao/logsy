@@ -1,6 +1,3 @@
-import type { AppState } from "@/types";
-import { initialState, normalizeState } from "@/lib/defaults";
-
 export const STATE_KEY = "logsy.state.v6";
 
 // Safe mode (app launched with `--safe`): the Rust side injects
@@ -14,14 +11,3 @@ export const SAFE_MODE =
     (window as unknown as { __LOGSY_SAFE_MODE__?: boolean })
       .__LOGSY_SAFE_MODE__,
   );
-
-export function loadState(): AppState {
-  if (SAFE_MODE) return normalizeState(initialState());
-  try {
-    const raw = localStorage.getItem(STATE_KEY);
-    if (raw) return normalizeState(JSON.parse(raw) as AppState);
-  } catch {
-    /* ignore */
-  }
-  return normalizeState(initialState());
-}
