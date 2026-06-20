@@ -7,11 +7,11 @@ import { getVersion } from "@tauri-apps/api/app";
 import { save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import type { FilterGroup } from "@/types";
-import { DEFAULT_PALETTE } from "@/data";
-import { exportPayload } from "@/filterFile";
+import { DEFAULT_PALETTE } from "@/lib/palette";
+import { exportPayload } from "@/lib/filterFile";
 import type { PaletteEntry } from "@/types";
 
-import { compileAll, computeView } from "@/logic";
+import { compileAll, computeView } from "@/lib/engine";
 import { Sidebar } from "@/components/Sidebar";
 import { LogView } from "@/components/LogView";
 import { FilterPanel } from "@/components/FilterPanel";

@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
-import { exportPayload, buildGroupFromImport, remapImportIds } from "@/filterFile";
-import type { ImportedFilters } from "@/filterFile";
-import { makeFilter } from "@/data";
+import { exportPayload, buildGroupFromImport, remapImportIds } from "@/lib/filterFile";
+import type { ImportedFilters } from "@/lib/filterFile";
+import { makeFilter } from "@/lib/defaults";
 import type { Filter, FilterGroup, FilterSet } from "@/types";
 
 // Simulate the full save → reload trip: serialize like the app does, then parse

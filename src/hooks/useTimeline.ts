@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { toast } from "sonner";
 import type { AppState, LogFile, FilterSet, ViewResult, TimelineSource } from "@/types";
-import { buildTimeline, laneColor, guessUnit, isTimeLike } from "@/logic";
+import { buildTimeline, laneColor, guessUnit, isTimeLike } from "@/lib/engine";
 import { withSet } from "@/state/selectors";
 import type { PanelTab } from "@/hooks/useDockLayout";
 

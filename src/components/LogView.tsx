@@ -3,7 +3,7 @@ import { ArrowDown, ArrowUp, Bookmark, ChartGantt, ChevronDown, ChevronRight, Co
 import { toast } from "sonner";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { LogFile, ViewResult, FieldValue, Marker, MarkerIcon, Filter as FilterCfg } from "@/types";
-import { escapeRegex } from "@/logic";
+import { escapeRegex } from "@/lib/engine";
 import { MARKER_ICONS, MarkerGlyph, markerColor } from "@/components/markers";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";

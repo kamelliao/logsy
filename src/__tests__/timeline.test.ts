@@ -2,8 +2,8 @@ import { test, expect } from "bun:test";
 import {
   compileAll, computeView, coerceValue, coerceTime, guessUnit,
   buildTimeline, trackFieldsOf,
-} from "@/logic";
-import { normalizeState } from "@/data";
+} from "@/lib/engine";
+import { normalizeState } from "@/lib/defaults";
 import type { Filter, FieldDef, TimelineSource, AppState } from "@/types";
 
 function filter(id: string, pattern: string, fields: FieldDef[], over: Partial<Filter> = {}): Filter {
