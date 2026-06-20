@@ -3,7 +3,6 @@ import {
   useMemo,
   useEffect,
   useCallback,
-  useRef,
   CSSProperties,
   ReactNode,
 } from "react";
@@ -35,6 +34,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Workspace } from "@/components/Workspace";
 import { Titlebar } from "@/components/Titlebar";
+import { GotoDialog } from "@/components/GotoDialog";
+import { Overlays } from "@/components/Overlays";
 import { useUndoableState } from "@/hooks/useUndoableState";
 import { useFontZoom } from "@/hooks/useFontZoom";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -80,7 +81,6 @@ export function App() {
   const [appVersion, setAppVersion] = useState("0.2.1");
   // Go-to-line dialog + signals pushed to LogView for menu-driven actions.
   const [gotoOpen, setGotoOpen] = useState(false);
-  const [gotoVal, setGotoVal] = useState("");
   const [selectAllNonce, setSelectAllNonce] = useState(0);
   const [gotoSignal, setGotoSignal] = useState<{
     n: number;
@@ -91,7 +91,6 @@ export function App() {
     n: number;
     nonce: number;
   } | null>(null);
-  const gotoInputRef = useRef<HTMLInputElement>(null);
   // "View this filter only" — ephemeral focus on a single filter's matches.
   const [soloFilterId, setSoloFilterId] = useState<string | null>(null);
   // App-styled confirm() replacement (see useConfirm) + a bump to focus the
@@ -373,19 +372,7 @@ export function App() {
     );
   };
   const selectAllLines = () => setSelectAllNonce((n) => n + 1);
-  const openGoto = () => {
-    setGotoVal("");
-    setGotoOpen(true);
-  };
-  const submitGoto = () => {
-    const n = parseInt(gotoVal, 10);
-    if (Number.isFinite(n) && n > 0) setGotoSignal({ n, nonce: Date.now() });
-    setGotoOpen(false);
-  };
-  // Focus the go-to input once the dialog opens.
-  useEffect(() => {
-    if (gotoOpen) requestAnimationFrame(() => gotoInputRef.current?.focus());
-  }, [gotoOpen]);
+  const openGoto = () => setGotoOpen(true);
 
   useKeyboardShortcuts({
     menus: MENUS,
@@ -722,35 +709,11 @@ export function App() {
           />
         )}
 
-        {/* loading overlay — shown while a log file is read from disk */}
-        {busy && (
-          <div className="busy-overlay">
-            <div className="busy-card">
-              <div className="busy-spinner" />
-              <div className="busy-text">Opening {busy.name}…</div>
-            </div>
-          </div>
-        )}
-
-        {/* file-switch overlay — shown while React computes the view for a large file */}
-        {isSwitchingFile && !busy && (
-          <div className="busy-overlay">
-            <div className="busy-card">
-              <div className="busy-spinner" />
-              <div className="busy-text">Loading…</div>
-            </div>
-          </div>
-        )}
-
-        {/* drag-and-drop overlay */}
-        {dragOver && (
-          <div className="drop-overlay">
-            <div className="drop-overlay-inner">
-              <Upload size={34} />
-              <div className="do-title">Drop log files to open</div>
-            </div>
-          </div>
-        )}
+        <Overlays
+          busy={busy}
+          isSwitchingFile={isSwitchingFile}
+          dragOver={dragOver}
+        />
 
         {openMenu && (
           <MenuPopup
@@ -764,33 +727,10 @@ export function App() {
 
         {/* go-to-line dialog */}
         {gotoOpen && (
-          <div className="goto-overlay" onMouseDown={() => setGotoOpen(false)}>
-            <div className="goto-box" onMouseDown={(e) => e.stopPropagation()}>
-              <div className="goto-title">Go to line</div>
-              <input
-                ref={gotoInputRef}
-                className="goto-input"
-                type="number"
-                min={1}
-                placeholder="Line number…"
-                value={gotoVal}
-                onChange={(e) => setGotoVal(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    submitGoto();
-                  }
-                  if (e.key === "Escape") setGotoOpen(false);
-                }}
-              />
-              <div className="goto-actions">
-                <Button variant="ghost" onClick={() => setGotoOpen(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={submitGoto}>Go</Button>
-              </div>
-            </div>
-          </div>
+          <GotoDialog
+            onSubmit={(n) => setGotoSignal({ n, nonce: Date.now() })}
+            onClose={() => setGotoOpen(false)}
+          />
         )}
 
         {/* about dialog */}
