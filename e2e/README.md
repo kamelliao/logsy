@@ -81,7 +81,11 @@ only asserts that filters drive the rendered `.matched`/`.dim` wiring.
   jump, collapse, two-tables, CSV export payload.
 - `timeline.spec.ts` — the Timeline panel: add a track from a filter's menu, plot
   lines (asserted via the sheet's "N events · M lines" — marks are canvas-drawn
-  and not pixel-asserted), add-all-matching, rename, delete.
+  and not pixel-asserted), add-all-matching, rename, delete, per-track
+  import/clear/hide, span end-field, track reorder (dnd).
+- `menus.spec.ts` — the menu bar (open / hover-switch / arrow-nav / Escape; View,
+  File, Filters, Edit, Help items) and the remaining keyboard shortcuts (Ctrl+B
+  panel toggle, Ctrl+Shift+N new filter, Ctrl+Shift+L focus search).
 
 ### Driving dnd-kit drags
 
@@ -94,7 +98,8 @@ portals and would otherwise show up as duplicate `.fr-pattern` nodes. These are
 the most load-sensitive tests in the suite; if one flakes in CI it's almost
 always the drop-target timing.
 
-## Planned next (not yet implemented)
+## Coverage
 
-- Menu bar + remaining keyboard shortcuts.
-- Timeline: per-track import/clear/hide, span end-field, track reorder (dnd).
+The panels and app-level surfaces are now covered end to end (~109 tests). Add
+new tests beside the matching panel's spec; keep pure-logic assertions in the
+`src/__tests__` unit tests, not here.
