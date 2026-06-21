@@ -76,6 +76,12 @@ only asserts that filters drive the rendered `.matched`/`.dim` wiring.
 - `bookmarks.spec.ts` — the Bookmarks panel:
   - add from the gutter marker + editor popover (icon, note)
   - panel listing, note preview, jump-to-line, remove, clear all, icon filter
+- `compare.spec.ts` — the Compare panel (needs parsed fields → a named-group
+  regex filter over `STRUCTURED_LOG`): add/remove rows, columns, import-matching,
+  jump, collapse, two-tables, CSV export payload.
+- `timeline.spec.ts` — the Timeline panel: add a track from a filter's menu, plot
+  lines (asserted via the sheet's "N events · M lines" — marks are canvas-drawn
+  and not pixel-asserted), add-all-matching, rename, delete.
 
 ### Driving dnd-kit drags
 
@@ -90,5 +96,5 @@ always the drop-target timing.
 
 ## Planned next (not yet implemented)
 
-- `timeline.spec.ts`, `compare.spec.ts`.
-- Menu bar + remaining keyboard shortcuts; CSV export.
+- Menu bar + remaining keyboard shortcuts.
+- Timeline: per-track import/clear/hide, span end-field, track reorder (dnd).
