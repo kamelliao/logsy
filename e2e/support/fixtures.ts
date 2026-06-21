@@ -64,6 +64,19 @@ export const SAMPLE_LOG = [
   "[0.008] shutdown",
 ].join("\n");
 
+// A structured log whose lines all match `\[(?<t>[0-9.]+)\] (?<level>\w+) (?<msg>.+)`:
+// `t` is numeric (a timeline time-field), `level`/`msg` are compare columns.
+export const STRUCTURED_LOG = [
+  "[0.001] INFO boot ok",
+  "[0.002] WARN low battery",
+  "[0.003] ERROR i2c nak",
+  "[0.004] INFO ready",
+].join("\n");
+
+/** The regex (with named groups) that parses STRUCTURED_LOG into fields. */
+export const STRUCTURED_PATTERN =
+  "\\[(?<t>[0-9.]+)\\] (?<level>\\w+) (?<msg>.+)";
+
 /**
  * Open a log via the (mocked) file dialog and wait for its rows to render.
  * Returns once the log view is showing the file's lines.
@@ -79,6 +92,24 @@ export async function openLog(
   // The empty-workspace card opens the file dialog on click.
   await page.locator(".empty-workspace").click();
   await expect(page.locator(".log-row").first()).toBeVisible();
+}
+
+/** A log row located by its 1-based line number (matched on the gutter, `.log-gut`). */
+export function logRow(page: Page, n: number) {
+  return page.locator(".log-row").filter({
+    has: page.locator(".log-gut", { hasText: new RegExp(`^${n}$`) }),
+  });
+}
+
+/** Right-click a log line and click an item in its context menu. */
+export async function logRowMenu(page: Page, n: number, item: string | RegExp) {
+  await logRow(page, n).click({ button: "right" });
+  await page.locator(".row-menu").getByText(item).click();
+}
+
+/** Switch the dock to a panel tab by its label (Filters / Bookmarks / Timeline / Compare). */
+export async function openTab(page: Page, name: string) {
+  await page.locator(".ptab", { hasText: name }).click();
 }
 
 interface FilterOpts {
