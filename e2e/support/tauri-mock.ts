@@ -23,8 +23,16 @@ export interface TauriMockState {
 // Runs in the browser via addInitScript. Self-contained (no imports / closures
 // over Node scope) because Playwright serializes it to a string.
 function initScript() {
+  // Files survive a page.reload() (localStorage outlives the document) so the
+  // reload-on-restart path can re-read them, mirroring the desktop app reopening
+  // files from disk. Dialog results and the call log reset on reload, as they
+  // would for a fresh session.
+  const FILES_KEY = "__tauri_mock_files__";
   const state = {
-    files: {} as Record<string, { text: string; encoding: string }>,
+    files: JSON.parse(localStorage.getItem(FILES_KEY) || "{}") as Record<
+      string,
+      { text: string; encoding: string }
+    >,
     dialogOpen: null as string | string[] | null,
     dialogSave: null as string | null,
     calls: [] as { cmd: string; args: unknown }[],
@@ -145,7 +153,10 @@ export class TauriMock {
   async setFile(path: string, text: string, encoding = "UTF-8") {
     await this.page.evaluate(
       ({ path, text, encoding }) => {
-        window.__TAURI_MOCK__.state.files[path] = { text, encoding };
+        const s = window.__TAURI_MOCK__.state;
+        s.files[path] = { text, encoding };
+        // Persist so the file is still served after a page.reload().
+        localStorage.setItem("__tauri_mock_files__", JSON.stringify(s.files));
       },
       { path, text, encoding },
     );
@@ -167,6 +178,11 @@ export class TauriMock {
 
   /** Fire an OS drag-drop of the given paths onto the window. */
   async drop(paths: string[]) {
+    // Wait for the app's drag-drop listener to be registered first, so the event
+    // isn't dropped on the floor when fired right after load.
+    await this.page.waitForFunction(
+      () => window.__TAURI_MOCK__.listenerCount("tauri://drag-drop") > 0,
+    );
     await this.page.evaluate((p) => window.__TAURI_MOCK__.drop(p), paths);
   }
 

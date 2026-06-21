@@ -42,9 +42,12 @@ export async function dragTo(
 
   await page.mouse.move(sx, sy);
   await page.mouse.down();
-  await page.mouse.move(sx, sy + 8, { steps: 3 }); // exceed activation distance
-  await page.mouse.move(tx, ty, { steps: opts.steps ?? 12 });
-  await page.mouse.move(tx, ty + 1, { steps: 3 }); // settle collision detection
+  await page.mouse.move(sx, sy + 8, { steps: 5 }); // exceed activation distance
+  await page.mouse.move(tx, ty, { steps: opts.steps ?? 16 });
+  await page.mouse.move(tx, ty + 1, { steps: 5 }); // nudge so the over-target registers
+  // dnd-kit resolves collisions on an animation frame; give it time to commit the
+  // drop target before releasing, otherwise a busy machine can drop on stale state.
+  await page.waitForTimeout(80);
   await page.mouse.up();
 }
 
@@ -161,4 +164,20 @@ export async function confirmDialog(page: Page, label: string) {
   const dlg = page.locator(".confirm-modal");
   await dlg.getByRole("button", { name: label }).click();
   await expect(dlg).toBeHidden();
+}
+
+/**
+ * Export the active filter set via "Save filters as…" and return the JSON that
+ * the app handed to `write_text_file`. Handy for round-trip import tests.
+ */
+export async function exportFilterSet(
+  page: Page,
+  tauri: TauriMock,
+  path: string,
+): Promise<string> {
+  await tauri.setDialogSave(path);
+  await panelMenu(page, "Save filters as");
+  const write = (await tauri.calls()).find((c) => c.cmd === "write_text_file");
+  if (!write) throw new Error("exportFilterSet: no write_text_file call");
+  return (write.args as { contents: string }).contents;
 }

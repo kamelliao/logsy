@@ -1,10 +1,11 @@
 import { test, expect, openLog, type Page } from "./support/fixtures";
 
-// A log row located by its 1-based line number (the gutter shows exactly `n`).
+// A log row located by its 1-based line number. Scope the match to the gutter
+// (`.log-gut`) so a bare digit in the log *text* can't select the wrong row.
 function logRow(page: Page, n: number) {
-  return page
-    .locator(".log-row")
-    .filter({ has: page.getByText(String(n), { exact: true }) });
+  return page.locator(".log-row").filter({
+    has: page.locator(".log-gut", { hasText: new RegExp(`^${n}$`) }),
+  });
 }
 
 // Add a bookmark on a line via the gutter marker + editor popover.
@@ -114,8 +115,8 @@ test.describe("Bookmarks", () => {
     await expect(chips).toHaveCount(3);
     await expect(chips.first()).toContainText("2");
 
-    // The star chip (third) filters down to just that bookmark.
-    await chips.nth(2).click();
+    // The star chip (located by its glyph, not position) filters to that one.
+    await chips.filter({ has: page.locator(".lucide-star") }).click();
     await expect(bmRows(page)).toHaveCount(1);
     await expect(page.locator(".bm-line")).toHaveText("5");
   });

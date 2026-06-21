@@ -53,19 +53,26 @@ dropped files. See the comment in `tauri-mock.ts`.
 `test.describe` blocks inside. This keeps the top-level dir readable as more
 panels are covered; Playwright still parallelizes individual tests across workers.
 
-- `open-file.spec.ts` — open via dialog, open multiple files as tabs, drag-drop.
+Pure logic (parsing, matching, regex/case, counts) is covered far faster by the
+unit tests in `src/__tests__/*` — e2e deliberately does **not** re-test it, and
+only asserts that filters drive the rendered `.matched`/`.dim` wiring.
+
+- `open-file.spec.ts` — open via dialog, multi-file tabs, drag-drop, drag-drop
+  replace-confirm (keeps filters), reload-on-restart.
 - `filter-panel.spec.ts` — the FilterPanel, grouped by area:
-  - rows (serial/flags/hit-count, edit, row menu, delete)
-  - enable toggle; matching behaviour (highlight / exclude / regex / case)
+  - rows (flags, edit, row menu, delete)
+  - enable toggle; matching behaviour (highlight / exclude wiring only)
   - filter sets (tabs): add / switch / rename / delete / duplicate
   - groups: add / collapse / rename / enable-all / delete-keep-filters
   - select mode: range select, batch enable/disable/delete
-  - search; import / export (round-trip via `tauri.calls()`)
+  - search; import / export (round-trip + non-empty replace confirm)
+  - solo "view this filter only"; undo / redo (incl. the in-input guard)
   - reorder (drag & drop): filters, into/out of groups, groups, sets
 - `log-view.spec.ts` — the LogView:
   - find in view (Ctrl+F): hit count, next/wrap, no-match, case & regex options
   - matches-only (Ctrl+H) toggle + toolbar button + disabled-without-highlights
-  - match map presence; go to line (Ctrl+G); zoom in/out/reset (Ctrl +/-/0)
+  - match map presence; export filtered view (payload via `tauri.calls()`)
+  - go to line (Ctrl+G); zoom in/out/reset (Ctrl +/-/0)
 - `bookmarks.spec.ts` — the Bookmarks panel:
   - add from the gutter marker + editor popover (icon, note)
   - panel listing, note preview, jump-to-line, remove, clear all, icon filter
@@ -74,9 +81,12 @@ panels are covered; Playwright still parallelizes individual tests across worker
 
 Use the `dragTo(page, source, target)` helper. dnd-kit's PointerSensor needs the
 press to move past a 5px activation distance and then several intermediate moves
-for collision detection, which the helper does. Read resulting order from inside
-`.filter-list` — the drag overlay and hover cards render in `<body>` portals and
-would otherwise show up as duplicate `.fr-pattern` nodes.
+for collision detection, which the helper does (it also waits a frame before
+releasing so a busy machine commits the right drop target). Read resulting order
+from inside `.filter-list` — the drag overlay and hover cards render in `<body>`
+portals and would otherwise show up as duplicate `.fr-pattern` nodes. These are
+the most load-sensitive tests in the suite; if one flakes in CI it's almost
+always the drop-target timing.
 
 ## Planned next (not yet implemented)
 
