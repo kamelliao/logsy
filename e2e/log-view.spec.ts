@@ -61,22 +61,22 @@ test.describe("LogView", () => {
       await expect(page.locator(".find-hit")).toHaveCount(0);
     });
 
-    test("case option narrows matches", async ({ page }) => {
+    test("the case and regex option buttons re-run the search", async ({
+      page,
+    }) => {
       await page.keyboard.press("ControlOrMeta+f");
-      await page.getByPlaceholder("Find in view").fill("error");
-      // case-insensitive: matches the uppercase ERROR lines (4 and 7).
-      await expect(page.locator(".find-count")).toHaveText("1 / 2");
+      const input = page.getByPlaceholder("Find in view");
 
+      // Case: lowercase "error" matches the uppercase ERROR lines until Aa is on.
+      await input.fill("error");
+      await expect(page.locator(".find-count")).toHaveText("1 / 2");
       await page.locator(".find-opt", { hasText: "Aa" }).click();
       await expect(page.locator(".find-count")).toHaveText("0 / 0");
-    });
+      await page.locator(".find-opt", { hasText: "Aa" }).click();
 
-    test("regex option enables alternation", async ({ page }) => {
-      await page.keyboard.press("ControlOrMeta+f");
-      await page.getByPlaceholder("Find in view").fill("ERROR|WARN");
-      // Literal: no line contains the pipe text.
+      // Regex: the pipe is literal until .* is on, then it alternates.
+      await input.fill("ERROR|WARN");
       await expect(page.locator(".find-count")).toHaveText("0 / 0");
-
       await page.locator(".find-opt", { hasText: ".*" }).click();
       await expect(page.locator(".find-count")).toHaveText("1 / 3");
     });
@@ -125,6 +125,31 @@ test.describe("LogView", () => {
     await expect(page.locator(".match-map")).toHaveCount(0);
     await addFilter(page, "wifi");
     await expect(page.locator(".match-map")).toBeVisible();
+  });
+
+  // ---- export filtered view ----
+  test("exports the currently-visible lines via the save dialog", async ({
+    page,
+    tauri,
+  }) => {
+    await addFilter(page, "wifi");
+    await page.keyboard.press("ControlOrMeta+h"); // matches-only → just the 2 wifi lines
+    await expect(page.locator(".log-row")).toHaveCount(2);
+
+    await tauri.setDialogSave("/out/view.filtered.log");
+    await page.locator(".lv-actions .dock-btn:not(.lv-toggle)").click();
+
+    const write = (await tauri.calls()).find(
+      (c) => c.cmd === "write_text_file",
+    );
+    expect(write).toBeTruthy();
+    const args = write!.args as { path: string; contents: string };
+    expect(args.path).toBe("/out/view.filtered.log");
+    // Only the two matched lines are written, not the dimmed ones.
+    expect(args.contents.split("\n")).toHaveLength(2);
+    expect(args.contents).toContain("wifi: scanning networks");
+    expect(args.contents).toContain("wifi: connected");
+    expect(args.contents).not.toContain("boot: starting up");
   });
 
   // ---- go to line (Ctrl+G) ----

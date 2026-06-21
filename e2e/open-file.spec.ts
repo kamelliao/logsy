@@ -1,4 +1,12 @@
-import { test, expect, openLog, SAMPLE_LOG } from "./support/fixtures";
+import {
+  test,
+  expect,
+  openLog,
+  addFilter,
+  filterRow,
+  confirmDialog,
+  SAMPLE_LOG,
+} from "./support/fixtures";
 
 test.describe("opening logs", () => {
   test("opens a file via the dialog and renders its lines", async ({
@@ -52,5 +60,45 @@ test.describe("opening logs", () => {
       "dropped.log",
     );
     await expect(page.locator(".log-row")).toHaveCount(8);
+  });
+
+  test("dropping onto an open log replaces it (after confirm), keeping filters", async ({
+    page,
+    tauri,
+  }) => {
+    await openLog(page, tauri); // /logs/sample.log, 8 lines
+    await addFilter(page, "wifi");
+
+    await tauri.setFile("/logs/next.log", "alpha\nbeta\ngamma\n");
+    await tauri.drop(["/logs/next.log"]);
+    // A log is already open → confirm before replacing.
+    await confirmDialog(page, "Replace");
+
+    // Same workspace slot now shows the new file, and the filter is preserved.
+    await expect(page.locator(".file-item.active .file-name")).toHaveText(
+      "next.log",
+    );
+    await expect(page.locator(".log-row")).toHaveCount(3);
+    await expect(filterRow(page, "wifi")).toBeVisible();
+  });
+
+  test("reloads the active file's contents on restart", async ({
+    page,
+    tauri,
+  }) => {
+    await openLog(page, tauri);
+    await expect(page.locator(".log-row")).toHaveCount(8);
+
+    // Restart: the workspace (file list + path) persists to localStorage, but the
+    // line bodies don't — they're re-read from disk via read_text_file on mount.
+    await page.reload();
+
+    await expect(page.locator(".file-item.active .file-name")).toHaveText(
+      "sample.log",
+    );
+    await expect(page.locator(".log-row")).toHaveCount(8);
+    await expect(page.locator(".log-txt").first()).toContainText(
+      "boot: starting up",
+    );
   });
 });

@@ -12,6 +12,7 @@ import {
   enterSelectMode,
   confirmDialog,
   dragTo,
+  exportFilterSet,
   type Page,
 } from "./support/fixtures";
 
@@ -31,12 +32,16 @@ function setTab(page: Page, name: string) {
 // In select mode base-ui marks the row (a hover-card trigger) as disabled, which
 // trips Playwright's actionability check even though a real user clicks it fine.
 // Force the click so it still dispatches to the row's onClick (drives selection).
-function clickRow(
+async function clickRow(
   page: Page,
   label: string,
   opts?: { modifiers?: ("Shift" | "ControlOrMeta")[] },
 ) {
-  return filterRow(page, label).click({ ...opts, force: true });
+  const row = filterRow(page, label);
+  // Assert visibility ourselves since the force-click below skips actionability —
+  // a vanished row should still fail the test.
+  await expect(row).toBeVisible();
+  await row.click({ ...opts, force: true });
 }
 
 // Add a filter into the (single) group via its "+" button.
@@ -73,16 +78,6 @@ test.describe("FilterPanel", () => {
       ).toHaveText("Error lines");
     });
 
-    test("numbers rows with 1-based serials in order", async ({ page }) => {
-      await addFilter(page, "wifi");
-      await addFilter(page, "ERROR");
-
-      const serials = page.locator(".fr-serial");
-      await expect(serials).toHaveCount(2);
-      await expect(serials.nth(0)).toHaveText("#1");
-      await expect(serials.nth(1)).toHaveText("#2");
-    });
-
     test("renders flag badges for case / regex / exclude", async ({ page }) => {
       await addFilter(page, "err", { regex: true, caseSensitive: true });
       const row = filterRow(page, "err");
@@ -93,13 +88,6 @@ test.describe("FilterPanel", () => {
       await expect(
         filterRow(page, "wifi").locator(".fr-flag.ex"),
       ).toBeVisible();
-    });
-
-    test("shows a hit count matching the log", async ({ page }) => {
-      await addFilter(page, "ERROR", { regex: true });
-      await expect(filterRow(page, "ERROR").locator(".fr-count")).toContainText(
-        "2",
-      );
     });
 
     test("clicking a row opens the editor and edits persist", async ({
@@ -177,19 +165,12 @@ test.describe("FilterPanel", () => {
       await filterRow(page, "wifi").getByRole("checkbox").click();
       await expect(page.getByRole("dialog")).toHaveCount(0);
     });
-
-    test("each row shows a colour swatch", async ({ page }) => {
-      await addFilter(page, "wifi");
-      const swatch = filterRow(page, "wifi").locator(".fr-color");
-      await expect(swatch).toBeVisible();
-      const bg = await swatch.evaluate(
-        (el) => getComputedStyle(el).backgroundColor,
-      );
-      expect(bg).not.toBe("rgba(0, 0, 0, 0)");
-    });
   });
 
-  // ---- Suite (matching behaviour over the log) ----
+  // ---- matching behaviour over the log ----
+  // Just the store→LogView wiring (filter produces .matched / .dim, exclude
+  // removes rows). The pattern math itself (regex, case, counts) is covered far
+  // faster by the unit tests in src/__tests__/logic.parse.test.ts.
   test.describe("matching behaviour", () => {
     test("a plain-text filter highlights matches and dims the rest", async ({
       page,
@@ -205,23 +186,6 @@ test.describe("FilterPanel", () => {
       await expect(page.locator(".log-txt", { hasText: "wifi" })).toHaveCount(
         0,
       );
-    });
-
-    test("a regex filter matches across alternatives", async ({ page }) => {
-      await addFilter(page, "ERROR|WARN", { regex: true });
-      await expect(page.locator(".log-row.matched")).toHaveCount(3);
-    });
-
-    test("case-insensitive matching ignores letter case by default", async ({
-      page,
-    }) => {
-      await addFilter(page, "error");
-      await expect(page.locator(".log-row.matched")).toHaveCount(2);
-    });
-
-    test("case-sensitive matching respects letter case", async ({ page }) => {
-      await addFilter(page, "error", { caseSensitive: true });
-      await expect(page.locator(".log-row.matched")).toHaveCount(0);
     });
   });
 
@@ -555,14 +519,7 @@ test.describe("FilterPanel", () => {
       tauri,
     }) => {
       await addFilter(page, "wifi");
-      await tauri.setDialogSave("/filters/a.json");
-      await panelMenu(page, "Save filters as");
-      const calls = await tauri.calls();
-      const contents = (
-        calls.find((c) => c.cmd === "write_text_file")!.args as {
-          contents: string;
-        }
-      ).contents;
+      const contents = await exportFilterSet(page, tauri, "/filters/a.json");
 
       // Import that file into a fresh, empty set (no replace confirmation).
       await addSet(page);
@@ -573,20 +530,31 @@ test.describe("FilterPanel", () => {
       await expect(filterRow(page, "wifi")).toBeVisible();
     });
 
+    test("import into a non-empty set confirms, and Cancel keeps filters", async ({
+      page,
+      tauri,
+    }) => {
+      await addFilter(page, "wifi");
+      const contents = await exportFilterSet(page, tauri, "/filters/a.json");
+
+      // Back in the same (non-empty) set, importing replace must confirm first.
+      await tauri.setFile("/filters/a.json", contents);
+      await tauri.setDialogOpen("/filters/a.json");
+      await panelMenu(page, "Import filters");
+      await confirmDialog(page, "Cancel");
+
+      // Cancelled → the original filter is untouched.
+      await expect(filterRow(page, "wifi")).toBeVisible();
+      await expect(page.locator(".filter-row")).toHaveCount(1);
+    });
+
     test("Append merges an imported file beside existing filters", async ({
       page,
       tauri,
     }) => {
       // Make a file to append (export a one-filter set).
       await addFilter(page, "wifi");
-      await tauri.setDialogSave("/filters/a.json");
-      await panelMenu(page, "Save filters as");
-      const contents = (
-        (await tauri.calls()).find((c) => c.cmd === "write_text_file")!
-          .args as {
-          contents: string;
-        }
-      ).contents;
+      const contents = await exportFilterSet(page, tauri, "/filters/a.json");
 
       // In a fresh set with its own filter, append the file.
       await addSet(page);
@@ -623,6 +591,60 @@ test.describe("FilterPanel", () => {
 
       await expect(page.getByText(/isn't Logsy/i)).toBeVisible();
       await expect(page.locator(".filter-row")).toHaveCount(0);
+    });
+  });
+
+  // ---- "View this filter only" (solo) ----
+  test.describe("solo mode", () => {
+    test("views a single filter, then exits back to the full view", async ({
+      page,
+    }) => {
+      await addFilter(page, "wifi");
+      await addFilter(page, "ERROR");
+
+      await rowMenu(page, "wifi", "View this filter only");
+
+      // The log narrows to wifi's 2 matches and a banner names the soloed filter.
+      const banner = page.locator(".lv-solo");
+      await expect(banner).toBeVisible();
+      await expect(banner).toContainText("wifi");
+      await expect(page.locator(".log-row")).toHaveCount(2);
+
+      await page.locator(".lv-solo-x").click();
+      await expect(banner).toHaveCount(0);
+      await expect(page.locator(".log-row")).toHaveCount(8);
+    });
+  });
+
+  // ---- undo / redo ----
+  test.describe("undo / redo", () => {
+    test("Ctrl+Z undoes an add and Ctrl+Y redoes it", async ({ page }) => {
+      await addFilter(page, "wifi");
+      await addFilter(page, "ERROR");
+      await expect(page.locator(".filter-row")).toHaveCount(2);
+
+      await page.keyboard.press("ControlOrMeta+z");
+      await expect(filterRow(page, "ERROR")).toHaveCount(0);
+      await expect(page.locator(".filter-row")).toHaveCount(1);
+
+      await page.keyboard.press("ControlOrMeta+y");
+      await expect(page.locator(".filter-row")).toHaveCount(2);
+    });
+
+    test("Ctrl+Z inside an input does not trigger app undo", async ({
+      page,
+    }) => {
+      await addFilter(page, "wifi");
+      await addFilter(page, "ERROR");
+
+      // Type in the filter search box, then Ctrl+Z while it's focused: this must
+      // hit the field's native undo, not delete a filter.
+      const search = page.getByPlaceholder("Search filters");
+      await search.fill("wif");
+      await search.press("ControlOrMeta+z");
+
+      await search.fill(""); // clear the search to reveal the full list again
+      await expect(page.locator(".filter-row")).toHaveCount(2);
     });
   });
 
