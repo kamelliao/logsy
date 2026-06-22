@@ -3054,6 +3054,11 @@ button {
   font-size: 10.5px;
   font-weight: 600;
 }
+/* timeline-tracked field: teal, matching the .intimeline gutter marker */
+.fr-chip-field.tl {
+  background: rgba(13, 148, 136, 0.12);
+  color: #0d9488;
+}
 .fr-actions {
   flex: 0 0 auto;
   display: flex;
