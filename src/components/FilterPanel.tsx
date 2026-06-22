@@ -15,6 +15,7 @@ import {
   CheckSquare,
   ChevronDown,
   ChevronRight,
+  Columns3,
   Copy,
   Eye,
   EyeOff,
@@ -111,6 +112,8 @@ function RowMenuItems({
   timeFields,
   trackedFields,
   onToggleTrack,
+  hasFields,
+  onCompare,
 }: {
   onEdit: () => void;
   onViewOnly: () => void;
@@ -121,6 +124,10 @@ function RowMenuItems({
   /** Names of this filter's fields already plotted as a timeline track. */
   trackedFields: string[];
   onToggleTrack: (field: string) => void;
+  /** Whether this filter has any parsed (named-capture) field — gates Compare. */
+  hasFields: boolean;
+  /** Pull every line this filter parsed into the comparison + reveal Compare. */
+  onCompare: () => void;
 }) {
   // Timeline items behave like checkboxes: a ✓ marks a tracked field, and
   // clicking toggles it (add when off, remove when on).
@@ -200,6 +207,27 @@ function RowMenuItems({
             </DropdownMenuSub>
           )}
         </>
+      )}
+      {hasFields ? (
+        <DropdownMenuItem onClick={onCompare}>
+          <span className="mi-ico">
+            <Columns3 size={15} />
+          </span>
+          Compare matching lines
+        </DropdownMenuItem>
+      ) : (
+        // No parsed field → nothing to line up. Disabled with a reason, mirroring
+        // the timeline item, so the path isn't a silent dead end.
+        <DropdownMenuItem
+          disabled
+          className="disabled"
+          title="Needs a named capture field, e.g. (?<ts>\d+)"
+        >
+          <span className="mi-ico">
+            <Columns3 size={15} />
+          </span>
+          Compare matching lines
+        </DropdownMenuItem>
       )}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onClick={onDelete}>
@@ -513,6 +541,7 @@ interface RowApi {
   duplicate: (id: string) => void;
   viewOnly: (id: string) => void;
   toggleTrack: (filterId: string, timeField: string) => void;
+  compareFilter: (id: string) => void;
   /** Select mode: toggle this row's selection (Shift extends a range). */
   selectClick: (id: string, e: ReactMouseEvent) => void;
   /** Ctrl/Cmd-click on a row (outside select mode): enter select mode on it. */
@@ -590,6 +619,8 @@ const FilterRowCells = memo(
     const onViewOnly = () => api.viewOnly(f.id);
     const timeFields = trackFieldsOf(f);
     const onToggleTrack = (field: string) => api.toggleTrack(f.id, field);
+    const hasFields = !!f.fields?.length;
+    const onCompare = () => api.compareFilter(f.id);
 
     return (
       <HoverCard>
@@ -724,6 +755,8 @@ const FilterRowCells = memo(
                     timeFields={timeFields}
                     trackedFields={trackedFields}
                     onToggleTrack={onToggleTrack}
+                    hasFields={hasFields}
+                    onCompare={onCompare}
                   />
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -738,6 +771,8 @@ const FilterRowCells = memo(
               timeFields={timeFields}
               trackedFields={trackedFields}
               onToggleTrack={onToggleTrack}
+              hasFields={hasFields}
+              onCompare={onCompare}
             />
           </ContextMenuContent>
         </ContextMenu>
@@ -1255,6 +1290,9 @@ interface FilterPanelProps {
   /** Toggle a timeline track bound to (filterId, timeField): add if absent, remove
    *  if present. Still a prop — owned by useTimeline, not yet in the store. */
   onToggleTimelineTrack: (filterId: string, timeField: string) => void;
+  /** Pull a filter's parsed lines into the comparison + reveal the Compare tab
+   *  (the Compare analogue of "Add to timeline track"). */
+  onCompareFilter: (filterId: string) => void;
   /** Filter row to scroll into view + flash (e.g. from a Compare group header). */
   flashFilterId?: string | null;
   /** Bumps to re-trigger the flash even when the same id is re-requested. */
@@ -1272,6 +1310,7 @@ export function FilterPanel({
   counts,
   style,
   onToggleTimelineTrack,
+  onCompareFilter,
   flashFilterId,
   flashNonce,
   onFlashConsumed,
@@ -1532,6 +1571,7 @@ export function FilterPanel({
     onDuplicateFilter,
     onViewFilterOnly,
     onToggleTimelineTrack,
+    onCompareFilter,
     selectClick,
     beginSelect,
   });
@@ -1542,6 +1582,7 @@ export function FilterPanel({
     onDuplicateFilter,
     onViewFilterOnly,
     onToggleTimelineTrack,
+    onCompareFilter,
     selectClick,
     beginSelect,
   };
@@ -1554,6 +1595,7 @@ export function FilterPanel({
       viewOnly: (id) => rowCbRef.current.onViewFilterOnly(id),
       toggleTrack: (filterId, timeField) =>
         rowCbRef.current.onToggleTimelineTrack(filterId, timeField),
+      compareFilter: (id) => rowCbRef.current.onCompareFilter(id),
       selectClick: (id, e) => rowCbRef.current.selectClick(id, e),
       beginSelect: (id, e) => rowCbRef.current.beginSelect(id, e),
     }),

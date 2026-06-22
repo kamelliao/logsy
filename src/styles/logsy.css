@@ -1377,6 +1377,41 @@ button {
   border: 1px solid var(--border);
   border-radius: 8px;
 }
+/* Bottom "fog": a soft fade over the last visible rows that hints the body
+   scrolls further. It rides the scrollport's bottom edge (position: sticky), so
+   it stays put through vertical AND horizontal scroll. Where scroll-driven
+   animations are supported it fades out as you reach the end, and stays hidden
+   when the body is short enough not to scroll; older engines just keep a static
+   fade (a harmless always-on hint). */
+.cmp-table-scroll::after {
+  content: "";
+  position: sticky;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
+  display: block;
+  height: 26px;
+  margin-top: -26px; /* overlay the last rows; don't add to the scroll length */
+  background: linear-gradient(to top, var(--app-bg), transparent);
+  pointer-events: none;
+}
+@supports (animation-timeline: scroll()) {
+  .cmp-table-scroll::after {
+    opacity: 0; /* hidden by default → no fog when the body doesn't scroll */
+    animation: cmp-fog-fade linear both;
+    animation-timeline: scroll(nearest block);
+  }
+  /* Visible while there's more below; fades away over the final stretch. */
+  @keyframes cmp-fog-fade {
+    0%,
+    85% {
+      opacity: 1;
+    }
+    100% {
+      opacity: 0;
+    }
+  }
+}
 /* per-group sizer for the virtualized rows; absolutely-positioned rows hang off
    it and define the horizontal scroll extent (same as the sticky header). */
 .cmp-body {
