@@ -578,10 +578,6 @@ const FilterRowCells = memo(
     const timeFields = trackFieldsOf(f);
     const onToggleTrack = (field: string) => api.toggleTrack(f.id, field);
 
-    const flags: { t: string; title: string }[] = [];
-    if (f.caseSensitive) flags.push({ t: "Aa", title: "Case sensitive" });
-    if (f.regex) flags.push({ t: ".*", title: "Regex" });
-
     return (
       <HoverCard>
         <ContextMenu>
@@ -653,12 +649,6 @@ const FilterRowCells = memo(
               />
             </span>
 
-            <button
-              className="fr-color"
-              style={{ background: f.bgColor, borderColor: f.textColor }}
-              onPointerDown={(e) => e.stopPropagation()}
-            />
-
             {index >= 0 && (
               <span className="fr-serial" title={`Filter #${index + 1}`}>
                 #{index + 1}
@@ -667,40 +657,27 @@ const FilterRowCells = memo(
 
             {/* Description-first: when a filter has a description it's the primary
             label and the pattern lives in the hover card; otherwise show the
-            pattern. No per-cell titles — the hover card carries full detail. */}
-            {f.description ? (
-              <div className="fr-pattern">{f.description}</div>
+            pattern. The label wears the filter's own highlight (its log colour
+            pair) as a chip so the row reads at a glance like its matches do. No
+            per-cell titles — the hover card carries full detail. */}
+            {f.description || f.pattern ? (
+              <div className="fr-pattern">
+                <span
+                  className="fr-pattern-chip"
+                  style={{ background: f.bgColor, color: f.textColor }}
+                >
+                  {f.description || f.pattern}
+                </span>
+              </div>
             ) : (
               <div className="fr-pattern">
-                {f.pattern || (
-                  <span className="placeholder">untitled filter</span>
-                )}
+                <span className="placeholder">untitled filter</span>
               </div>
             )}
 
-            {f.fields && f.fields.length > 0 && (
-              <div className="fr-flags">
-                {f.fields.slice(0, 4).map((x) => (
-                  <span key={x.name} className="fr-flag">
-                    {x.name}
-                  </span>
-                ))}
-                {f.fields.length > 4 && (
-                  <span className="fr-flag more">+{f.fields.length - 4}</span>
-                )}
-              </div>
-            )}
-
-            {flags.length > 0 && (
-              <div className="fr-flags">
-                {flags.map((fl, i) => (
-                  <span key={i} className="fr-flag">
-                    {fl.t}
-                  </span>
-                ))}
-              </div>
-            )}
-
+            {/* Field-name and Aa/.* flag chips live only in the hover card now —
+            the row keeps just the exclude badge (a semantic flag, easy to miss
+            otherwise), hit count, and the actions menu. */}
             {f.exclude && (
               <span className="fr-flag ex">
                 <EyeOff size={12} />
@@ -1180,9 +1157,6 @@ function FilterRowOverlay({
   index: number;
   count: number;
 }) {
-  const flags: string[] = [];
-  if (f.caseSensitive) flags.push("Aa");
-  if (f.regex) flags.push(".*");
   return (
     <div
       className={"filter-row drag-overlay" + (f.enabled ? "" : " disabled")}
@@ -1194,25 +1168,19 @@ function FilterRowOverlay({
       <span className="fr-check-wrap">
         <Checkbox checked={f.enabled} onCheckedChange={() => {}} />
       </span>
-      <button
-        className="fr-color"
-        style={{ background: f.bgColor, borderColor: f.textColor }}
-      />
       {index >= 0 && <span className="fr-serial">#{index + 1}</span>}
-      {f.description ? (
-        <div className="fr-pattern">{f.description}</div>
+      {f.description || f.pattern ? (
+        <div className="fr-pattern">
+          <span
+            className="fr-pattern-chip"
+            style={{ background: f.bgColor, color: f.textColor }}
+          >
+            {f.description || f.pattern}
+          </span>
+        </div>
       ) : (
         <div className="fr-pattern">
-          {f.pattern || <span className="placeholder">untitled filter</span>}
-        </div>
-      )}
-      {flags.length > 0 && (
-        <div className="fr-flags">
-          {flags.map((t, i) => (
-            <span key={i} className="fr-flag">
-              {t}
-            </span>
-          ))}
+          <span className="placeholder">untitled filter</span>
         </div>
       )}
       {f.exclude && (

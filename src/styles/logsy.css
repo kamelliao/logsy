@@ -2682,11 +2682,6 @@ button {
   }
 }
 
-.fr-flags {
-  display: flex;
-  gap: 2px;
-  flex: 0 0 auto;
-}
 .fr-flag {
   height: calc(var(--filter-row-h, 22px) * 0.636);
   min-width: calc(var(--filter-row-h, 22px) * 0.727);
@@ -2798,16 +2793,7 @@ button {
   color: #b3b8be;
 }
 
-.fr-color {
-  flex: 0 0 auto;
-  width: calc(var(--filter-row-h, 22px) * 0.59);
-  height: calc(var(--filter-row-h, 22px) * 0.59);
-  border-radius: calc(var(--filter-row-h, 22px) * 0.14);
-  cursor: pointer;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  position: relative;
-}
-/* 1-based serial right of the color swatch — matches the timeline panel's "#N". */
+/* 1-based serial at the row head — matches the timeline panel's "#N". */
 .fr-serial {
   flex: 0 0 auto;
   font-family: var(--mono-font);
@@ -2831,6 +2817,22 @@ button {
   color: var(--text-3);
   font-style: italic;
   font-family: var(--ui-font);
+}
+/* The label as a highlight band: same bg/text colour pair the filter paints on
+   its matched log lines, so the row is recognisable at a glance. Fills the full
+   width of the pattern cell and truncates with an ellipsis when too narrow. */
+.fr-pattern-chip {
+  display: block;
+  padding: 1px 5px;
+  border-radius: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Disabled rows mute the whole chip (its colours are inline, so fade via opacity
+   rather than overriding the pair). */
+.filter-row.disabled .fr-pattern-chip {
+  opacity: 0.45;
 }
 .fr-pattern-input {
   flex: 1 1 auto;
@@ -2881,7 +2883,10 @@ button {
 
 .fr-count {
   flex: 0 0 auto;
-  min-width: 70px;
+  /* Just wide enough for a typical "N,NNN hits" so the count column stays put
+     across re-counts (no band reflow); trimmed from 70px to hand the slack back
+     to the pattern band. */
+  min-width: 46px;
   text-align: right;
   font-size: calc(var(--log-font-size, 12.5px) * 0.84);
   color: var(--text-3);
@@ -2900,17 +2905,10 @@ button {
 
 /* ---- narrow side-dock: progressive disclosure ----
    When Filters is docked on the right and dragged narrow, a row can't keep the
-   pattern, description, field/flag chips and the hit count on one line. The row
-   is `overflow: hidden`, so without shedding, the right-most items (hit count +
+   pattern, description and the hit count on one line. The row is
+   `overflow: hidden`, so without shedding, the right-most items (hit count +
    ⋮ menu) get clipped — exactly what must stay visible. So drop the metadata in
    least-essential-first order; full details live in the row's hover tooltip. */
-@container fpanel (max-width: 360px) {
-  /* field + flag chips: the bulkiest, least essential inline metadata. Shed
-     these first so the hit count and row menu are never pushed out of view. */
-  .fr-flags {
-    display: none;
-  }
-}
 @container fpanel (max-width: 300px) {
   /* description is secondary text */
   .fr-desc {
@@ -4548,13 +4546,6 @@ button {
   border-radius: 7px;
   padding: 3px 6px;
   background: #fff;
-}
-
-/* ---- field chips on a filter row ---- */
-.fr-flag.more {
-  background: transparent;
-  color: var(--text-3);
-  padding: 0 2px;
 }
 
 /* settings popover reuse */
