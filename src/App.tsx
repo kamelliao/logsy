@@ -246,6 +246,13 @@ export function App() {
     setFocusSearchNonce((n) => n + 1);
   };
   const showCompare = compareRows.length > 0;
+  // Filter-row "Compare matching lines": pull the filter's parsed lines into the
+  // comparison and reveal the Compare tab so the result is immediately visible —
+  // the Compare analogue of "Add to timeline track".
+  const compareFilter = (id: string) => {
+    importCompareGroup(id);
+    selectPanelTab("compare");
+  };
 
   // ---------- filter actions ----------
   // Filter actions are read from the store where used (FilterPanel, menus, keyboard
@@ -449,6 +456,7 @@ export function App() {
         set={set!}
         counts={view.counts}
         onToggleTimelineTrack={toggleTimelineTrack}
+        onCompareFilter={compareFilter}
         flashFilterId={filterFlash?.id ?? null}
         flashNonce={filterFlash?.nonce ?? 0}
         onFlashConsumed={() => setFilterFlash(null)}
