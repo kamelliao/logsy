@@ -64,11 +64,8 @@ export interface Store
   // ---- runtime collaborators (bound by App; not state we can compute) ----
   /** App-styled confirm() replacement; bound from useConfirm. */
   confirm: (opts: ConfirmOptions) => Promise<boolean>;
-  /** Defer a heavy re-render (the dock's useTransition); bound from useDockLayout. */
-  runTransition: (fn: () => void) => void;
   setRuntime: (rt: {
     confirm?: (opts: ConfirmOptions) => Promise<boolean>;
-    runTransition?: (fn: () => void) => void;
   }) => void;
 
   // ---- undo engine ----
@@ -162,7 +159,6 @@ export const useStore = create<Store>()(
             typeof o.message === "string" ? o.message : "Are you sure?",
           ),
         ),
-      runTransition: (fn) => fn(),
       setRuntime: (rt) => set(rt),
 
       // ---- slices (see @/store/slices/*) ----

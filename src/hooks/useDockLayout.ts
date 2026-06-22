@@ -1,7 +1,8 @@
-import { useEffect, useRef, useTransition } from "react";
+import { useEffect, useRef, useDeferredValue } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
 import type { AppState } from "@/types";
 import { useStore } from "@/store";
+import { activeFile } from "@/state/selectors";
 
 export type PanelTab = "filters" | "compare" | "bookmarks" | "timeline";
 export type PoppedTab = "compare" | "timeline";
@@ -37,9 +38,16 @@ export function useDockLayout() {
   const getDoc = (): AppState => useStore.getState().doc;
 
   // Switching the dock tab or filter set mounts/renders a large list — a long
-  // task that would block the click's paint (high INP). Deferring it keeps the
-  // interaction responsive; isPanelPending dims the panel body while it renders.
-  const [isPanelPending, startPanelTransition] = useTransition();
+  // task that would block the click's paint (high INP). We keep that off the
+  // critical path by rendering a *deferred* copy of the panel-view selection
+  // (the active tab + active set id, below) via useDeferredValue, then dim the
+  // body (isPanelPending) until the background render catches up.
+  //
+  // Note: the old code used useTransition here, but the doc now lives in a
+  // Zustand store (useSyncExternalStore), and React forces external-store updates
+  // to render synchronously even inside a transition — so the transition no
+  // longer deferred anything. useDeferredValue works on the value, in render, so
+  // it survives the move to an external store.
   const fpRef = useRef<PanelImperativeHandle | null>(null);
   const popRef = useRef<PanelImperativeHandle | null>(null);
 
@@ -68,13 +76,11 @@ export function useDockLayout() {
   const selectPanelTab = (tab: PanelTab) => {
     const s = getDoc();
     if (resolveActiveTab(s) === tab && !s.filterCollapsed) return;
-    startPanelTransition(() =>
-      setState((st) => ({
-        ...st,
-        activePanelTab: tab,
-        filterCollapsed: false,
-      })),
-    );
+    setState((st) => ({
+      ...st,
+      activePanelTab: tab,
+      filterCollapsed: false,
+    }));
   };
 
   // Compare and Timeline, when popped, share ONE dock beside Filters. Popping a
@@ -134,15 +140,24 @@ export function useDockLayout() {
   )
     ? (state.poppedActiveTab ?? "compare")
     : (poppedTabs[0] ?? "compare");
-  // Bookmarks is always a tab. Compare/Timeline fall back to Filters when unavailable.
-  const activePanelTab: PanelTab =
-    state.activePanelTab === "bookmarks"
-      ? "bookmarks"
-      : state.activePanelTab === "timeline" && timelineTabAvailable
-        ? "timeline"
-        : state.activePanelTab === "compare" && compareTabAvailable
-          ? "compare"
-          : "filters";
+  // Bookmarks is always a tab. Compare/Timeline fall back to Filters when
+  // unavailable. We render the *deferred* resolution so switching tabs keeps the
+  // (large) body swap off the click's critical path (see the note above).
+  const liveActiveTab = resolveActiveTab(state);
+  const activePanelTab = useDeferredValue(liveActiveTab);
+
+  // The active set id, deferred for the same reason — switching sets re-renders
+  // the whole filter list. App's `set` lookup ignores a deferred id that isn't in
+  // the current file's sets (it belongs to a previously-active file).
+  const af = activeFile(state);
+  const liveSetId = af?.activeSetId ?? null;
+  const deferredActiveSetId = useDeferredValue(liveSetId);
+
+  // Dim the panel body while either deferral is still catching up.
+  const isPanelPending =
+    activePanelTab !== liveActiveTab ||
+    (deferredActiveSetId !== liveSetId &&
+      !!af?.sets.some((g) => g.id === deferredActiveSetId));
   // The popped dock docks on the side opposite the main panel.
   const poppedPos: "bottom" | "right" =
     state.panelPos === "bottom" ? "right" : "bottom";
@@ -212,7 +227,7 @@ export function useDockLayout() {
 
   return {
     isPanelPending,
-    startPanelTransition,
+    deferredActiveSetId,
     fpRef,
     popRef,
     setFilterPos,

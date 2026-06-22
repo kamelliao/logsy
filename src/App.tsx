@@ -3,6 +3,7 @@ import {
   useMemo,
   useEffect,
   useCallback,
+  useDeferredValue,
   CSSProperties,
   ReactNode,
 } from "react";
@@ -112,12 +113,43 @@ export function App() {
       });
   }, []);
 
+  // The active file, derived from a *deferred* active-file id for the same reason
+  // `set` is (below): switching to another open tab re-runs computeView over a
+  // large file — heavy work React can't defer through a transition now the doc
+  // lives in a Zustand store (useSyncExternalStore). useDeferredValue lets the old
+  // file (and its lines/view) stay on screen, dimmed, until the background render
+  // catches up. The live id drives the instant sidebar tab highlight; a deferred id
+  // left over from a closed file isn't found, so we fall back to the live file.
+  const deferredFileId = useDeferredValue(state.activeFileId);
+  const deferredFile = state.files.find((f) => f.id === deferredFileId);
   const file =
+    deferredFile ??
     state.files.find((f) => f.id === state.activeFileId) ??
     state.files[0] ??
     null;
+  const isSwitchingFile =
+    !!deferredFile && deferredFile.id !== state.activeFileId;
+
+  // ---------- dock layout ----------
+  // Resolved before `set` because the dock owns the deferred panel-view selection
+  // (the deferred set id, below) that `set` keys off.
+  const dock = useDockLayout();
+  const { selectPanelTab, toggleFilterCollapsed } = dock;
+
+  // The active filter set, derived from the dock's *deferred* set id so switching
+  // sets keeps the heavy re-render (recompile + recompute view + the filter list +
+  // LogView highlights) off the click's critical path. The doc lives in a Zustand
+  // store (useSyncExternalStore) now, and React can't defer external-store updates
+  // inside a transition — so the dock defers the derived value with useDeferredValue
+  // instead. During a switch the deferred id still points at the old set (the live
+  // file.activeSetId drives the instant tab highlight); a deferred id left over from
+  // a previous file isn't in this file's sets, so we fall back to the live set (no
+  // file-switch flicker).
+  const deferredSet = file?.sets.find((g) => g.id === dock.deferredActiveSetId);
   const set = file
-    ? (file.sets.find((g) => g.id === file.activeSetId) ?? file.sets[0])
+    ? (deferredSet ??
+      file.sets.find((g) => g.id === file.activeSetId) ??
+      file.sets[0])
     : null;
   // Log-view header state is per-document (stored on the active LogFile).
   const findOpen = file?.findOpen ?? false;
@@ -131,7 +163,6 @@ export function App() {
   const {
     lines,
     busy,
-    isSwitchingFile,
     dragOver,
     openScreen,
     setOpenScreen,
@@ -147,19 +178,11 @@ export function App() {
   );
   const view = useMemo(() => computeView(lines, compiled), [lines, compiled]);
 
-  // ---------- dock layout ----------
-  const dock = useDockLayout();
-  // The three the App body itself drives; the rest of the bundle is consumed by
-  // <Workspace> (the dock chrome) via the `dock` prop.
-  const { startPanelTransition, selectPanelTab, toggleFilterCollapsed } = dock;
-
-  // The filter slice's confirm-dialog and panel-transition collaborators can't be
-  // store state (they're React/UI primitives), so bind them into the store once.
+  // The filter slice's confirm-dialog collaborator can't be store state (it's a
+  // React/UI primitive), so bind it into the store once.
   useEffect(() => {
-    useStore
-      .getState()
-      .setRuntime({ confirm: appConfirm, runTransition: startPanelTransition });
-  }, [appConfirm, startPanelTransition]);
+    useStore.getState().setRuntime({ confirm: appConfirm });
+  }, [appConfirm]);
 
   // ---------- compare / timeline / bookmarks ----------
   const {
