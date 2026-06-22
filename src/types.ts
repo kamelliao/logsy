@@ -175,11 +175,16 @@ export type FieldType = "string" | "int" | "hex" | "float" | "time";
 /**
  * Unit a timeline source's time field is in. Clock formats ("H:M:S.mmm", "M:S")
  * are self-describing → `"hms"`; a plain number carries no unit, so the user
- * declares whether it is seconds / milli / micro / nanoseconds. The timeline
- * normalizes everything to nanoseconds using this. Lives on `TimelineSource`,
- * independent of the filter's field definitions.
+ * declares whether it is seconds / milli / micro / nanoseconds. `"date"` is for
+ * absolute date+time stamps (Android logcat "MM-DD HH:MM:SS.mmm", ISO 8601,
+ * syslog "Mon DD HH:MM:SS") — auto-parsed, year assumed when omitted (the
+ * timeline is relative, so a missing year doesn't shift the layout). `"custom"`
+ * parses the field with a user-supplied `TimelineSource.format` pattern (e.g.
+ * "MM-dd HH:mm:ss.SSS") — the escape hatch for any shape the auto-parsers miss.
+ * The timeline normalizes everything to nanoseconds using this. Lives on
+ * `TimelineSource`, independent of the filter's field definitions.
  */
-export type TimeUnit = "hms" | "s" | "ms" | "us" | "ns";
+export type TimeUnit = "hms" | "s" | "ms" | "us" | "ns" | "date" | "custom";
 
 /** Marker shape for a point event on the timeline (spans always render as bars). */
 export type EventShape = "circle" | "square" | "triangle" | "diamond";
@@ -259,6 +264,12 @@ export interface TimelineSource {
   endField?: string;
   /** Unit the time field(s) are in; normalized to ns. */
   unit: TimeUnit;
+  /**
+   * Only when `unit === "custom"`: the user's time-format pattern, applied to the
+   * raw field text. Tokens `YYYY YY MMM MM M DD D HH H mm m ss s` plus a run of
+   * `S` (fractional seconds, any length); every other character matches literally.
+   */
+  format?: string;
   /** Mark color; defaults to a per-lane palette color. */
   color?: string;
   /** Point marker shape; defaults to "circle". Spans always render as bars. */

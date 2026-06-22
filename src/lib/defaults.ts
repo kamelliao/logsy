@@ -142,9 +142,12 @@ export function normalizeState(state: AppState): AppState {
           .map((s) => ({
             ...s,
             lane: typeof s.lane === "string" ? s.lane : s.timeField,
-            unit: ["hms", "s", "ms", "us", "ns"].includes(s.unit)
+            unit: ["hms", "s", "ms", "us", "ns", "date", "custom"].includes(
+              s.unit,
+            )
               ? s.unit
               : "hms",
+            format: typeof s.format === "string" ? s.format : undefined,
           }));
         if (g.sources.length === 0) delete g.sources;
       } else if (g.sources !== undefined) {
