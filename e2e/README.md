@@ -9,6 +9,17 @@ unit tests in `src-tauri`.
 
 ## Running
 
+First install the browser binaries (one-time, and again whenever
+`@playwright/test` is upgraded — `bun install` does _not_ fetch them):
+
+```bash
+bunx playwright install chromium
+```
+
+If they're missing, every test fails instantly (~2 ms each) with
+`browserType.launch: Executable doesn't exist …chrome-headless-shell.exe` —
+that's a setup gap, not a broken suite.
+
 ```bash
 bun run test:e2e          # headless run
 bun run test:e2e:ui       # interactive UI mode
