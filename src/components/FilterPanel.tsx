@@ -151,9 +151,22 @@ function RowMenuItems({
         </span>
         Duplicate
       </DropdownMenuItem>
-      {timeFields.length > 0 && (
+      <DropdownMenuSeparator />
+      {timeFields.length === 0 ? (
+        // No capture field → the action can't work. Show it disabled (not
+        // hidden) with a one-line reason, so the path isn't a silent dead end.
+        <DropdownMenuItem
+          disabled
+          className="disabled"
+          title="Needs a named capture field, e.g. (?<ts>\d+)"
+        >
+          <span className="mi-ico">
+            <ChartGantt size={15} />
+          </span>
+          Add to timeline track
+        </DropdownMenuItem>
+      ) : (
         <>
-          <DropdownMenuSeparator />
           {timeFields.length === 1 ? (
             <DropdownMenuItem onClick={() => onToggleTrack(timeFields[0].name)}>
               <span className="mi-ico">
@@ -169,7 +182,7 @@ function RowMenuItems({
                 <span className="mi-ico">
                   {allTracked ? <Check size={15} /> : <ChartGantt size={15} />}
                 </span>
-                Timeline tracks
+                Add to timeline tracks
               </DropdownMenuSubTrigger>
               <DropdownMenuSubContent>
                 {timeFields.map((d) => (
@@ -789,6 +802,21 @@ const FilterRowCells = memo(
                     {f.fields.map((x) => (
                       <span key={x.name} className="fr-chip-field">
                         {x.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Timeline membership lives here (not on the row): which fields
+                  of this filter are plotted as tracks. */}
+              {trackedFields.length > 0 && (
+                <div className="fr-card-fields">
+                  <span className="fr-card-flabel">Timeline</span>
+                  <div className="fr-card-chips">
+                    {trackedFields.map((name) => (
+                      <span key={name} className="fr-chip-field tl">
+                        {name}
                       </span>
                     ))}
                   </div>
