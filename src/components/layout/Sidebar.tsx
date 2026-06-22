@@ -203,6 +203,7 @@ export function Sidebar({
       <div className="sidebar-bottom">
         <Popover>
           <PopoverTrigger
+            nativeButton={false}
             render={
               <div className="settings-row" role="button">
                 <Settings size={16} />
