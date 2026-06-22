@@ -67,9 +67,9 @@ export interface FilterActions {
  * the drag-and-drop layout, bulk actions, and reading/writing filter files (Logsy
  * JSON + TextAnalysisTool.NET import). Ported 1:1 from the old useFilterActions
  * hook; file/set are resolved from the live document instead of render-time props,
- * and the UI collaborators (confirm dialog, panel transition, edit modal, solo
- * filter) come from the store (`confirm`/`runTransition` are bound at runtime by
- * App; `setEditing`/`soloFilterId`/`setSoloFilterId` live in the ui slice).
+ * and the UI collaborators (confirm dialog, edit modal, solo filter) come from the
+ * store (`confirm` is bound at runtime by App; `setEditing`/`soloFilterId`/
+ * `setSoloFilterId` live in the ui slice).
  */
 export function createFilterActions(
   _set: unknown,
@@ -82,15 +82,15 @@ export function createFilterActions(
 
   return {
     // ---------- sets ----------
+    // The heavy re-render this triggers is deferred in render via the dock's
+    // deferred set id (useDockLayout / App), not here — see that note.
     switchSet: (gid) =>
-      get().runTransition(() =>
-        patch(
-          (s) => {
-            const f = activeFile(s);
-            if (f) f.activeSetId = gid;
-          },
-          { undoable: false },
-        ),
+      patch(
+        (s) => {
+          const f = activeFile(s);
+          if (f) f.activeSetId = gid;
+        },
+        { undoable: false },
       ),
     addSet: () =>
       patch((s) => {

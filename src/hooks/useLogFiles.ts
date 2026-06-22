@@ -1,11 +1,4 @@
-import {
-  useState,
-  useMemo,
-  useEffect,
-  useCallback,
-  useRef,
-  useTransition,
-} from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -48,8 +41,6 @@ export interface LogFilesApi {
   lines: string[];
   /** Set while a log file is being read from disk — drives the loading overlay. */
   busy: { name: string } | null;
-  /** True while React computes the view for a just-switched (large) file. */
-  isSwitchingFile: boolean;
   /** True while a genuine file drag is over the window. */
   dragOver: boolean;
   /** When true, show the blank "open a file" drop screen instead of the workspace. */
@@ -75,9 +66,6 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
   const [linesVersion, setLinesVersion] = useState(0);
   // When set, a log file is being read from disk — drives the loading overlay.
   const [busy, setBusy] = useState<{ name: string } | null>(null);
-  // Marks a non-urgent file switch so React can show an overlay while computing
-  // the new view rather than silently freezing for large files.
-  const [isSwitchingFile, startFileSwitchTransition] = useTransition();
   const [dragOver, setDragOver] = useState(false);
   // When set, the center shows a blank "open a file" drop screen instead of the
   // active workspace (triggered by the sidebar's Open File button).
@@ -92,9 +80,11 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
 
   const selectFile = (fid: string) => {
     setOpenScreen(false);
-    startFileSwitchTransition(() =>
-      setState((s) => ({ ...s, activeFileId: fid })),
-    );
+    // The heavy re-render this triggers (computeView over the switched-to file)
+    // is deferred in render via App's deferred active-file id (isSwitchingFile),
+    // not here — a transition can't defer this Zustand (useSyncExternalStore)
+    // update.
+    setState((s) => ({ ...s, activeFileId: fid }));
   };
 
   // Closing a log discards its workspace (filters, sets) — confirm first.
@@ -391,7 +381,6 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
   return {
     lines,
     busy,
-    isSwitchingFile,
     dragOver,
     openScreen,
     setOpenScreen,
