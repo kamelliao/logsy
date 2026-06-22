@@ -35,7 +35,7 @@ export function parseTatFilters(text: string): ImportedFilters | null {
   return { filters, groups: [], order: filters.map((f) => f.id), sources: [] };
 }
 
-const TIME_UNITS: TimeUnit[] = ["hms", "s", "ms", "us", "ns"];
+const TIME_UNITS: TimeUnit[] = ["hms", "s", "ms", "us", "ns", "date", "custom"];
 const SHAPES: EventShape[] = ["circle", "square", "triangle", "diamond"];
 
 /** The filters/groups/layout extracted from an imported filter file. */
@@ -92,6 +92,7 @@ function importSources(raw: unknown): TimelineSource[] {
           ? s.endField
           : undefined,
       unit: TIME_UNITS.includes(s.unit) ? s.unit : guessUnit(s.timeField),
+      format: typeof s.format === "string" ? s.format : undefined,
       color: typeof s.color === "string" ? s.color : undefined,
       shape: SHAPES.includes(s.shape) ? s.shape : undefined,
       collapsed: s.collapsed === true ? true : undefined,

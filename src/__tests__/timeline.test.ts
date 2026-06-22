@@ -7,6 +7,11 @@ import {
   guessUnit,
   buildTimeline,
   trackFieldsOf,
+  parseDateTime,
+  parseFormat,
+  isValidFormat,
+  isDateLike,
+  isTimeLike,
 } from "@/lib/engine";
 import { normalizeState } from "@/lib/defaults";
 import type { Filter, FieldDef, TimelineSource, AppState } from "@/types";
@@ -65,6 +70,152 @@ test("coerceTime falls back to the raw string when not a number", () => {
 test("coerceValue stays legacy (no scaling) when no unit is given", () => {
   expect(coerceValue("00:00:01.500", "time")).toBe(1500);
   expect(coerceValue("12.5", "time", "ms")).toBe(12_500_000);
+});
+
+// --- absolute date+time stamps (Android logcat / ISO / syslog) --------------
+
+// Year-less formats assume `ASSUMED_YEAR` (see engine.ts); everything is UTC.
+const ASSUMED_YEAR = 2026;
+
+test("parseDateTime handles Android logcat (year-less MM-DD HH:MM:SS.mmm)", () => {
+  expect(parseDateTime("08-11 22:15:30.294")).toBe(
+    Date.UTC(ASSUMED_YEAR, 7, 11, 22, 15, 30) * 1e6 + 294_000_000,
+  );
+  // sub-millisecond fraction is preserved (microseconds here)
+  expect(parseDateTime("08-11 22:15:30.294567")).toBe(
+    Date.UTC(ASSUMED_YEAR, 7, 11, 22, 15, 30) * 1e6 + 294_567_000,
+  );
+  // ordering across the day boundary is correct
+  expect(parseDateTime("08-12 00:00:00")).toBeGreaterThan(
+    parseDateTime("08-11 23:59:59"),
+  );
+});
+
+test("parseDateTime handles ISO 8601 with and without a timezone", () => {
+  expect(parseDateTime("2026-06-22 08:11:30.500")).toBe(
+    Date.UTC(2026, 5, 22, 8, 11, 30) * 1e6 + 500_000_000,
+  );
+  expect(parseDateTime("2026-06-22T08:11:30Z")).toBe(
+    Date.UTC(2026, 5, 22, 8, 11, 30) * 1e6,
+  );
+  // +08:00 offset shifts back to UTC
+  expect(parseDateTime("2026-06-22T08:11:30+08:00")).toBe(
+    Date.UTC(2026, 5, 22, 0, 11, 30) * 1e6,
+  );
+});
+
+test("parseDateTime handles syslog (Mon DD HH:MM:SS)", () => {
+  expect(parseDateTime("Jun 22 08:11:30")).toBe(
+    Date.UTC(ASSUMED_YEAR, 5, 22, 8, 11, 30) * 1e6,
+  );
+});
+
+test("parseDateTime returns NaN for non-dates", () => {
+  expect(Number.isNaN(parseDateTime("nope"))).toBe(true);
+});
+
+test("coerceTime with the date unit normalizes a logcat stamp to ns", () => {
+  expect(coerceTime("08-11 22:15:30.294", "date")).toBe(
+    Date.UTC(ASSUMED_YEAR, 7, 11, 22, 15, 30) * 1e6 + 294_000_000,
+  );
+  // non-date text falls back to the raw string (skipped by buildTimeline)
+  expect(coerceTime("not a date", "date")).toBe("not a date");
+});
+
+test("isDateLike / isTimeLike accept date+time shapes so the field qualifies", () => {
+  expect(isDateLike("08-11 22:15:30.294")).toBe(true);
+  expect(isDateLike("2026-06-22T08:11:30Z")).toBe(true);
+  expect(isDateLike("Jun 22 08:11:30")).toBe(true);
+  expect(isDateLike("12345")).toBe(false);
+  // a string-typed field holding a logcat stamp now reads as time-like
+  expect(isTimeLike("08-11 22:15:30.294")).toBe(true);
+});
+
+test("guessUnit picks date from a logcat/ISO sample", () => {
+  expect(guessUnit("ts", "08-11 22:15:30.294")).toBe("date");
+  expect(guessUnit("ts", "2026-06-22T08:11:30Z")).toBe("date");
+});
+
+test("buildTimeline plots Android logcat lines via the date unit", () => {
+  const lines = [
+    "08-11 22:15:30.294 D msg one",
+    "08-11 22:15:31.000 D msg two",
+  ];
+  const v = viewOf(lines, [
+    filter(
+      "f",
+      "(?<ts>\\d\\d-\\d\\d \\d\\d:\\d\\d:\\d\\d\\.\\d+)\\s+(?<msg>.*)",
+      [
+        { name: "ts", type: "string" },
+        { name: "msg", type: "string" },
+      ],
+    ),
+  ]);
+  const marks = buildTimeline(v, [1, 2], [track("f", "ts", { unit: "date" })]);
+  expect(marks.map((m) => m.lineN)).toEqual([1, 2]);
+  expect(marks[0].t).toBe(
+    Date.UTC(ASSUMED_YEAR, 7, 11, 22, 15, 30) * 1e6 + 294_000_000,
+  );
+  expect(marks[1].t).toBeGreaterThan(marks[0].t);
+});
+
+// --- custom user-supplied time format ---------------------------------------
+
+test("parseFormat applies a user pattern (year-less, fractional seconds)", () => {
+  expect(parseFormat("08-11 22:15:30.294", "MM-DD HH:mm:ss.SSS")).toBe(
+    Date.UTC(ASSUMED_YEAR, 7, 11, 22, 15, 30) * 1e6 + 294_000_000,
+  );
+  // the S-run matches any fractional length, not just 3 digits
+  expect(parseFormat("08-11 22:15:30.294567", "MM-DD HH:mm:ss.S")).toBe(
+    Date.UTC(ASSUMED_YEAR, 7, 11, 22, 15, 30) * 1e6 + 294_567_000,
+  );
+});
+
+test("parseFormat handles a full year + month name", () => {
+  expect(parseFormat("2026/Jun/22 08:11:30", "YYYY/MMM/DD HH:mm:ss")).toBe(
+    Date.UTC(2026, 5, 22, 8, 11, 30) * 1e6,
+  );
+  // an unknown month name fails (caller falls back to the raw string)
+  expect(
+    Number.isNaN(parseFormat("2026/Xyz/22 08:11:30", "YYYY/MMM/DD HH:mm:ss")),
+  ).toBe(true);
+});
+
+test("parseFormat returns NaN when the text doesn't match the pattern", () => {
+  expect(Number.isNaN(parseFormat("not a time", "HH:mm:ss"))).toBe(true);
+});
+
+test("isValidFormat flags empty / token-less patterns (drives the row warning)", () => {
+  expect(isValidFormat("MM-DD HH:mm:ss.SSS")).toBe(true);
+  expect(isValidFormat("HH:mm")).toBe(true);
+  expect(isValidFormat("")).toBe(false); // empty
+  expect(isValidFormat("-- ::")).toBe(false); // literals only, no field token
+});
+
+test("coerceTime custom uses the format; missing/garbage format → raw string", () => {
+  expect(coerceTime("22:15:30", "custom", "HH:mm:ss")).toBe(
+    Date.UTC(ASSUMED_YEAR, 0, 1, 22, 15, 30) * 1e6,
+  );
+  expect(coerceTime("22:15:30", "custom")).toBe("22:15:30");
+  expect(coerceTime("nope", "custom", "HH:mm:ss")).toBe("nope");
+});
+
+test("buildTimeline plots lines via a custom format track", () => {
+  const lines = ["[2026.06.22 08-11-30] boot", "[2026.06.22 08-11-31] ready"];
+  const v = viewOf(lines, [
+    filter("f", "\\[(?<ts>[\\d.]+ [\\d-]+)\\]\\s+(?<msg>.*)", [
+      { name: "ts", type: "string" },
+      { name: "msg", type: "string" },
+    ]),
+  ]);
+  const marks = buildTimeline(
+    v,
+    [1, 2],
+    [track("f", "ts", { unit: "custom", format: "YYYY.MM.DD HH-mm-ss" })],
+  );
+  expect(marks.map((m) => m.lineN)).toEqual([1, 2]);
+  expect(marks[0].t).toBe(Date.UTC(2026, 5, 22, 8, 11, 30) * 1e6);
+  expect(marks[1].t).toBeGreaterThan(marks[0].t);
 });
 
 test("guessUnit reads a unit suffix, else assumes a clock", () => {

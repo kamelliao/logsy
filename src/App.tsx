@@ -200,6 +200,7 @@ export function App() {
     timelineLines,
     marks,
     badEndTracks,
+    badFormatTracks,
     timeFieldsByFilter,
     orphanLines,
     trackLineStats,
@@ -499,6 +500,7 @@ export function App() {
         timeFields={timeFieldsByFilter}
         marks={marks}
         badEndTracks={badEndTracks}
+        badFormatTracks={badFormatTracks}
         lineCount={timelineLines.size}
         onSetTrack={setTrack}
         onRemoveTrack={removeTrack}
