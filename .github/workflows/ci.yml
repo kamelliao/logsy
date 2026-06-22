@@ -24,7 +24,10 @@ jobs:
         run: bunx tsc --noEmit
 
       - name: Run tests
-        run: bun test
+        # Use the package script (`bun test ./src`) so CI scopes to the unit
+        # tests. A bare `bun test` would also glob the Playwright `e2e/*.spec.ts`
+        # files and run them under Bun's runner, which fails on `test.describe()`.
+        run: bun run test
 
   # Rust-side unit tests (e.g. the BOM-less UTF-16 encoding sniffer).
   rust-test:
