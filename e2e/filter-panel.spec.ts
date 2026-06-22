@@ -78,12 +78,20 @@ test.describe("FilterPanel", () => {
       ).toHaveText("Error lines");
     });
 
-    test("renders flag badges for case / regex / exclude", async ({ page }) => {
+    test("shows case / regex in the hover card and the exclude badge on the row", async ({
+      page,
+    }) => {
+      // Case/regex are no longer inline chips — they live only in the hover card.
       await addFilter(page, "err", { regex: true, caseSensitive: true });
-      const row = filterRow(page, "err");
-      await expect(row.locator(".fr-flag", { hasText: "Aa" })).toBeVisible();
-      await expect(row.locator(".fr-flag", { hasText: ".*" })).toBeVisible();
+      await filterRow(page, "err").hover();
+      await expect(
+        page.locator(".fr-pill", { hasText: "regex" }),
+      ).toBeVisible();
+      await expect(
+        page.locator(".fr-pill", { hasText: "case-sensitive" }),
+      ).toBeVisible();
 
+      // The exclude badge stays on the row (a semantic flag, not just detail).
       await addFilter(page, "wifi", { exclude: true });
       await expect(
         filterRow(page, "wifi").locator(".fr-flag.ex"),
