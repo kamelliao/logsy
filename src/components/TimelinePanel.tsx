@@ -69,7 +69,7 @@ import {
 import { PanelEmpty } from "@/components/PanelEmpty";
 import { TimelineCanvas } from "@/components/TimelineCanvas";
 
-const UNITS: TimeUnit[] = ["hms", "s", "ms", "us", "ns"];
+const UNITS: TimeUnit[] = ["hms", "s", "ms", "us", "ns", "date", "custom"];
 
 // Compact track palette + the four point shapes for the per-row color/shape picker.
 const TRACK_COLORS = [
@@ -108,6 +108,9 @@ interface Props {
   /** Span track ids whose end field resolved BEFORE the start (illegal span):
    *  the end is dropped and the row shows a warning. */
   badEndTracks: Set<string>;
+  /** Custom-unit track ids whose `format` is empty / un-parseable / fails on the
+   *  field's actual values — the row shows a warning next to the format box. */
+  badFormatTracks: Set<string>;
   /** How many log lines the user has added to the timeline. */
   lineCount: number;
   onSetTrack: (tr: TimelineSource) => void;
@@ -162,6 +165,7 @@ export function TimelinePanel({
   timeFields,
   marks,
   badEndTracks,
+  badFormatTracks,
   lineCount,
   onSetTrack,
   onRemoveTrack,
@@ -412,6 +416,7 @@ export function TimelinePanel({
                       onClearLines={() => onClearTrackLines(tr)}
                       onFocusFilter={onFocusFilter}
                       badEnd={badEndTracks.has(tr.id)}
+                      badFormat={badFormatTracks.has(tr.id)}
                       inTl={st?.inTl ?? 0}
                       matching={st?.matching ?? 0}
                       canImport={
@@ -440,6 +445,7 @@ function TrackRow({
   onClearLines,
   onFocusFilter,
   badEnd,
+  badFormat,
   inTl,
   matching,
   canImport,
@@ -454,6 +460,7 @@ function TrackRow({
   onClearLines: () => void;
   onFocusFilter: (filterId: string) => void;
   badEnd: boolean;
+  badFormat: boolean;
   inTl: number;
   matching: number;
   canImport: boolean;
@@ -492,6 +499,17 @@ function TrackRow({
     const v = draft.trim();
     if (v && v !== tr.lane) onSet({ ...tr, lane: v });
     setEditing(false);
+  };
+
+  // Custom-format draft: committed on blur/Enter (not per keystroke) so a typed
+  // pattern is one undoable edit, not one per character — mirrors the rename box.
+  const [fmtDraft, setFmtDraft] = useState(tr.format ?? "");
+  useEffect(() => {
+    setFmtDraft(tr.format ?? "");
+  }, [tr.format]);
+  const commitFormat = () => {
+    const v = fmtDraft.trim();
+    if (v !== (tr.format ?? "")) onSet({ ...tr, format: v || undefined });
   };
 
   // The filter is shown as "#N · description" (N = its 1-based order in the set);
@@ -733,6 +751,50 @@ function TrackRow({
           </SelectGroup>
         </SelectContent>
       </Select>
+
+      {/* Custom-format pattern: shown only for the "custom" unit. Tokens are
+          moment/dayjs-style; everything else matches literally. Committed on
+          blur/Enter. A monospace box so the pattern's columns read clearly. An
+          amber triangle (like the bad-span warning) flags an empty / unparseable
+          pattern, or one that doesn't match the field's actual values. */}
+      {tr.unit === "custom" && (
+        <span className="inline-flex shrink-0 items-center gap-0.5">
+          <input
+            className={`h-5 w-[124px] rounded border bg-background px-1 font-mono text-[11px] outline-none focus:border-ring ${
+              badFormat ? "border-amber-500" : "border-input"
+            }`}
+            placeholder="MM-DD HH:mm:ss.SSS"
+            value={fmtDraft}
+            spellCheck={false}
+            title="Custom time format. Tokens: YYYY YY MMM MM M DD D HH H mm m ss s, and a run of S for fractional seconds. Any other character matches literally."
+            onChange={(e) => setFmtDraft(e.target.value)}
+            onBlur={commitFormat}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                commitFormat();
+                e.currentTarget.blur();
+              } else if (e.key === "Escape") {
+                e.preventDefault();
+                setFmtDraft(tr.format ?? "");
+                e.currentTarget.blur();
+              }
+            }}
+          />
+          {badFormat && (
+            <span
+              className="flex shrink-0 items-center text-amber-500"
+              title={
+                tr.format
+                  ? "This time format doesn't parse the field's values — check the pattern (tokens: YYYY MM DD HH mm ss, S for fractions)."
+                  : "Enter a time format pattern (e.g. MM-DD HH:mm:ss.SSS)."
+              }
+            >
+              <AlertTriangle className="size-3" />
+            </span>
+          )}
+        </span>
+      )}
 
       {/* Trailing action buttons. When the row is wide enough they sit inline;
           below ~340px (a narrow side dock) they collapse into a ⋯ overflow menu

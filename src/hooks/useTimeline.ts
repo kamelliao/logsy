@@ -1,7 +1,14 @@
 import { useMemo } from "react";
 import { toast } from "sonner";
 import type { LogFile, FilterSet, ViewResult, TimelineSource } from "@/types";
-import { buildTimeline, laneColor, guessUnit, isTimeLike } from "@/lib/engine";
+import {
+  buildTimeline,
+  laneColor,
+  guessUnit,
+  isTimeLike,
+  isValidFormat,
+  coerceTime,
+} from "@/lib/engine";
 import { withSet } from "@/state/selectors";
 import { useStore } from "@/store";
 import type { PanelTab } from "@/hooks/useDockLayout";
@@ -209,6 +216,31 @@ export function useTimeline({ view, file, set, selectPanelTab }: Deps) {
     return m;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tracks, view, timelineLines]);
+  // Custom-format tracks whose `format` can't plot the field: empty / un-parseable
+  // pattern, OR a syntactically valid pattern that fails on the field's actual
+  // value (a sampled matched line). Drives the amber warning next to the format
+  // box — the analogue of `badEndTracks` for the `custom` unit.
+  const badFormatTracks = useMemo(() => {
+    const bad = new Set<string>();
+    for (const tr of tracks) {
+      if (tr.unit !== "custom") continue;
+      if (!isValidFormat(tr.format ?? "")) {
+        bad.add(tr.id);
+        continue;
+      }
+      const lines = winnerLines(tr.filterId, tr.timeField);
+      const sample = lines.length
+        ? view.fieldsFor(lines[0])?.[tr.timeField]?.raw
+        : undefined;
+      if (
+        sample !== undefined &&
+        typeof coerceTime(sample, "custom", tr.format) !== "number"
+      )
+        bad.add(tr.id);
+    }
+    return bad;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tracks, view]);
   // Orphan lines: on the timeline but producing no mark (their first-match filter
   // has no track, or the track's field is absent) — the "added but nothing shows"
   // case. Surfaced as a bounded hint in the timeline panel.
@@ -293,6 +325,7 @@ export function useTimeline({ view, file, set, selectPanelTab }: Deps) {
     timelineLines,
     marks,
     badEndTracks,
+    badFormatTracks,
     timeFieldsByFilter,
     orphanLines,
     trackLineStats,
