@@ -278,6 +278,10 @@ export interface TimelineSource {
   collapsed?: boolean;
   /** Hide this track from the timeline without deleting its config. */
   hidden?: boolean;
+  /** Draw the time delta between consecutive points on this lane (UI only). */
+  showDeltas?: boolean;
+  /** Expand this lane to show a per-point detail card (UI only). */
+  expanded?: boolean;
 }
 
 /** One extracted timeline event, time normalized to nanoseconds. */

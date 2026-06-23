@@ -1187,6 +1187,12 @@ button {
   font-size: 11px;
   color: var(--text);
 }
+/* Pinned per-point detail card for an expanded lane: identical look to the hover
+   card (it reuses `.tlc-tip` + EventCardBody); this only re-anchors it inside the
+   sticky viewport (over the canvas) instead of the portal/edge-flip positioning. */
+.tlc-card {
+  z-index: 4;
+}
 .tlc-tip-h {
   display: flex;
   align-items: center;
