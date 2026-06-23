@@ -26,12 +26,17 @@ const PAD = 6; // gap below the last lane
 // many tracks stay readable at a glance regardless of the panel's height.
 const LANE_H = 28;
 // An expanded lane keeps its LANE_H point row, then adds a card strip below for
-// the per-point detail cards. The strip height is sized per lane to fit its
-// cards (estCardH), clamped to [CARD_MIN_H, CARD_MAX_H]; cards are decimated
-// left→right by their own width so only non-overlapping ones render.
+// the per-point detail cards. The strip height is sized per lane to fit its cards
+// (estCardH), clamped to [CARD_MIN_H, CARD_MAX_H]. Cards are decimated left→right
+// but may overlap by CARD_OVERLAP of their width, so the strip packs dense while
+// the rendered-card count stays bounded (perf). Hover focuses one; clicking raises.
 const CARD_MIN_H = 60;
 const CARD_MAX_H = 300;
 const CARD_GAP = 6;
+// The decimation "sweet spot": how much of a card's width the next card may cover.
+// 0 = strict no-overlap (sparse, big gaps); →1 = a card per point (dense but slow).
+// At 0.5 each kept card still shows its left half (header + timestamp). Tune here.
+const CARD_OVERLAP = 0.5;
 
 // Minimap (overview strip above the main canvas): fixed height; a draggable
 // brush shows the visible window over the whole [0, maxT] domain. Only shown
@@ -134,11 +139,54 @@ function cardCols(m: EventMark): number {
   return n > 24 ? 3 : n > 12 ? 2 : 1;
 }
 
-/** A card's natural width (matches the hover card: grows with the column count so
- *  a field-heavy line becomes wider, not taller-and-clipped). */
+/** Approximate px width of a string at the card's 11px UI font. There's no canvas
+ *  ctx in this layout pass, so use per-glyph averages (narrow punctuation/`i`/`l`
+ *  thinner, wide caps fatter, digits are tabular). Good enough to size a card to
+ *  its content instead of a flat max. */
+function approxTextW(s: string): number {
+  let w = 0;
+  for (const ch of s) {
+    if (ch === " ") w += 3.1;
+    else if (/[.,:;'`|!iIlj()[\]]/.test(ch)) w += 3;
+    else if (/[mMW@]/.test(ch)) w += 9;
+    else if (/[0-9]/.test(ch)) w += 6.2;
+    else w += 6.4;
+  }
+  return w;
+}
+
+/** A card's natural width: multi-column (field-heavy) cards grow with the column
+ *  count; a single-column card is sized to its widest row's CONTENT (header / time
+ *  / a field's key+value) rather than a flat 240 — so a sparse card hugs its text
+ *  instead of being a wide empty box. Capped both ways: the value column ellipsises
+ *  at its own max, so a long value can't blow the card up. */
 function estCardW(m: EventMark): number {
   const c = cardCols(m);
-  return c > 1 ? c * 190 : 240;
+  if (c > 1) return c * 190;
+  const VAL_CAP = 150; // matches .tlc-tip-v max-width
+  // header: lane chip (name + 10px chip padding) + " L<lineN>"
+  let content = approxTextW(m.lane) + 12 + approxTextW(" L" + m.lineN);
+  if (m.end !== undefined) {
+    const valW = Math.max(
+      approxTextW(fmtNs(m.t)),
+      approxTextW(fmtNs(m.end)),
+      approxTextW(fmtNs(m.end - m.t)),
+    );
+    content = Math.max(content, approxTextW("begin") + 14 + valW); // label + srow gap
+  } else {
+    content = Math.max(content, approxTextW(fmtNs(m.t)));
+  }
+  if (m.fields) {
+    for (const [k, v] of Object.entries(m.fields)) {
+      // key + 8px field gap + value (the value ellipsises at VAL_CAP)
+      content = Math.max(
+        content,
+        approxTextW(k) + 8 + Math.min(VAL_CAP, approxTextW(v.raw)),
+      );
+    }
+  }
+  // + 16px horizontal padding + a little slack so non-ellipsising rows don't clip.
+  return Math.max(108, Math.min(240, Math.ceil(content) + 18));
 }
 
 /** Rough rendered height of a card (px), used to size an expanded lane so its
@@ -154,7 +202,7 @@ function estCardH(m: EventMark): number {
 }
 
 /** Inner content of an event card — shared by the hover tooltip and the expanded
- *  lanes' pinned overlay cards (same information either way). */
+ *  lanes' per-point overlay cards (same information either way). */
 function EventCardBody({ m, cols }: { m: EventMark; cols?: number }) {
   const fieldEntries = m.fields ? Object.entries(m.fields) : [];
   const c = cols ?? cardCols(m);
@@ -294,6 +342,11 @@ export function TimelineCanvas({
   // clear which event the log view jumped to. Keyed by markKey so it survives
   // marks-array re-creation.
   const [active, setActive] = useState<string | null>(null);
+  // Points whose detail card the user raised to the front (clicked) in an expanded
+  // lane, in CLICK ORDER — last entry is the topmost. Cards overlap; clicking a
+  // point brings its card above the others (clicking the current front one drops
+  // it). Keyed by markKey so it survives marks-array re-creation.
+  const [raised, setRaised] = useState<string[]>([]);
   const pan = useRef<{ x: number; offset: number } | null>(null);
   const measuring = useRef(false);
   // Active gutter-resize drag (grabbed the divider): snapshots the start so the
@@ -314,6 +367,13 @@ export function TimelineCanvas({
     () => new Map(lanes.map((l, i) => [l, i])),
     [lanes],
   );
+  // markKey → index into `marks`, so a card (which only carries its mark) can map
+  // a hover/click back to the index the hover state and draw loop key off.
+  const markIndexByKey = useMemo(() => {
+    const m = new Map<string, number>();
+    marks.forEach((mk, i) => m.set(markKey(mk), i));
+    return m;
+  }, [marks]);
   // Per-lane marks sorted by time — built only for lanes that need an ordered
   // view: delta lanes (gap to predecessor) and expanded lanes (left→right card
   // decimation). Skipped entirely when no track enables either.
@@ -539,11 +599,14 @@ export function TimelineCanvas({
     [marks, tOf, xOf],
   );
 
-  // Overlay detail cards for expanded lanes: one per point, decimated left→right
-  // so only non-overlapping cards render (hide-on-overlap; zooming in reveals
-  // more). Positioned in viewport coords (the `.tlc-vp` is sticky, so cards sit
-  // over the canvas without scrolling). Pointer-events:none — purely informative;
-  // the dot above stays click-to-jump.
+  // Overlay detail cards for expanded lanes: decimated left→right, but cards are
+  // allowed to OVERLAP by up to CARD_OVERLAP of their width (each one reserves only
+  // `w*(1-CARD_OVERLAP)+gap`), so the strip packs dense without rendering one node
+  // per point (which tanks perf). Each kept card still shows its left edge (header +
+  // timestamp); hover focuses one, clicking the dot raises it. A `raised` point is
+  // force-shown even when it would be decimated — and it does NOT shift the auto
+  // rhythm, so clicking never reshuffles the others. Positioned in viewport coords
+  // (the sticky `.tlc-vp`); pointer-events:none — the dot above stays click-to-jump.
   const cards = useMemo(() => {
     if (!view || !expandedLanes?.size || !sortedLaneMarks || size.w <= 0)
       return [];
@@ -553,31 +616,45 @@ export function TimelineCanvas({
       top: number;
       w: number;
       maxH: number;
+      /** Click-order rank among raised cards (−1 = not raised). Higher = clicked
+       *  more recently = stacked on top. */
+      rank: number;
+      /** px to clip off the card's top — the strip the pinned axis covers when the
+       *  card has scrolled partly above it (0 when fully below the axis). */
+      clipTop: number;
     }[] = [];
+    // markKey → click-order index, so a kept card knows its stacking rank.
+    const rankOf = new Map(raised.map((k, i) => [k, i]));
     for (const lane of expandedLanes) {
       const li = laneIndex.get(lane);
       if (li === undefined) continue;
       const top = laneTops[li] + LANE_H - scrollY + 2;
-      // Hide once the card's top crosses under the pinned axis (by then this
-      // lane's dot row has already scrolled out), or below the viewport.
-      if (top < AXIS || top > size.h) continue;
       const maxH = (laneCardH.get(lane) ?? CARD_MIN_H) - CARD_GAP;
+      // Cull only when the card's whole band is off-screen — entirely above the
+      // pinned axis, or entirely below the viewport. A card scrolled partly under
+      // the axis still shows its lower part; we just clip the covered strip (below)
+      // so it doesn't paint over the timestamp axis.
+      if (top + maxH <= AXIS || top >= size.h) continue;
+      const clipTop = Math.max(0, AXIS - top);
       const arr = sortedLaneMarks.get(lane);
       if (!arr) continue;
       let nextFree = -Infinity;
       for (const m of arr) {
         const x = xOf(m.t, view);
         if (x < GUTTER || x > size.w - RIGHT) continue;
-        if (x < nextFree) continue; // overlaps the previous kept card
-        // Each card keeps its natural (hover-card) width so multi-column,
-        // field-heavy cards show in full; decimation uses that width.
+        const rank = rankOf.get(markKey(m)) ?? -1;
+        const survives = x >= nextFree; // would survive decimation on its own
+        if (!survives && rank < 0) continue; // decimated away (and not raised)
         const w = estCardW(m);
         const left = Math.min(
           Math.max(x, GUTTER),
           Math.max(GUTTER, size.w - RIGHT - w),
         );
-        out.push({ m, left, top, w, maxH });
-        nextFree = x + w + CARD_GAP;
+        out.push({ m, left, top, w, maxH, rank, clipTop });
+        // Advance the rhythm only for cards that occupy an auto slot — a raised
+        // card shown out-of-rhythm doesn't push the others, so the auto layout is
+        // identical with or without it (clicking adds a card, never moves one).
+        if (survives) nextFree = x + w * (1 - CARD_OVERLAP) + CARD_GAP;
       }
     }
     return out;
@@ -591,9 +668,33 @@ export function TimelineCanvas({
     scrollY,
     laneTops,
     laneIndex,
+    raised,
     xOf,
     GUTTER,
   ]);
+
+  // Hit-test the overlay cards (viewport coords): a card counts as part of its
+  // point, so hovering/clicking a card behaves like hovering/clicking the dot. The
+  // cards keep pointer-events:none (so drag-to-measure over the strip still works);
+  // this picks the TOPMOST card under the cursor by the same z the render uses
+  // (raised rank > plain), returning the mark's index into `marks` (−1 = none).
+  const pickCard = useCallback(
+    (px: number, py: number): number => {
+      let best = -1,
+        bestZ = -Infinity;
+      for (const c of cards) {
+        if (px < c.left || px > c.left + c.w) continue;
+        if (py < c.top + c.clipTop || py > c.top + c.maxH) continue;
+        const z = c.rank >= 0 ? 5 + c.rank : 4;
+        if (z >= bestZ) {
+          bestZ = z;
+          best = markIndexByKey.get(markKey(c.m)) ?? best;
+        }
+      }
+      return best;
+    },
+    [cards, markIndexByKey],
+  );
 
   // --- draw ---
   useEffect(() => {
@@ -1179,7 +1280,10 @@ export function TimelineCanvas({
       }
       return;
     }
-    const i = pick(px, py);
+    // Dot row first; if the cursor isn't on a dot, fall back to its expanded card
+    // (so hovering a card highlights its point + focuses the card).
+    let i = pick(px, py);
+    if (i < 0) i = pickCard(px, py);
     setHover(i >= 0 ? { i, x: px, y: py, cx: e.clientX, cy: e.clientY } : null);
   };
   const onUp = (e: React.PointerEvent) => {
@@ -1204,10 +1308,25 @@ export function TimelineCanvas({
         // a click, not a drag → clear the band and jump to the mark under it;
         // a click on empty space clears the active highlight.
         setMeasure(null);
-        const i = pick(px, py);
+        // A click on a dot OR on its expanded card jumps/raises that mark.
+        let i = pick(px, py);
+        if (i < 0) i = pickCard(px, py);
         if (i >= 0) {
-          setActive(markKey(marks[i]));
-          onJump(marks[i].lineN);
+          const m = marks[i];
+          setActive(markKey(m));
+          onJump(m.lineN);
+          // On an expanded lane, bring this point's card to the FRONT (append =
+          // topmost). Clicking the card that's already frontmost drops it back; any
+          // other click just re-orders it above the rest.
+          if (expandedLanes?.has(m.lane)) {
+            const k = markKey(m);
+            setRaised((p) => {
+              const without = p.filter((x) => x !== k);
+              return p.length && p[p.length - 1] === k
+                ? without
+                : [...without, k];
+            });
+          }
         } else setActive(null);
       }
       // a real drag keeps the band shown for reading the duration
@@ -1221,6 +1340,7 @@ export function TimelineCanvas({
   const fit = () => {
     lastRange.current = "";
     setView(null);
+    setRaised([]); // dropping back to the overview clears any raised cards
   };
 
   // Clear the active marker when a pointer-down lands anywhere outside this
@@ -1274,6 +1394,13 @@ export function TimelineCanvas({
   }, [plotW, tOf, clampView, GUTTER]);
 
   const hm = hover ? marks[hover.i] : null;
+  const hoverKey = hm ? markKey(hm) : null;
+  // Keys of the points that currently show a card in an expanded lane (auto or
+  // pinned). Hovering one of these focuses its card (thicker border) instead of
+  // popping a duplicate floating tooltip; a hovered point WITHOUT a card (it was
+  // decimated away, or its lane isn't expanded) still gets the floating card.
+  const shownKeys = new Set(cards.map((c) => markKey(c.m)));
+  const hoverHasCard = hoverKey !== null && shownKeys.has(hoverKey);
   // Column count drives the hover card's width + flip math; the body itself flows
   // the fields column-major (see EventCardBody).
   const fieldCols = hm ? cardCols(hm) : 1;
@@ -1340,24 +1467,49 @@ export function TimelineCanvas({
           {placeholder && marks.length === 0 && (
             <div className="tlc-empty">{placeholder}</div>
           )}
-          {/* Expanded lanes' pinned detail cards (decimated; pointer-events:none
-              so the dot above stays click-to-jump and drag-to-measure still works
-              over the card strip). */}
-          {cards.map((c) => (
-            <div
-              key={markKey(c.m)}
-              className="tlc-tip tlc-card"
-              style={{
-                left: c.left,
-                top: c.top,
-                maxWidth: c.w,
-                maxHeight: c.maxH,
-                overflow: "hidden",
-              }}
-            >
-              <EventCardBody m={c.m} />
-            </div>
-          ))}
+          {/* Expanded lanes' per-point detail cards — one per in-view point, freely
+              overlapping (pointer-events:none so the dot above stays click-to-jump
+              and drag-to-measure still works over the card strip). Hovering a point
+              focuses its card; clicking the dot raises it above the rest. */}
+          {cards.map((c) => {
+            const key = markKey(c.m);
+            const isHot = key === hoverKey;
+            // The clicked mark — its dot wears the accent (blue) playhead on the
+            // canvas, so its card wears the matching accent frame (see active class).
+            const isActive = key === active;
+            return (
+              <div
+                key={key}
+                className={
+                  "tlc-tip tlc-card" +
+                  (c.rank >= 0 ? " tlc-card-raised" : "") +
+                  (isActive ? " tlc-card-active" : "") +
+                  (isHot ? " tlc-card-hot" : "")
+                }
+                style={{
+                  left: c.left,
+                  top: c.top,
+                  maxWidth: c.w,
+                  maxHeight: c.maxH,
+                  overflow: "hidden",
+                  // Hovered tops the pile, then the active (selected) card, then
+                  // raised cards by click order (later = higher), then plain cards.
+                  zIndex: isHot
+                    ? 1000
+                    : isActive
+                      ? 900
+                      : c.rank >= 0
+                        ? 5 + c.rank
+                        : undefined,
+                  clipPath: c.clipTop
+                    ? `inset(${c.clipTop}px 0 0 0)`
+                    : undefined,
+                }}
+              >
+                <EventCardBody m={c.m} />
+              </div>
+            );
+          })}
         </div>
         <div className="tlc-spacer" style={{ height: spacerH }} />
       </div>
@@ -1365,6 +1517,7 @@ export function TimelineCanvas({
         `overflow` can't clip a tall card; it flips up/left near edges. */}
       {hm &&
         hover &&
+        !hoverHasCard &&
         createPortal(
           (() => {
             const flipUp = hover.cy > window.innerHeight / 2;
