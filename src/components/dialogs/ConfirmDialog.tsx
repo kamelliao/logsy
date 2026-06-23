@@ -23,7 +23,9 @@ type Pending = ConfirmOptions & { resolve: (v: boolean) => void };
  * App-styled replacement for the native `confirm()` dialog: returns a promise
  * that resolves true/false, plus the element to render. Keeps confirmations
  * consistent with the rest of the UI (the EditModal, etc.) instead of popping a
- * native OS dialog. Esc / backdrop / Cancel resolve false; Enter / OK resolve true.
+ * native OS dialog. Esc / Cancel resolve false; Enter / OK resolve true.
+ * A backdrop click is intentionally ignored so a confirmation can't be
+ * dismissed by a stray click outside the dialog.
  */
 export function useConfirm(): [
   (opts: ConfirmOptions) => Promise<boolean>,
@@ -48,8 +50,15 @@ export function useConfirm(): [
   const node = pending ? (
     <Dialog
       open
-      onOpenChange={(o) => {
-        if (!o) settle(false);
+      onOpenChange={(o, details) => {
+        if (o) return;
+        // Backdrop clicks must not dismiss a confirmation — only Esc and the
+        // explicit buttons resolve it.
+        if (details?.reason === "outside-press") {
+          details.cancel();
+          return;
+        }
+        settle(false);
       }}
     >
       <DialogContent
@@ -66,11 +75,16 @@ export function useConfirm(): [
         </DialogHeader>
         <div className="modal-body confirm-msg">{pending.message}</div>
         <DialogFooter>
-          <Button variant="ghost" onClick={() => settle(false)}>
+          <Button
+            variant="ghost"
+            className="confirm-cancel"
+            onClick={() => settle(false)}
+          >
             {pending.cancelLabel ?? "Cancel"}
           </Button>
           <Button
             variant={pending.danger ? "destructive" : undefined}
+            className="confirm-ok"
             onClick={() => settle(true)}
           >
             {pending.okLabel ?? "OK"}

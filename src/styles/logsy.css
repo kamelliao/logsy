@@ -3649,6 +3649,19 @@ button {
   line-height: 1.55;
   color: var(--text-2, var(--text));
 }
+/* Footer: Cancel fills the row, the confirm button anchors the right edge and
+   is given a little extra width so it reads as the primary action. */
+.confirm-modal .modal-foot {
+  justify-content: flex-end;
+}
+.confirm-modal .modal-foot .confirm-cancel {
+  flex: 1 1 auto;
+  justify-content: center;
+}
+.confirm-modal .modal-foot .confirm-ok {
+  flex: 0 0 auto;
+  min-width: 104px;
+}
 .modal-head .mh-title {
   font-size: 15.5px;
   font-weight: 600;
