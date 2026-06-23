@@ -1,4 +1,11 @@
-import { useCallback, useState, useRef, useEffect, CSSProperties } from "react";
+import {
+  useCallback,
+  useMemo,
+  useState,
+  useRef,
+  useEffect,
+  CSSProperties,
+} from "react";
 import {
   Eye,
   EyeOff,
@@ -16,8 +23,12 @@ import {
   ChartGantt,
   ChevronDown,
   ChevronUp,
+  ChevronsLeftRight,
+  StickyNote,
+  StickyNoteOff,
   AlertTriangle,
   MoreHorizontal,
+  createLucideIcon,
 } from "lucide-react";
 import {
   DndContext,
@@ -159,6 +170,24 @@ const COMPACT =
   "[&_[data-slot=select-item]]:gap-1 [&_[data-slot=select-item]]:py-1 [&_[data-slot=select-item]]:pl-1.5 [&_[data-slot=select-item]]:pr-6 [&_[data-slot=select-item]]:text-[11px] " +
   "[&_[data-slot=select-label]]:px-1.5";
 
+// A track's per-row toggles (expand cards / show deltas) flip between a solid and
+// a slashed icon (StickyNote/StickyNoteOff, ChevronsLeftRight/…Off) — the "on" icon
+// at the usual muted strength, the "off" icon dimmed to /50, matching the Eye/EyeOff
+// hide-track button to its right.
+const TOGGLE_ON = "text-muted-foreground hover:text-foreground";
+const TOGGLE_OFF = "text-muted-foreground/50 hover:text-foreground";
+
+// Lucide has no `chevrons-left-right-off`, so we synthesize the "deltas hidden"
+// glyph: the stock ChevronsLeftRight `<->` paths (kept, since `<->` is the clearest
+// metaphor for an inter-point time delta) plus the diagonal slash lucide adds to
+// every `-off` icon — so it reads as off and matches the slashed Eye/StickyNote
+// states beside it, without a coloured background.
+const ChevronsLeftRightOff = createLucideIcon("chevrons-left-right-off", [
+  ["path", { d: "m9 7-5 5 5 5", key: "j5w590" }],
+  ["path", { d: "m15 7 5 5-5 5", key: "1bl6da" }],
+  ["path", { d: "m2 2 20 20", key: "1ooewy" }],
+]);
+
 export function TimelinePanel({
   tracks,
   filters,
@@ -235,6 +264,20 @@ export function TimelinePanel({
   };
 
   const lanes = tracks.filter((t) => !t.hidden).map((t) => t.lane);
+  // Lane names whose track draws inter-point deltas / shows expanded cards. Keyed
+  // off `tracks` so the Set identity is stable between unrelated re-renders.
+  const deltaLanes = useMemo(
+    () =>
+      new Set(
+        tracks.filter((t) => !t.hidden && t.showDeltas).map((t) => t.lane),
+      ),
+    [tracks],
+  );
+  const expandedLanes = useMemo(
+    () =>
+      new Set(tracks.filter((t) => !t.hidden && t.expanded).map((t) => t.lane)),
+    [tracks],
+  );
   // A filter's fields that may back a time field: restricted to the numeric /
   // time-like ones (the timeline can only plot numbers / clocks).
   const fieldsOf = useCallback(
@@ -308,6 +351,8 @@ export function TimelinePanel({
           placeholder={placeholder}
           bottomInset={Math.max(0, renderH - HANDLE_H)}
           iconSize={iconSize}
+          deltaLanes={deltaLanes}
+          expandedLanes={expandedLanes}
         />
       </div>
 
@@ -823,6 +868,38 @@ function TrackRow({
         <Button
           variant="ghost"
           size="icon-xs"
+          className={tr.expanded ? TOGGLE_ON : TOGGLE_OFF}
+          title={
+            tr.expanded
+              ? "Collapse — hide per-point cards"
+              : "Expand — show a detail card per point"
+          }
+          aria-pressed={!!tr.expanded}
+          onClick={() =>
+            onSet({ ...tr, expanded: tr.expanded ? undefined : true })
+          }
+        >
+          {tr.expanded ? <StickyNote /> : <StickyNoteOff />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
+          className={tr.showDeltas ? TOGGLE_ON : TOGGLE_OFF}
+          title={
+            tr.showDeltas
+              ? "Hide time deltas between points"
+              : "Show time deltas between points"
+          }
+          aria-pressed={!!tr.showDeltas}
+          onClick={() =>
+            onSet({ ...tr, showDeltas: tr.showDeltas ? undefined : true })
+          }
+        >
+          {tr.showDeltas ? <ChevronsLeftRight /> : <ChevronsLeftRightOff />}
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon-xs"
           className={`${tr.hidden ? "text-muted-foreground/50" : "text-muted-foreground"}`}
           title={tr.hidden ? "Show track" : "Hide track"}
           onClick={() => onSet({ ...tr, hidden: tr.hidden ? undefined : true })}
@@ -864,6 +941,34 @@ function TrackRow({
               <ListX size={15} />
             </span>
             Remove lines from timeline
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              onSet({ ...tr, expanded: tr.expanded ? undefined : true })
+            }
+          >
+            <span className="mi-ico">
+              {tr.expanded ? (
+                <StickyNote size={15} />
+              ) : (
+                <StickyNoteOff size={15} />
+              )}
+            </span>
+            {tr.expanded ? "Collapse cards" : "Expand cards"}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() =>
+              onSet({ ...tr, showDeltas: tr.showDeltas ? undefined : true })
+            }
+          >
+            <span className="mi-ico">
+              {tr.showDeltas ? (
+                <ChevronsLeftRight size={15} />
+              ) : (
+                <ChevronsLeftRightOff size={15} />
+              )}
+            </span>
+            {tr.showDeltas ? "Hide time deltas" : "Show time deltas"}
           </DropdownMenuItem>
           <DropdownMenuItem
             onClick={() =>
