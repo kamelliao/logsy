@@ -1190,8 +1190,35 @@ button {
 /* Pinned per-point detail card for an expanded lane: identical look to the hover
    card (it reuses `.tlc-tip` + EventCardBody); this only re-anchors it inside the
    sticky viewport (over the canvas) instead of the portal/edge-flip positioning. */
+/* Per-point cards overlap freely, so the base card stays flat (no drop shadow) —
+   stacked shadows would muddy a dense pile. Only the focused/raised card lifts. */
 .tlc-card {
   z-index: 4;
+  box-shadow: none;
+}
+/* A raised card (brought to the front by click order) just lifts above the pile
+   with a soft shadow — no accent border; the blue frame is reserved for the active
+   card so it matches its dot. Stacking order (z-index) is set inline. */
+.tlc-card-raised {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.16);
+}
+/* The active card mirrors its dot's accent playhead: a crisp blue frame in the SAME
+   blue the canvas strokes the selected marker with (#3b82f6), so dot and card read
+   as one selection. */
+.tlc-card-active {
+  border-color: #3b82f6;
+  box-shadow:
+    0 0 0 1px #3b82f6,
+    0 4px 14px rgba(0, 0, 0, 0.14);
+}
+/* Hovering a point focuses its card (instead of popping a duplicate floating
+   tooltip). A thin, soft dark ring + a glossy halo + lift mark which one the cursor
+   is over — neutral/dark (like the dot's hover outline) but light, not a heavy bar. */
+.tlc-card-hot {
+  box-shadow:
+    0 0 0 1px rgba(40, 44, 52, 0.55),
+    0 0 3px 0 rgba(120, 130, 140, 0.25),
+    0 5px 16px rgba(0, 0, 0, 0.13);
 }
 .tlc-tip-h {
   display: flex;
