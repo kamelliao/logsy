@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChevronRight, FilePlus, PanelLeft, Settings, X } from "lucide-react";
-import type { AppState, FileIcon, LogFile } from "@/types";
+import type { AppState, FileIcon, LogFile, FilterLabelMode } from "@/types";
 import { FILE_ICONS, FileGlyph } from "@/components/widgets/fileIcons";
 import { Button } from "@/components/ui/button";
 import {
@@ -147,6 +147,7 @@ interface SidebarProps {
   onSetMapWidth: (w: number) => void;
   onSetFontWeight: (w: number) => void;
   onSetTimelineIconSize: (sz: "S" | "M" | "L") => void;
+  onSetFilterLabel: (mode: FilterLabelMode) => void;
   onManagePalette: () => void;
 }
 
@@ -164,6 +165,7 @@ export function Sidebar({
   onSetMapWidth,
   onSetFontWeight,
   onSetTimelineIconSize,
+  onSetFilterLabel,
   onManagePalette,
 }: SidebarProps) {
   return (
@@ -310,6 +312,39 @@ export function Sidebar({
                     onClick={() => onSetTimelineIconSize(sz)}
                   >
                     {sz}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div
+              className="sp-row"
+              style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}
+            >
+              Filter row label
+              <div className="seg" style={{ alignSelf: "stretch" }}>
+                {(
+                  [
+                    { label: "Pattern", value: "pattern" },
+                    { label: "Description", value: "description" },
+                    { label: "Auto", value: "desc-first" },
+                  ] as const
+                ).map(({ label, value }) => (
+                  <button
+                    key={value}
+                    style={{ flex: 1, justifyContent: "center" }}
+                    title={
+                      value === "pattern"
+                        ? "Always show the regex pattern"
+                        : value === "description"
+                          ? "Always show the description"
+                          : "Show the description if set, otherwise the pattern"
+                    }
+                    className={
+                      (state.filterLabel ?? "desc-first") === value ? "on" : ""
+                    }
+                    onClick={() => onSetFilterLabel(value)}
+                  >
+                    {label}
                   </button>
                 ))}
               </div>

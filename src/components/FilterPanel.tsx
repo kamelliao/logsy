@@ -68,6 +68,7 @@ import type {
   Filter,
   FilterLayout,
   FieldDef,
+  FilterLabelMode,
 } from "@/types";
 import { trackFieldsOf } from "@/lib/engine";
 import { useStore } from "@/store";
@@ -571,6 +572,16 @@ function sameFields(a?: FieldDef[], b?: FieldDef[]): boolean {
   return true;
 }
 // patchState structured-clones the whole state, so every filter object has a
+// The text a filter row shows as its label, per the global `filterLabel` setting:
+// the raw pattern, the description, or (default) the description with a pattern
+// fallback. Empty result → the row renders its "untitled filter" placeholder. The
+// hover card always carries both, so a one-sided label never hides information.
+function rowLabel(f: Filter, mode: FilterLabelMode | undefined): string {
+  if (mode === "pattern") return f.pattern;
+  if (mode === "description") return f.description ?? "";
+  return f.description || f.pattern; // "desc-first" (default)
+}
+
 // fresh identity after any edit — rows must compare by value to skip renders.
 function sameFilter(a: Filter, b: Filter): boolean {
   return (
@@ -621,6 +632,11 @@ const FilterRowCells = memo(
     const onToggleTrack = (field: string) => api.toggleTrack(f.id, field);
     const hasFields = !!f.fields?.length;
     const onCompare = () => api.compareFilter(f.id);
+    // Global setting: what the row shows as its label (pattern / description /
+    // description-first). A primitive selector, so it only re-renders this memo
+    // when the setting itself changes — not on the DnD churn this memo guards.
+    const labelMode = useStore((s) => s.doc.filterLabel);
+    const label = rowLabel(f, labelMode);
 
     return (
       <HoverCard>
@@ -699,18 +715,17 @@ const FilterRowCells = memo(
               </span>
             )}
 
-            {/* Description-first: when a filter has a description it's the primary
-            label and the pattern lives in the hover card; otherwise show the
-            pattern. The label wears the filter's own highlight (its log colour
-            pair) as a chip so the row reads at a glance like its matches do. No
-            per-cell titles — the hover card carries full detail. */}
-            {f.description || f.pattern ? (
+            {/* Row label per the `filterLabel` setting (see rowLabel): the chip
+            wears the filter's own highlight (its log colour pair) so the row reads
+            at a glance like its matches do; an empty label falls back to the
+            placeholder. No per-cell titles — the hover card carries full detail. */}
+            {label ? (
               <div className="fr-pattern">
                 <span
                   className="fr-pattern-chip"
                   style={{ background: f.bgColor, color: f.textColor }}
                 >
-                  {f.description || f.pattern}
+                  {label}
                 </span>
               </div>
             ) : (
@@ -1220,6 +1235,10 @@ function FilterRowOverlay({
   index: number;
   count: number;
 }) {
+  const label = rowLabel(
+    f,
+    useStore((s) => s.doc.filterLabel),
+  );
   return (
     <div
       className={"filter-row drag-overlay" + (f.enabled ? "" : " disabled")}
@@ -1232,13 +1251,13 @@ function FilterRowOverlay({
         <Checkbox checked={f.enabled} onCheckedChange={() => {}} />
       </span>
       {index >= 0 && <span className="fr-serial">#{index + 1}</span>}
-      {f.description || f.pattern ? (
+      {label ? (
         <div className="fr-pattern">
           <span
             className="fr-pattern-chip"
             style={{ background: f.bgColor, color: f.textColor }}
           >
-            {f.description || f.pattern}
+            {label}
           </span>
         </div>
       ) : (

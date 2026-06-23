@@ -153,7 +153,14 @@ export interface AppState {
   timelineSheetH?: number;
   /** Size of the event markers (points/spans) drawn on the timeline canvas. */
   timelineIconSize?: "S" | "M" | "L";
+  /** What the filter rows show as their label: the regex `pattern`, the
+   *  `description`, or description-with-pattern-fallback (default). */
+  filterLabel?: FilterLabelMode;
 }
+
+/** Filter-row label source (global setting). `desc-first` shows the description
+ *  when set, else the pattern; `pattern`/`description` always show that field. */
+export type FilterLabelMode = "pattern" | "description" | "desc-first";
 
 export interface PaletteEntry {
   name: string;

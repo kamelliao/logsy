@@ -592,6 +592,9 @@ export function App() {
             onSetTimelineIconSize={(sz) =>
               setState((s) => ({ ...s, timelineIconSize: sz }))
             }
+            onSetFilterLabel={(mode) =>
+              setState((s) => ({ ...s, filterLabel: mode }))
+            }
             onManagePalette={() => setPaletteModalOpen(true)}
           />
           {file && set && !openScreen ? (
