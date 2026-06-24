@@ -1036,6 +1036,45 @@ export function LogView({
           x.delete(n);
           return x;
         });
+      } else if (
+        (e.key === "ArrowDown" || e.key === "ArrowUp") &&
+        !e.ctrlKey &&
+        !e.metaKey &&
+        !e.altKey &&
+        !e.shiftKey
+      ) {
+        const dir = e.key === "ArrowDown" ? 1 : -1;
+        // Top/bottom of the current selection within the visible rows.
+        let lo = Infinity,
+          hi = -Infinity;
+        for (let i = 0; i < visible.length; i++) {
+          if (selectedLines.has(visible[i].n)) {
+            if (i < lo) lo = i;
+            if (i > hi) hi = i;
+          }
+        }
+        if (lo === Infinity) {
+          // Nothing selected (or the selection is scrolled out of the current
+          // view): ↑/↓ just nudge the viewport one line, like the scrollbar.
+          const el = scrollRef.current;
+          if (el) {
+            e.preventDefault();
+            el.scrollTop += dir * rowH;
+          }
+        } else {
+          e.preventDefault();
+          // A multi-line selection first collapses to the edge we're moving
+          // toward (down → its last line, up → its first) so no line is skipped;
+          // a single line then steps one row further on the next press.
+          const single = lo === hi;
+          let target: number;
+          if (dir === 1) target = single ? hi + 1 : hi;
+          else target = single ? lo - 1 : lo;
+          target = Math.max(0, Math.min(visible.length - 1, target));
+          setSelectedLines(new Set([visible[target].n]));
+          setAnchorRi(target);
+          rowVirtualizer.scrollToIndex(target, { align: "auto" });
+        }
       } else if ((e.ctrlKey || e.metaKey) && (e.key === "d" || e.key === "D")) {
         // Bookmark keys: Ctrl+D toggle · Ctrl+, prev · Ctrl+. next (, . are the
         // < > keys, so prev/next sit adjacent and stay on the home row).
@@ -1051,7 +1090,7 @@ export function LogView({
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selectedLines, visible, showLineNumbers, markerMap]);
+  }, [selectedLines, visible, showLineNumbers, markerMap, rowH]);
 
   function exportView() {
     const text = visible
