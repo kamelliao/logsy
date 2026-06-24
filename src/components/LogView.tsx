@@ -424,7 +424,7 @@ export function LogView({
     if (!hits.length) return;
     const h = hits[Math.min(current, hits.length - 1)];
     if (!h) return;
-    rowVirtualizer.scrollToIndex(h.ri, { align: "center", behavior: "smooth" });
+    rowVirtualizer.scrollToIndex(h.ri, { align: "center" });
   }, [current, hits]);
 
   // Remembers, while the view mode is stable, the "keep" line — the selected line

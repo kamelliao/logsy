@@ -1464,7 +1464,7 @@ export function FilterPanel({
       // remounts (open/close, dock switch) with the same id/nonce still in state.
       onFlashConsumed?.();
       if (!row) return;
-      row.scrollIntoView({ block: "center", behavior: "smooth" });
+      row.scrollIntoView({ block: "center" });
       row.classList.add("fr-flash");
       setTimeout(() => row.classList.remove("fr-flash"), 1300);
     });
