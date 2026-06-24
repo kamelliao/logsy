@@ -119,6 +119,13 @@ function renderLine(
   return out.length ? out : text;
 }
 
+// Switching files remounts LogView (keyed by file.id in App), which resets the
+// virtualizer to the top. Remember each file's last scroll offset here so a
+// switch back lands where it left off. Module-level (like useLogFiles' linesStore)
+// so it survives remounts; ephemeral — not persisted, which matches the lazy
+// line cache (non-active files aren't even loaded after a restart).
+const scrollByFile: Record<string, number> = {};
+
 /** Compact 2-row table for one line's parsed fields: names on top, values below. */
 function FieldTable({ fields }: { fields: Record<string, FieldValue> }) {
   const keys = Object.keys(fields);
@@ -470,6 +477,33 @@ export function LogView({
 
   const scrollTop = rowVirtualizer.scrollOffset ?? 0;
   const viewH = scrollRef.current?.clientHeight ?? 600;
+
+  // Per-file scroll restore. The saved offset is captured once at mount (file.id
+  // is stable for this component instance — App keys LogView by it). We restore it
+  // once `visible` has rows by writing scrollTop on the scroll element directly
+  // inside rAF: calling the virtualizer's scrollToOffset on a just-mounted
+  // instance doesn't stick, and rows are fixed-height (estimateSize === rowH, no
+  // dynamic measurement) so a pixel offset maps back exactly. The native scroll
+  // then syncs the virtualizer. Saving is gated on scrollRestoredRef so the
+  // mount-time scrollTop (0) can't overwrite the value we're about to restore.
+  const restoreTargetRef = useRef(scrollByFile[file.id] ?? 0);
+  const scrollRestoredRef = useRef(false);
+  useEffect(() => {
+    if (scrollRestoredRef.current || visible.length === 0) return;
+    const target = restoreTargetRef.current;
+    const el = scrollRef.current;
+    if (target > 0 && el) {
+      const raf = requestAnimationFrame(() => {
+        el.scrollTop = target;
+        scrollRestoredRef.current = true;
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+    scrollRestoredRef.current = true;
+  }, [visible.length]);
+  useEffect(() => {
+    if (scrollRestoredRef.current) scrollByFile[file.id] = scrollTop;
+  }, [scrollTop, file.id]);
 
   // Sample the "keep" line + shift-anchor line, but only while the mode is stable:
   // on the switch render `visible` has already flipped to the new mode while

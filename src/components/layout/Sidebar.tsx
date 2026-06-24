@@ -71,6 +71,14 @@ function FileItem({
             <FileGlyph icon={file.icon} size={16} />
           </span>
           <span className="file-name">{file.name}</span>
+          {file.encoding && !/^utf-?8$/i.test(file.encoding) && (
+            <span
+              className="file-enc"
+              title={`Detected encoding: ${file.encoding}`}
+            >
+              {file.encoding}
+            </span>
+          )}
           <span className="file-lines">{file.lineCount.toLocaleString()}</span>
           {canDelete && (
             <button
@@ -86,7 +94,14 @@ function FileItem({
           )}
         </TooltipTrigger>
         <TooltipContent side={collapsed ? "right" : "top"}>
-          {file.name}
+          <div className="file-tip">
+            <div className="file-tip-name">{file.name}</div>
+            {file.path && <div className="file-tip-path">{file.path}</div>}
+            <div className="file-tip-meta">
+              {file.lineCount.toLocaleString()} lines
+              {file.encoding ? ` · ${file.encoding}` : ""}
+            </div>
+          </div>
         </TooltipContent>
       </Tooltip>
 

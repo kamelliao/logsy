@@ -352,6 +352,46 @@ button {
   font-variant-numeric: tabular-nums;
   flex: 0 0 auto;
 }
+/* Non-UTF-8 encoding tag — flags files that needed a fallback decode. */
+.file-item .file-enc {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  height: 15px;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 4px;
+  background: var(--panel-bg-2, #f1f3f5);
+  border: 1px solid var(--border-strong);
+  color: var(--text-3);
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.sidebar.collapsed .file-enc {
+  display: none;
+}
+
+/* Rich file tooltip (name / path / line+encoding meta). */
+.file-tip {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: 360px;
+}
+.file-tip-name {
+  font-weight: 600;
+}
+.file-tip-path {
+  font-size: 11px;
+  opacity: 0.75;
+  word-break: break-all;
+}
+.file-tip-meta {
+  font-size: 11px;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
 
 .new-tab {
   display: flex;
