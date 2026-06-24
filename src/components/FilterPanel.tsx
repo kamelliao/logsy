@@ -133,9 +133,6 @@ function RowMenuItems({
   // Timeline items behave like checkboxes: a ✓ marks a tracked field, and
   // clicking toggles it (add when off, remove when on).
   const isTracked = (name: string) => trackedFields.includes(name);
-  // Single-field item: the leading icon doubles as the tracked indicator.
-  const singleTracked =
-    timeFields.length === 1 && isTracked(timeFields[0].name);
   // Sub-trigger: ✓ when every usable field is already a track.
   const allTracked =
     timeFields.length > 0 && timeFields.every((d) => isTracked(d.name));
@@ -174,47 +171,37 @@ function RowMenuItems({
           Add to timeline track
         </DropdownMenuItem>
       ) : (
-        <>
-          {timeFields.length === 1 ? (
-            <DropdownMenuItem onClick={() => onToggleTrack(timeFields[0].name)}>
-              <span className="mi-ico">
-                {singleTracked ? <Check size={15} /> : <ChartGantt size={15} />}
-              </span>
-              {singleTracked
-                ? "Remove from timeline track"
-                : "Add to timeline track"}
-            </DropdownMenuItem>
-          ) : (
-            <DropdownMenuSub>
-              <DropdownMenuSubTrigger>
+        // Always a submenu — even with a single field — so the field name is
+        // always shown and pickable (consistent target across filters, and the
+        // ✓ makes the tracked state explicit).
+        <DropdownMenuSub>
+          <DropdownMenuSubTrigger>
+            <span className="mi-ico">
+              {allTracked ? <Check size={15} /> : <ChartGantt size={15} />}
+            </span>
+            Add to timeline track{timeFields.length === 1 ? "" : "s"}
+          </DropdownMenuSubTrigger>
+          <DropdownMenuSubContent>
+            {timeFields.map((d) => (
+              <DropdownMenuItem
+                key={d.name}
+                onClick={() => onToggleTrack(d.name)}
+              >
                 <span className="mi-ico">
-                  {allTracked ? <Check size={15} /> : <ChartGantt size={15} />}
+                  {isTracked(d.name) ? <Check size={15} /> : null}
                 </span>
-                Add to timeline tracks
-              </DropdownMenuSubTrigger>
-              <DropdownMenuSubContent>
-                {timeFields.map((d) => (
-                  <DropdownMenuItem
-                    key={d.name}
-                    onClick={() => onToggleTrack(d.name)}
-                  >
-                    <span className="mi-ico">
-                      {isTracked(d.name) ? <Check size={15} /> : null}
-                    </span>
-                    {d.name}
-                  </DropdownMenuItem>
-                ))}
-              </DropdownMenuSubContent>
-            </DropdownMenuSub>
-          )}
-        </>
+                {d.name}
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuSubContent>
+        </DropdownMenuSub>
       )}
       {hasFields ? (
         <DropdownMenuItem onClick={onCompare}>
           <span className="mi-ico">
             <Columns3 size={15} />
           </span>
-          Compare matching lines
+          Add matching lines to compare
         </DropdownMenuItem>
       ) : (
         // No parsed field → nothing to line up. Disabled with a reason, mirroring
@@ -227,7 +214,7 @@ function RowMenuItems({
           <span className="mi-ico">
             <Columns3 size={15} />
           </span>
-          Compare matching lines
+          Add matching lines to compare
         </DropdownMenuItem>
       )}
       <DropdownMenuSeparator />

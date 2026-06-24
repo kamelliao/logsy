@@ -2901,9 +2901,15 @@ button {
   color: #b3b8be;
 }
 
-/* 1-based serial at the row head — matches the timeline panel's "#N". */
+/* 1-based serial at the row head — matches the timeline panel's "#N". A fixed
+   min-width (right-aligned) keeps every serial the same width, so single- and
+   double-digit indices line up and the coloured label beside them starts at the
+   same x. The mono font makes "#" + 2 digits ≈ 3ch; longer serials grow but stay
+   right-aligned, so the label edge stays consistent. */
 .fr-serial {
   flex: 0 0 auto;
+  min-width: 3ch;
+  text-align: right;
   font-family: var(--mono-font);
   font-size: calc(var(--log-font-size, 12.5px) * 0.76);
   font-weight: 600;

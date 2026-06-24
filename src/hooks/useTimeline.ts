@@ -320,6 +320,32 @@ export function useTimeline({ view, file, set, selectPanelTab }: Deps) {
       g.sources = ids.map((id) => by.get(id)!).filter(Boolean);
     });
 
+  // Bulk header actions ("… all"): the per-row toggles applied to every track in
+  // ONE undoable patch. A `Partial<TimelineSource>` is merged onto each source, so
+  // `{ expanded: undefined }` clears the flag and `{ expanded: true }` sets it.
+  const setAllTracks = (patch: Partial<TimelineSource>) =>
+    patchState((s) => {
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
+      g.sources = (g.sources ?? []).map((x) => ({ ...x, ...patch }));
+    });
+  const deleteAllTracks = () =>
+    patchState((s) => {
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
+      g.sources = [];
+    });
+  // "Remove all lines": the inverse of import-all — drop every track's matching
+  // lines from the timeline (not the whole file timeline, so unrelated added
+  // lines stay put).
+  const clearAllLines = () => {
+    if (!set) return;
+    const all = new Set<number>();
+    for (const tr of set.sources ?? [])
+      for (const n of winnerLines(tr.filterId, tr.timeField)) all.add(n);
+    if (all.size) removeFromTimeline([...all]);
+  };
+
   return {
     tracks,
     timelineLines,
@@ -337,6 +363,9 @@ export function useTimeline({ view, file, set, selectPanelTab }: Deps) {
     importTrackLines,
     clearTrackLines,
     addAllMatchingLines,
+    setAllTracks,
+    deleteAllTracks,
+    clearAllLines,
     addLinesToTimeline,
     toggleTimelineTrack,
   };

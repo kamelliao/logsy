@@ -212,6 +212,9 @@ export function App() {
     importTrackLines,
     clearTrackLines,
     addAllMatchingLines,
+    setAllTracks,
+    deleteAllTracks,
+    clearAllLines,
     addLinesToTimeline,
     toggleTimelineTrack,
   } = useTimeline({ view, file, set, selectPanelTab });
@@ -506,6 +509,10 @@ export function App() {
         onRemoveTrack={removeTrack}
         onReorderTracks={reorderTracks}
         onAddMatchingLines={addAllMatchingLines}
+        onImportAll={addAllMatchingLines}
+        onClearAll={clearAllLines}
+        onSetAll={setAllTracks}
+        onDeleteAll={deleteAllTracks}
         onImportTrackLines={importTrackLines}
         onClearTrackLines={clearTrackLines}
         trackLineStats={trackLineStats}

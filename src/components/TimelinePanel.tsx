@@ -129,6 +129,12 @@ interface Props {
   onReorderTracks: (ids: string[]) => void;
   /** Pull every visible track's matching lines onto the timeline (empty-state bridge). */
   onAddMatchingLines: () => void;
+  /** Header "… all" bulk actions, applied across every track. */
+  onImportAll: () => void;
+  onClearAll: () => void;
+  /** Merge a partial onto every track in one undoable patch (the bulk toggles). */
+  onSetAll: (patch: Partial<TimelineSource>) => void;
+  onDeleteAll: () => void;
   /** Import one track's matching lines (per-row button). */
   onImportTrackLines: (tr: TimelineSource) => void;
   /** Remove one track's matching lines from the timeline (per-row button). */
@@ -200,6 +206,10 @@ export function TimelinePanel({
   onRemoveTrack,
   onReorderTracks,
   onAddMatchingLines,
+  onImportAll,
+  onClearAll,
+  onSetAll,
+  onDeleteAll,
   onImportTrackLines,
   onClearTrackLines,
   trackLineStats,
@@ -262,6 +272,13 @@ export function TimelinePanel({
       onSetSheetH(hRef.current);
     }
   };
+
+  // Aggregate track state for the header "… all" toggles: a button mirrors the
+  // per-row icon's "on" look only when EVERY track is in that state, and the click
+  // drives all tracks to the opposite of that aggregate.
+  const allExpanded = tracks.length > 0 && tracks.every((t) => t.expanded);
+  const allDeltas = tracks.length > 0 && tracks.every((t) => t.showDeltas);
+  const anyVisible = tracks.some((t) => !t.hidden);
 
   const lanes = tracks.filter((t) => !t.hidden).map((t) => t.lane);
   // Lane names whose track draws inter-point deltas / shows expanded cards. Keyed
@@ -371,10 +388,98 @@ export function TimelinePanel({
             line{lineCount === 1 ? "" : "s"}
           </span>
           {hint && <span className="tl-sheet-counts">{hint}</span>}
+
+          {/* "… all" bulk actions: the per-row icons applied to every track at
+              once. Mirrors the per-row order (import / remove lines / cards /
+              deltas / show / delete) so the icons read the same in both places.
+              The right margin lands the cluster's right edge at the same inset as a
+              track row's buttons (handle pad 8 + 21 = 29px = 12px scrollbar gutter
+              + 10px body pad + 1px row border + 6px row pad), so the six icons line
+              up in columns. The collapse chevron is absolutely positioned past this
+              margin (see below) so it can stay on the right without shoving the
+              cluster out of column. */}
+          {tracks.length > 0 && (
+            <div
+              className="ml-auto flex shrink-0 items-center gap-0.5 border-l border-border/60 pl-1"
+              style={{ marginRight: 21 }}
+            >
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-foreground"
+                title="Import every track's matching lines onto the timeline"
+                onClick={onImportAll}
+              >
+                <ListPlus />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-foreground"
+                title="Remove every track's lines from the timeline"
+                onClick={onClearAll}
+              >
+                <ListX />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={allExpanded ? TOGGLE_ON : TOGGLE_OFF}
+                title={allExpanded ? "Collapse all cards" : "Expand all cards"}
+                aria-pressed={allExpanded}
+                onClick={() =>
+                  onSetAll({ expanded: allExpanded ? undefined : true })
+                }
+              >
+                {allExpanded ? <StickyNote /> : <StickyNoteOff />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={allDeltas ? TOGGLE_ON : TOGGLE_OFF}
+                title={
+                  allDeltas ? "Hide all time deltas" : "Show all time deltas"
+                }
+                aria-pressed={allDeltas}
+                onClick={() =>
+                  onSetAll({ showDeltas: allDeltas ? undefined : true })
+                }
+              >
+                {allDeltas ? <ChevronsLeftRight /> : <ChevronsLeftRightOff />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className={
+                  anyVisible
+                    ? "text-muted-foreground hover:text-foreground"
+                    : "text-muted-foreground/50 hover:text-foreground"
+                }
+                title={anyVisible ? "Hide all tracks" : "Show all tracks"}
+                onClick={() =>
+                  onSetAll({ hidden: anyVisible ? true : undefined })
+                }
+              >
+                {anyVisible ? <Eye /> : <EyeOff />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="text-muted-foreground hover:text-destructive"
+                title="Delete all tracks"
+                onClick={onDeleteAll}
+              >
+                <Trash2 />
+              </Button>
+            </div>
+          )}
+          {/* Collapse toggle: kept on the right (natural), but absolutely placed in
+              the rightmost gutter zone so it floats past the cluster's 21px margin
+              instead of pushing the "… all" icons left out of column. */}
           <Button
             variant="ghost"
             size="icon-xs"
-            className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
+            className="absolute top-0 right-0.5 bottom-0 my-auto shrink-0 text-muted-foreground hover:text-foreground"
             title={collapsed ? "Expand tracks" : "Collapse tracks"}
             onClick={toggleCollapse}
           >
