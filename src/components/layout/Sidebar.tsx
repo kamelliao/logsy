@@ -1,5 +1,23 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import { ChevronRight, FilePlus, PanelLeft, Settings, X } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
+  restrictToVerticalAxis,
+  restrictToParentElement,
+} from "@dnd-kit/modifiers";
+import { CSS } from "@dnd-kit/utilities";
 import type { AppState, FileIcon, LogFile, FilterLabelMode } from "@/types";
 import { FILE_ICONS, FileGlyph } from "@/components/widgets/fileIcons";
 import { Button } from "@/components/ui/button";
@@ -36,6 +54,23 @@ function FileItem({
   // Right-click context menu, anchored at the cursor.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
 
+  // Drag-to-reorder. The whole row is the drag handle; a small activation
+  // distance (set on the sensor) keeps a plain click selecting the file rather
+  // than starting a drag.
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: file.id });
+  const sortStyle: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    ...(isDragging ? { position: "relative", zIndex: 5, opacity: 0.9 } : {}),
+  };
+
   useEffect(() => {
     if (!menu) return;
     function down(e: MouseEvent) {
@@ -53,7 +88,13 @@ function FileItem({
   }, [menu]);
 
   return (
-    <>
+    <div
+      ref={setNodeRef}
+      style={sortStyle}
+      className={"file-sortrow" + (isDragging ? " dragging" : "")}
+      {...attributes}
+      {...listeners}
+    >
       <Tooltip>
         <TooltipTrigger
           render={
@@ -143,7 +184,7 @@ function FileItem({
           </div>
         </div>
       )}
-    </>
+    </div>
   );
 }
 
@@ -157,6 +198,7 @@ interface SidebarProps {
   onOpenFile: () => void;
   onDeleteFile: (id: string) => void;
   onSetFileIcon: (id: string, icon: FileIcon) => void;
+  onReorderFiles: (from: number, to: number) => void;
   onSetPanelPos: (pos: "bottom" | "right") => void;
   onSetMapColorMode: (mode: "bg" | "text") => void;
   onSetMapWidth: (w: number) => void;
@@ -182,7 +224,19 @@ export function Sidebar({
   onSetTimelineIconSize,
   onSetFilterLabel,
   onManagePalette,
+  onReorderFiles,
 }: SidebarProps) {
+  // Click vs. drag: a 4px activation distance lets a plain click still select.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
+  );
+  const onDragEnd = (e: DragEndEvent) => {
+    const { active, over } = e;
+    if (!over || active.id === over.id) return;
+    const from = state.files.findIndex((f) => f.id === active.id);
+    const to = state.files.findIndex((f) => f.id === over.id);
+    if (from >= 0 && to >= 0) onReorderFiles(from, to);
+  };
   return (
     <div className={"sidebar" + (collapsed ? " collapsed" : "")}>
       <div className="sidebar-top">
@@ -196,18 +250,30 @@ export function Sidebar({
         </Button>
       </div>
       <div className="file-list scroll">
-        {state.files.map((f) => (
-          <FileItem
-            key={f.id}
-            file={f}
-            active={!openScreen && f.id === state.activeFileId}
-            canDelete={true}
-            collapsed={collapsed}
-            onSelect={() => onSelectFile(f.id)}
-            onDelete={() => onDeleteFile(f.id)}
-            onSetIcon={(icon) => onSetFileIcon(f.id, icon)}
-          />
-        ))}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          onDragEnd={onDragEnd}
+        >
+          <SortableContext
+            items={state.files.map((f) => f.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            {state.files.map((f) => (
+              <FileItem
+                key={f.id}
+                file={f}
+                active={!openScreen && f.id === state.activeFileId}
+                canDelete={true}
+                collapsed={collapsed}
+                onSelect={() => onSelectFile(f.id)}
+                onDelete={() => onDeleteFile(f.id)}
+                onSetIcon={(icon) => onSetFileIcon(f.id, icon)}
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
         <div
           className="new-tab"
           onClick={onOpenFile}
