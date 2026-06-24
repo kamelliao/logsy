@@ -428,8 +428,14 @@ export function TimelineCanvas({
     if (!expandedLanes?.size) return m;
     for (const lane of expandedLanes) {
       const arr = sortedLaneMarks?.get(lane);
+      // A lane with no plotted marks contributes no card strip: expanding an
+      // empty track must not open a blank gap below its (also empty) point row.
+      if (!arr || arr.length === 0) {
+        m.set(lane, 0);
+        continue;
+      }
       let h = CARD_MIN_H;
-      if (arr) for (const mk of arr) h = Math.max(h, estCardH(mk) + CARD_GAP);
+      for (const mk of arr) h = Math.max(h, estCardH(mk) + CARD_GAP);
       m.set(lane, Math.min(CARD_MAX_H, h));
     }
     return m;
