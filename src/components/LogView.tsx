@@ -20,6 +20,7 @@ import {
   FileText,
   Filter,
   Minus,
+  Pin,
   Search,
   Sparkles,
   Trash2,
@@ -478,6 +479,41 @@ export function LogView({
   const scrollTop = rowVirtualizer.scrollOffset ?? 0;
   const viewH = scrollRef.current?.clientHeight ?? 600;
 
+  // Pins: bookmarks whose icon is "pin". While a pinned line is scrolled above
+  // the top of the viewport it sticks to the top of the log as a landmark you
+  // can click to jump back to — so you keep context deep inside a long section.
+  const pins = useMemo(
+    () =>
+      markers
+        .filter((m) => m.icon === "pin")
+        .map((m) => m.n)
+        .sort((a, b) => a - b),
+    [markers],
+  );
+  const firstVisibleIdx = Math.floor(scrollTop / rowH);
+  const stickyPins = useMemo(() => {
+    if (!pins.length || !visible.length) return [];
+    // `visible` is in ascending line order, so binary-search each pin's row.
+    const indexOf = (n: number) => {
+      let lo = 0,
+        hi = visible.length - 1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        const vn = visible[mid].n;
+        if (vn === n) return mid;
+        if (vn < n) lo = mid + 1;
+        else hi = mid - 1;
+      }
+      return -1;
+    };
+    const above: number[] = [];
+    for (const n of pins) {
+      const idx = indexOf(n);
+      if (idx >= 0 && idx < firstVisibleIdx) above.push(idx);
+    }
+    return above.slice(-3); // the nearest few landmarks above the top
+  }, [pins, visible, firstVisibleIdx]);
+
   // Per-file scroll restore. The saved offset is captured once at mount (file.id
   // is stable for this component instance — App keys LogView by it). We restore it
   // once `visible` has rows by writing scrollTop on the scroll element directly
@@ -745,7 +781,7 @@ export function LogView({
   }
 
   // Open the bookmark editor with a fresh draft (seeded from the existing marker
-  // when one is present). Nothing is created/changed until Done/Enter commits.
+  // when one is present). Committed on an icon pick / Done / Enter.
   function openMarkerEditor(n: number, x: number, y: number) {
     const ex = markerMap.get(n);
     setMarkerDraft(
@@ -765,8 +801,13 @@ export function LogView({
     closeMarkerEditor();
   }
 
-  // Click the gutter marker lane: open the editor popover next to the icon.
+  // Click the gutter marker lane: toggle the editor popover for this line (so a
+  // second click on the same marker dismisses it) next to the icon.
   function onMarkClick(e: React.MouseEvent, n: number) {
+    if (markerPop && markerPop.n === n) {
+      closeMarkerEditor();
+      return;
+    }
     const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
     openMarkerEditor(n, rect.right + 6, rect.top - 4);
   }
@@ -1374,6 +1415,34 @@ export function LogView({
         </div>
       ) : (
         <div className="log-content-area">
+          {stickyPins.length > 0 && (
+            <div
+              className="log-pins"
+              style={{ right: view.hasHighlights ? mapWidth : 0 }}
+            >
+              {stickyPins.map((idx) => {
+                const r = visible[idx];
+                return (
+                  <div
+                    key={r.n}
+                    className="log-pin-row"
+                    title="Pinned line — click to jump"
+                    onClick={() => {
+                      rowVirtualizer.scrollToIndex(idx, { align: "start" });
+                      setSelectedLines(new Set([r.n]));
+                      setAnchorRi(idx);
+                    }}
+                  >
+                    <Pin size={11} className="log-pin-ico" />
+                    {showLineNumbers && (
+                      <span className="log-pin-n">{r.n}</span>
+                    )}
+                    <span className="log-pin-txt">{r.text}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
           <div
             className={
               "log-scroll scroll" +
@@ -1795,7 +1864,8 @@ export function LogView({
           );
         })()}
 
-      {/* bookmark editor popover — edits are a local draft, committed on Done/Enter */}
+      {/* bookmark editor popover — the note is a local draft; committed on an
+          icon pick, on Done, or on Enter in the note field */}
       {markerPop && markerDraft && (
         <div
           className="marker-pop"
@@ -1815,9 +1885,13 @@ export function LogView({
                   "mp-ico" + (markerDraft.icon === opt.id ? " active" : "")
                 }
                 title={opt.label}
-                onClick={() =>
-                  setMarkerDraft((d) => d && { ...d, icon: opt.id })
-                }
+                onClick={() => {
+                  // Picking an icon commits straight away and closes — adding a
+                  // bookmark without a note is the common case, so this saves the
+                  // extra "Done" click. (Type a note first, then pick the icon.)
+                  onSetMarker(markerPop.n, opt.id, markerDraft.note);
+                  closeMarkerEditor();
+                }}
               >
                 <opt.Icon
                   size={15}

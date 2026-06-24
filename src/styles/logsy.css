@@ -883,6 +883,56 @@ button {
   display: flex;
   min-height: 0;
   overflow: hidden;
+  position: relative; /* anchors the sticky pinned-line overlay (.log-pins) */
+}
+
+/* Pinned lines stuck to the top of the log: landmark bookmarks (icon "pin")
+   that have scrolled above the viewport. Sits over the rows, clear of the
+   match map (right offset set inline). */
+.log-pins {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(20, 22, 26, 0.1);
+}
+.log-pin-row {
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: var(--log-row-h, 21px);
+  padding: 0 10px 0 9px;
+  font-family: var(--mono-font);
+  font-size: var(--log-font-size, 12.5px);
+  background: var(--panel-bg-2, #f6f7f8);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  cursor: pointer;
+  white-space: pre;
+  overflow: hidden;
+}
+.log-pin-row:hover {
+  background: var(--row-hover);
+}
+.log-pin-ico {
+  flex: 0 0 auto;
+  color: #7c3aed;
+}
+.log-pin-n {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  min-width: 3ch;
+  text-align: right;
+}
+.log-pin-txt {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .log-content-area .log-scroll {
   flex: 1 1 auto;
