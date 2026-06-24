@@ -590,6 +590,23 @@ export function App() {
                 { undoable: false },
               )
             }
+            onReorderFiles={(from, to) =>
+              patchState(
+                (s) => {
+                  if (
+                    from < 0 ||
+                    to < 0 ||
+                    from >= s.files.length ||
+                    to >= s.files.length ||
+                    from === to
+                  )
+                    return;
+                  const [m] = s.files.splice(from, 1);
+                  s.files.splice(to, 0, m);
+                },
+                { undoable: false },
+              )
+            }
             onSetPanelPos={(pos) => setState((s) => ({ ...s, panelPos: pos }))}
             onSetMapColorMode={(mode) =>
               setState((s) => ({ ...s, mapColorMode: mode }))
