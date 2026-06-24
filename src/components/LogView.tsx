@@ -1414,61 +1414,6 @@ export function LogView({
         </div>
       ) : (
         <div className="log-content-area">
-          {stickyPins.length > 0 && (
-            <div
-              className="log-pins"
-              style={{ right: view.hasHighlights ? mapWidth : 0 }}
-            >
-              {stickyPins.map((idx) => {
-                // Render exactly like a real log row (same rail, gutter, winner
-                // colors) so a pinned line reads as the line it is — only the
-                // click-to-jump and the drop shadow set it apart.
-                const r = visible[idx];
-                const w = r.winner;
-                const mk = markerMap.get(r.n);
-                const canExpand = r.fieldsFromId !== undefined;
-                const rowStyle: CSSProperties = w
-                  ? {
-                      background: w.f.bgColor,
-                      color: w.f.textColor,
-                      ["--strip" as string]: w.f.bgColor,
-                    }
-                  : {};
-                return (
-                  <div
-                    key={r.n}
-                    className={"log-row log-pin" + (w ? " matched" : "")}
-                    style={rowStyle}
-                    title="Pinned line — click to jump"
-                    onClick={() => {
-                      rowVirtualizer.scrollToIndex(idx, { align: "start" });
-                      setSelectedLines(new Set([r.n]));
-                      setAnchorRi(idx);
-                    }}
-                  >
-                    <span className="log-left">
-                      <span className={"log-mark" + (mk ? " on" : "")}>
-                        {mk ? (
-                          <MarkerGlyph icon={mk.icon} />
-                        ) : (
-                          <Bookmark size={12} />
-                        )}
-                      </span>
-                      {canExpand && (
-                        <span className="log-exp">
-                          <ChevronRight size={13} />
-                        </span>
-                      )}
-                      {showLineNumbers && (
-                        <span className="log-gut">{r.n}</span>
-                      )}
-                    </span>
-                    <span className="log-txt">{r.text}</span>
-                  </div>
-                );
-              })}
-            </div>
-          )}
           <div
             className={
               "log-scroll scroll" +
@@ -1489,6 +1434,65 @@ export function LogView({
                 position: "relative",
               }}
             >
+              {/* Sticky pinned-line landmarks. Living inside .log-inner (the
+                  horizontally-scrolling content) means they ride the log's own
+                  scroll — text scrolls with the rows while each row's sticky
+                  left rail re-pins the gutter — and stay clipped inside
+                  .log-scroll, clear of its scrollbars. position:sticky pins them
+                  to the top vertically; the absolutely-placed rows ignore this
+                  in-flow block, so the virtualizer's offsets are untouched. */}
+              {stickyPins.length > 0 && (
+                <div className="log-pins">
+                  {stickyPins.map((idx) => {
+                    // Render exactly like a real log row (same rail, gutter,
+                    // winner colors) so a pinned line reads as the line it is —
+                    // only click-to-jump and the drop shadow set it apart.
+                    const r = visible[idx];
+                    const w = r.winner;
+                    const mk = markerMap.get(r.n);
+                    const canExpand = r.fieldsFromId !== undefined;
+                    const rowStyle: CSSProperties = w
+                      ? {
+                          background: w.f.bgColor,
+                          color: w.f.textColor,
+                          ["--strip" as string]: w.f.bgColor,
+                        }
+                      : {};
+                    return (
+                      <div
+                        key={r.n}
+                        className={"log-row log-pin" + (w ? " matched" : "")}
+                        style={rowStyle}
+                        title="Pinned line — click to jump"
+                        onClick={() => {
+                          rowVirtualizer.scrollToIndex(idx, { align: "start" });
+                          setSelectedLines(new Set([r.n]));
+                          setAnchorRi(idx);
+                        }}
+                      >
+                        <span className="log-left">
+                          <span className={"log-mark" + (mk ? " on" : "")}>
+                            {mk ? (
+                              <MarkerGlyph icon={mk.icon} />
+                            ) : (
+                              <Bookmark size={12} />
+                            )}
+                          </span>
+                          {canExpand && (
+                            <span className="log-exp">
+                              <ChevronRight size={13} />
+                            </span>
+                          )}
+                          {showLineNumbers && (
+                            <span className="log-gut">{r.n}</span>
+                          )}
+                        </span>
+                        <span className="log-txt">{r.text}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
               {virtualItems.map((vItem) => {
                 const r = visible[vItem.index];
                 const w = r.winner;

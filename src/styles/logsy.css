@@ -883,31 +883,29 @@ button {
   display: flex;
   min-height: 0;
   overflow: hidden;
-  position: relative; /* anchors the sticky pinned-line overlay (.log-pins) */
 }
 
-/* Pinned lines stuck to the top of the log: landmark bookmarks (icon "pin")
-   that have scrolled above the viewport. Each child is a real .log-row, so it
-   inherits the row look (rail, gutter, winner colors); this overlay only
-   positions them, lends the mono font (it sits outside .log-scroll), gives an
-   opaque backdrop so rows beneath don't show through, and adds the drop shadow
-   + clipping. Right offset (clearing the match map) is set inline. */
+/* Pinned-line landmarks (bookmarks with icon "pin") that have scrolled above
+   the viewport. Lives inside .log-inner, so it rides the log's own horizontal
+   scroll and stays clipped inside .log-scroll (clear of its scrollbars).
+   position:sticky pins it to the top vertically; each child is a real .log-row
+   so it inherits the row look. The block sits above the absolutely-placed rows
+   it overlaps (z-index), so a width that spans the full content keeps an opaque
+   backdrop over them. */
 .log-pins {
-  position: absolute;
+  position: sticky;
   top: 0;
-  left: 0;
   z-index: 4;
+  width: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  background: var(--app-bg, #fff);
-  font-family: var(--mono-font);
-  font-size: var(--log-font-size, 12.5px);
-  font-weight: var(--log-font-weight, 400);
   box-shadow: 0 2px 6px rgba(20, 22, 26, 0.12);
 }
 .log-row.log-pin {
   cursor: pointer;
+  /* opaque so the rows scrolled underneath don't show through (matched rows
+     paint their own winner color inline) */
+  background: var(--app-bg, #fff);
 }
 .log-row.log-pin:last-child {
   border-bottom: 1px solid var(--border);
