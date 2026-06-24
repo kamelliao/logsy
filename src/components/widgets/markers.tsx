@@ -20,8 +20,8 @@ export const MARKER_ICONS: {
   { id: "star", label: "Star", color: "#d97706", Icon: Star },
   { id: "flag", label: "Flag", color: "#dc2626", Icon: Flag },
   { id: "bug", label: "Bug", color: "#16a34a", Icon: Bug },
-  { id: "pin", label: "Pin", color: "#7c3aed", Icon: Pin },
   { id: "alert", label: "Alert", color: "#ea580c", Icon: CircleAlert },
+  { id: "pin", label: "Pin", color: "#7c3aed", Icon: Pin },
 ];
 
 const BY_ID = new Map(MARKER_ICONS.map((m) => [m.id, m]));
