@@ -20,7 +20,6 @@ import {
   FileText,
   Filter,
   Minus,
-  Pin,
   Search,
   Sparkles,
   Trash2,
@@ -511,7 +510,7 @@ export function LogView({
       const idx = indexOf(n);
       if (idx >= 0 && idx < firstVisibleIdx) above.push(idx);
     }
-    return above.slice(-3); // the nearest few landmarks above the top
+    return above.slice(-10); // the nearest few landmarks above the top
   }, [pins, visible, firstVisibleIdx]);
 
   // Per-file scroll restore. The saved offset is captured once at mount (file.id
@@ -1421,11 +1420,25 @@ export function LogView({
               style={{ right: view.hasHighlights ? mapWidth : 0 }}
             >
               {stickyPins.map((idx) => {
+                // Render exactly like a real log row (same rail, gutter, winner
+                // colors) so a pinned line reads as the line it is — only the
+                // click-to-jump and the drop shadow set it apart.
                 const r = visible[idx];
+                const w = r.winner;
+                const mk = markerMap.get(r.n);
+                const canExpand = r.fieldsFromId !== undefined;
+                const rowStyle: CSSProperties = w
+                  ? {
+                      background: w.f.bgColor,
+                      color: w.f.textColor,
+                      ["--strip" as string]: w.f.bgColor,
+                    }
+                  : {};
                 return (
                   <div
                     key={r.n}
-                    className="log-pin-row"
+                    className={"log-row log-pin" + (w ? " matched" : "")}
+                    style={rowStyle}
                     title="Pinned line — click to jump"
                     onClick={() => {
                       rowVirtualizer.scrollToIndex(idx, { align: "start" });
@@ -1433,11 +1446,24 @@ export function LogView({
                       setAnchorRi(idx);
                     }}
                   >
-                    <Pin size={11} className="log-pin-ico" />
-                    {showLineNumbers && (
-                      <span className="log-pin-n">{r.n}</span>
-                    )}
-                    <span className="log-pin-txt">{r.text}</span>
+                    <span className="log-left">
+                      <span className={"log-mark" + (mk ? " on" : "")}>
+                        {mk ? (
+                          <MarkerGlyph icon={mk.icon} />
+                        ) : (
+                          <Bookmark size={12} />
+                        )}
+                      </span>
+                      {canExpand && (
+                        <span className="log-exp">
+                          <ChevronRight size={13} />
+                        </span>
+                      )}
+                      {showLineNumbers && (
+                        <span className="log-gut">{r.n}</span>
+                      )}
+                    </span>
+                    <span className="log-txt">{r.text}</span>
                   </div>
                 );
               })}
