@@ -1,5 +1,11 @@
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
 
 interface ShortcutsModalProps {
@@ -96,35 +102,44 @@ const SECTIONS: Section[] = [
 
 export function ShortcutsModal({ onClose }: ShortcutsModalProps) {
   return (
-    <div className="about-overlay" onMouseDown={onClose}>
-      <div className="shortcuts-box" onMouseDown={(e) => e.stopPropagation()}>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="about-x"
-          onClick={onClose}
-        >
-          <X size={18} />
-        </Button>
-        <div className="shortcuts-title">Keyboard shortcuts</div>
-        <div className="shortcuts-grid">
-          {SECTIONS.map((sec) => (
-            <div key={sec.title} className="shortcuts-section">
-              <div className="shortcuts-section-title">{sec.title}</div>
-              {sec.rows.map((row, i) => (
-                <div key={i} className="shortcuts-row">
-                  <span className="shortcuts-label">{row.label}</span>
-                  <span className="shortcuts-keys">
-                    {row.keys.map((k, j) => (
-                      <Kbd key={j}>{k}</Kbd>
-                    ))}
-                  </span>
-                </div>
-              ))}
-            </div>
-          ))}
+    <Dialog
+      open
+      onOpenChange={(o) => {
+        if (!o) onClose();
+      }}
+    >
+      <DialogContent className="shortcuts-modal" style={{ width: 620 }}>
+        <DialogHeader>
+          <DialogTitle>Keyboard shortcuts</DialogTitle>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="mh-x"
+            onClick={onClose}
+          >
+            <X size={18} />
+          </Button>
+        </DialogHeader>
+        <div className="modal-body scroll">
+          <div className="shortcuts-grid">
+            {SECTIONS.map((sec) => (
+              <div key={sec.title} className="shortcuts-section">
+                <div className="shortcuts-section-title">{sec.title}</div>
+                {sec.rows.map((row, i) => (
+                  <div key={i} className="shortcuts-row">
+                    <span className="shortcuts-label">{row.label}</span>
+                    <span className="shortcuts-keys">
+                      {row.keys.map((k, j) => (
+                        <Kbd key={j}>{k}</Kbd>
+                      ))}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

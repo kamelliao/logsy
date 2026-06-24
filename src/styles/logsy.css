@@ -5049,24 +5049,15 @@ button {
 /* ============================================================
    Keyboard shortcuts modal
    ============================================================ */
-.shortcuts-box {
-  position: relative;
-  width: 620px;
-  max-width: calc(100vw - 40px);
-  max-height: calc(100vh - 64px);
-  overflow: auto;
-  background: #fff;
-  border-radius: 14px;
-  box-shadow: var(--shadow-modal);
-  padding: 22px 24px;
-  animation: pop 0.13s ease;
+/* shortcuts reuse the editor's .modal shell (Dialog primitive): portal-rendered,
+   centered via transform, pinned .modal-head, scrollable .modal-body. */
+.shortcuts-modal .modal-head {
+  cursor: default;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 14px;
 }
-.shortcuts-title {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--text);
-  letter-spacing: -0.01em;
-  margin-bottom: 16px;
+.shortcuts-modal .modal-body {
+  padding: 16px 20px 18px;
 }
 .shortcuts-grid {
   display: grid;
