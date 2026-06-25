@@ -114,7 +114,7 @@ test.describe("menu bar", () => {
   }) => {
     await openMenu(page, "Help");
     await menuItem(page, "Keyboard shortcuts").click();
-    await expect(page.locator(".shortcuts-box")).toBeVisible();
+    await expect(page.locator(".shortcuts-modal")).toBeVisible();
   });
 });
 
