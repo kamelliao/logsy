@@ -17,9 +17,15 @@ async function addBookmark(
   await logRow(page, n).locator(".log-mark").click();
   const pop = page.locator(".marker-pop");
   await expect(pop).toBeVisible();
-  if (opts.icon) await pop.getByRole("button", { name: opts.icon }).click();
+  // Note must be typed before the icon: picking an icon commits and closes the
+  // editor straight away (the fast path for a no-note bookmark), so there's no
+  // Done click in that case.
   if (opts.note) await pop.locator(".mp-note").fill(opts.note);
-  await pop.getByRole("button", { name: "Done" }).click();
+  if (opts.icon) {
+    await pop.getByRole("button", { name: opts.icon }).click();
+  } else {
+    await pop.getByRole("button", { name: "Done" }).click();
+  }
   await expect(pop).toBeHidden();
 }
 
