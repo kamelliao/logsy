@@ -60,6 +60,10 @@ import {
   verticalListSortingStrategy,
   horizontalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import {
+  restrictToHorizontalAxis,
+  restrictToFirstScrollableAncestor,
+} from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
 import type {
   LogFile,
@@ -405,7 +409,6 @@ function PanelMenuItems({
 interface SetTabProps {
   set: FilterSet;
   active: boolean;
-  dot: string;
   canDelete: boolean;
   onSelect: () => void;
   onRename: (name: string) => void;
@@ -416,7 +419,6 @@ interface SetTabProps {
 function SetTab({
   set,
   active,
-  dot,
   canDelete,
   onSelect,
   onRename,
@@ -442,10 +444,10 @@ function SetTab({
   }
 
   const style: CSSProperties = {
-    // lock to the horizontal axis so vertical dragging can't trigger a scrollbar
-    transform: CSS.Transform.toString(
-      transform ? { ...transform, y: 0 } : null,
-    ),
+    // Horizontal translate only: drop dnd-kit's scaleX/scaleY (it scales items
+    // to each other's size when widths differ, which squishes the tab text) and
+    // lock the Y axis so vertical dragging can't trigger a scrollbar.
+    transform: transform ? `translate3d(${transform.x}px, 0, 0)` : undefined,
     transition,
     opacity: isDragging ? 0.4 : 1,
   };
@@ -469,7 +471,6 @@ function SetTab({
           />
         }
       >
-        <span className="gtab-dot" style={{ background: dot }} />
         {editing ? (
           <input
             className="gtab-name-input"
@@ -1436,7 +1437,19 @@ export function FilterPanel({
       if (e.deltaY === 0) return;
       const target = e.target as HTMLElement;
       if (target.closest(".filter-list")) return; // already handled by its own overflow
-      if (target.closest(".group-tabs")) return; // tabs translate the wheel into horizontal scroll
+      // Tabs: translate a plain vertical wheel into horizontal tab scrolling.
+      // Done here (not via a React onWheel prop) because React registers wheel
+      // listeners as passive, so preventDefault() there is a no-op + warns.
+      const tabs = target.closest(".group-tabs");
+      if (tabs) {
+        if (e.deltaX !== 0) return; // real horizontal scroll passes through
+        const vp = tabs.querySelector<HTMLElement>(".scroll-area-viewport");
+        if (vp) {
+          e.preventDefault();
+          vp.scrollLeft += e.deltaY;
+        }
+        return;
+      }
       const list = panel!.querySelector<HTMLElement>(".filter-list");
       if (!list) return;
       const atTop = e.deltaY < 0 && list.scrollTop <= 0;
@@ -1912,35 +1925,24 @@ export function FilterPanel({
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragEnd={handleSetDragEnd}
+        // Lock the drag to the horizontal axis and keep it inside the tab
+        // strip's scroll viewport, so a tab can't be flung off to the right
+        // (and drag autoscroll past the last tab into empty space).
+        modifiers={[
+          restrictToHorizontalAxis,
+          restrictToFirstScrollableAncestor,
+        ]}
       >
         <SortableContext
           items={file.sets.map((g) => g.id)}
           strategy={horizontalListSortingStrategy}
         >
-          <ScrollArea
-            orientation="horizontal"
-            className="group-tabs"
-            viewportProps={{
-              onWheel: (e) => {
-                // translate a plain vertical wheel into horizontal tab scrolling
-                if (e.deltaX === 0 && e.deltaY !== 0) {
-                  e.preventDefault();
-                  e.currentTarget.scrollLeft += e.deltaY;
-                }
-              },
-            }}
-          >
+          <ScrollArea orientation="horizontal" className="group-tabs">
             {file.sets.map((g) => (
               <SetTab
                 key={g.id}
                 set={g}
                 active={g.id === file.activeSetId}
-                dot={
-                  (
-                    g.filters.find((f) => f.enabled && !f.exclude) ??
-                    g.filters[0]
-                  )?.textColor ?? "#9aa0a6"
-                }
                 canDelete={file.sets.length > 1}
                 onSelect={() => onSwitchSet(g.id)}
                 onRename={(name) => onRenameSet(g.id, name)}
