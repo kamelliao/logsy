@@ -7,6 +7,7 @@ import { tokenize, buildPattern } from "@/lib/generalize";
 import {
   buildGroupFromImport,
   exportPayload,
+  projectSelection,
   remapImportIds,
   parseTatFilters,
 } from "@/lib/filterFile";
@@ -53,6 +54,7 @@ export interface FilterActions {
   saveFilter: (draft: Filter) => void;
   saveFiltersAs: () => Promise<void>;
   saveFilters: () => Promise<void>;
+  exportSelectedFilters: (ids: string[]) => Promise<void>;
   loadFilterFromPath: (
     path: string,
     mode?: "replace" | "append",
@@ -388,6 +390,31 @@ export function createFilterActions(
         filters: SAVE_DIALOG_FILTERS,
       });
       if (typeof path === "string") await writeFiltersTo(get, path);
+    },
+    // "Export selected": write just the chosen filters to a new file as a
+    // standalone, reusable pack. Unlike Save/Save As this is a side export — it
+    // never becomes the set's save target, so filePath/savedSnapshot are left
+    // untouched.
+    exportSelectedFilters: async (ids) => {
+      const set = activeSet(get().doc);
+      if (!set || ids.length === 0) return;
+      const payload = projectSelection(set, ids);
+      if (payload.filters.length === 0) return;
+      const path = await save({
+        defaultPath: set.name.replace(/\s+/g, "_") + "_selection.json",
+        filters: SAVE_DIALOG_FILTERS,
+      });
+      if (typeof path !== "string") return;
+      try {
+        await invoke("write_text_file", {
+          path,
+          contents: exportPayload(payload),
+        });
+        get().pushRecent("recentFilterFiles", path);
+        toast.success("Selected filters exported");
+      } catch (e) {
+        toast.error("Could not export filters: " + String(e));
+      }
     },
     // "Save filters": update the file it was last saved to; if never saved, behave as Save As.
     saveFilters: async () => {

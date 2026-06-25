@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 import {
   exportPayload,
   buildGroupFromImport,
+  projectSelection,
   remapImportIds,
 } from "@/lib/filterFile";
 import type { ImportedFilters } from "@/lib/filterFile";
@@ -160,6 +161,54 @@ test("round-trip preserves timeline tracks and de-dupes by filterId:timeField", 
       hidden: undefined,
     },
   ]);
+});
+
+// --- export selected (filter pack projection) -------------------------------
+
+test("projectSelection keeps selected filters, the groups holding them, and projects order", () => {
+  const groups: FilterGroup[] = [
+    { id: "g1", name: "Boot", collapsed: false },
+    { id: "g2", name: "Errors", collapsed: true },
+  ];
+  // makeFilter generates ids, so reference f.id (not literals) in order/selection.
+  const f1 = makeFilter("mount", { groupId: "g1" } as Partial<Filter>);
+  const f2 = makeFilter("ERR", { groupId: "g2" } as Partial<Filter>);
+  const f3 = makeFilter("loose", { groupId: null } as Partial<Filter>);
+  const f4 = makeFilter("other", { groupId: null } as Partial<Filter>);
+  const set = makeSet({
+    groups,
+    filters: [f1, f2, f3, f4],
+    order: [f3.id, f4.id, "g1", "g2"],
+  });
+
+  // Pick the loose f3 and the grouped f1 (g1) — g2/f2 and f4 stay behind.
+  const out = projectSelection(set, [f1.id, f3.id]);
+  expect(out.name).toBe("My Set");
+  expect(out.filters).toEqual([f1, f3]);
+  expect(out.groups).toEqual([groups[0]]); // g2 dropped: no selected member
+  expect(out.order).toEqual([f3.id, "g1"]); // f4 and g2 projected out
+  // Round-trips like a normal filter file.
+  const built = buildGroupFromImport(JSON.parse(exportPayload(out)));
+  expect(built!.filters.map((f) => f.pattern)).toEqual(["mount", "loose"]);
+});
+
+test("projectSelection drops timeline sources (packs carry no time bindings)", () => {
+  const f = makeFilter("(?<a>\\d+)", { regex: true } as Partial<Filter>);
+  const set = makeSet({
+    filters: [f],
+    order: [f.id],
+    sources: [
+      {
+        id: "tl1",
+        filterId: f.id,
+        timeField: "a",
+        lane: "x",
+        kind: "point",
+        unit: "ms",
+      },
+    ],
+  });
+  expect(projectSelection(set, [f.id]).sources).toEqual([]);
 });
 
 // --- append: id remap -------------------------------------------------------

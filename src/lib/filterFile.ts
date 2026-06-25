@@ -68,6 +68,31 @@ export function exportPayload(
   );
 }
 
+/**
+ * Project a subset of a set's filters down to a standalone, exportable document
+ * — the "filter pack" shape. Keeps a group only when at least one of its filters
+ * is in the selection, and projects the top-level `order` to just the surviving
+ * loose filters and kept groups. Timeline sources are intentionally dropped: they
+ * bind a filter to one file's time semantics, which rarely travel with a reused
+ * pack. The result round-trips through `exportPayload` / `buildGroupFromImport`
+ * like any other filter file.
+ */
+export function projectSelection(
+  set: Pick<FilterSet, "name" | "groups" | "order" | "filters">,
+  ids: Iterable<string>,
+): Pick<FilterSet, "name" | "groups" | "order" | "filters" | "sources"> {
+  const sel = new Set(ids);
+  const filters = set.filters.filter((f) => sel.has(f.id));
+  // A group survives only if it still holds a selected filter.
+  const keptGroups = new Set(
+    filters.map((f) => f.groupId).filter((g): g is string => g != null),
+  );
+  const groups = set.groups.filter((g) => keptGroups.has(g.id));
+  // `order` interleaves loose-filter ids and group ids; keep the ones still here.
+  const order = set.order.filter((id) => sel.has(id) || keptGroups.has(id));
+  return { name: set.name, groups, order, filters, sources: [] };
+}
+
 /** Parse timeline tracks (one per filter+field) from an imported document. */
 function importSources(raw: unknown): TimelineSource[] {
   if (!Array.isArray(raw)) return [];
