@@ -24,8 +24,8 @@ import {
   segments,
   scanMatches,
   deriveFields,
-} from "../src/logic.ts";
-import { makeFilter } from "../src/data.ts";
+} from "../src/lib/engine.ts";
+import { makeFilter } from "../src/lib/defaults.ts";
 import type { Filter } from "../src/types.ts";
 
 // --- args -------------------------------------------------------------------
