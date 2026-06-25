@@ -885,8 +885,9 @@ button {
   overflow: hidden;
 }
 
-/* Pinned-line landmarks (bookmarks with icon "pin") that have scrolled above
-   the viewport. Lives inside .log-inner, so it rides the log's own horizontal
+/* Pinned-line landmarks (bookmarks with icon "pin"). A persistent bar of every
+   pinned line, always docked at the top regardless of scroll. Lives inside
+   .log-inner, so it rides the log's own horizontal
    scroll and stays clipped inside .log-scroll (clear of its scrollbars).
    position:sticky pins it to the top vertically; each child is a real .log-row
    so it inherits the row look. The block sits above the absolutely-placed rows
