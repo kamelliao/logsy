@@ -52,7 +52,7 @@ on Windows, `.dmg` on macOS, `.deb`/`.AppImage` on Linux.
 
 ## Performance profiling
 
-The log-processing core in [`src/logic.ts`](src/logic.ts) is what keeps the UI
+The log-processing core in [`src/lib/engine.ts`](src/lib/engine.ts) is what keeps the UI
 smooth on large files. [`scripts/profile.ts`](scripts/profile.ts) benchmarks it
 in isolation (no React, no Tauri) against a synthetic firmware log, reporting
 per-function timings plus `computeView` throughput:
