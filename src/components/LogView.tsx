@@ -478,9 +478,9 @@ export function LogView({
   const scrollTop = rowVirtualizer.scrollOffset ?? 0;
   const viewH = scrollRef.current?.clientHeight ?? 600;
 
-  // Pins: bookmarks whose icon is "pin". While a pinned line is scrolled above
-  // the top of the viewport it sticks to the top of the log as a landmark you
-  // can click to jump back to — so you keep context deep inside a long section.
+  // Pins: bookmarks whose icon is "pin". Every pinned line stays docked at the
+  // top of the log as a persistent landmark you can click to jump to — the bar
+  // doesn't appear/retract with scroll, so the pins you set stay put.
   const pins = useMemo(
     () =>
       markers
@@ -489,7 +489,6 @@ export function LogView({
         .sort((a, b) => a - b),
     [markers],
   );
-  const firstVisibleIdx = Math.floor(scrollTop / rowH);
   const stickyPins = useMemo(() => {
     if (!pins.length || !visible.length) return [];
     // `visible` is in ascending line order, so binary-search each pin's row.
@@ -505,13 +504,13 @@ export function LogView({
       }
       return -1;
     };
-    const above: number[] = [];
+    const rows: number[] = [];
     for (const n of pins) {
-      const idx = indexOf(n);
-      if (idx >= 0 && idx < firstVisibleIdx) above.push(idx);
+      const idx = indexOf(n); // -1 if the pinned line is filtered out of `visible`
+      if (idx >= 0) rows.push(idx);
     }
-    return above.slice(-10); // the nearest few landmarks above the top
-  }, [pins, visible, firstVisibleIdx]);
+    return rows; // ascending (pins + visible are both sorted)
+  }, [pins, visible]);
 
   // Per-file scroll restore. The saved offset is captured once at mount (file.id
   // is stable for this component instance — App keys LogView by it). We restore it
@@ -1434,13 +1433,15 @@ export function LogView({
                 position: "relative",
               }}
             >
-              {/* Sticky pinned-line landmarks. Living inside .log-inner (the
-                  horizontally-scrolling content) means they ride the log's own
-                  scroll — text scrolls with the rows while each row's sticky
-                  left rail re-pins the gutter — and stay clipped inside
-                  .log-scroll, clear of its scrollbars. position:sticky pins them
-                  to the top vertically; the absolutely-placed rows ignore this
-                  in-flow block, so the virtualizer's offsets are untouched. */}
+              {/* Persistent pinned-line landmark bar — every pin, always docked
+                  at the top (doesn't appear/retract with scroll). Living inside
+                  .log-inner (the horizontally-scrolling content) means they ride
+                  the log's own scroll — text scrolls with the rows while each
+                  row's sticky left rail re-pins the gutter — and stay clipped
+                  inside .log-scroll, clear of its scrollbars. position:sticky
+                  pins them to the top vertically; the absolutely-placed rows
+                  ignore this in-flow block, so the virtualizer's offsets are
+                  untouched. */}
               {stickyPins.length > 0 && (
                 <div className="log-pins">
                   {stickyPins.map((idx) => {
@@ -1465,7 +1466,14 @@ export function LogView({
                         style={rowStyle}
                         title="Pinned line — click to jump"
                         onClick={() => {
-                          rowVirtualizer.scrollToIndex(idx, { align: "start" });
+                          // The pin bar always covers the top `stickyPins.length`
+                          // rows, so align:"start" would drop the line behind it.
+                          // Land it just below the bar instead — precisely on the
+                          // line, with its context visible underneath.
+                          const barH = stickyPins.length * rowH;
+                          rowVirtualizer.scrollToOffset(
+                            Math.max(0, idx * rowH - barH),
+                          );
                           setSelectedLines(new Set([r.n]));
                           setAnchorRi(idx);
                         }}
