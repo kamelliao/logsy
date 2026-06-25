@@ -953,6 +953,12 @@ interface GroupBlockProps {
   onAddFilter: () => void;
   onSetEnabled: (enabled: boolean) => void;
   renderRow: (f: Filter) => ReactNode;
+  /** Batch-selection mode: the header shows a select checkbox instead of a grip. */
+  selectMode: boolean;
+  /** Whether all / some / none of this group's filters are selected. */
+  selectState: "all" | "some" | "none";
+  /** Toggle the whole group's filters in/out of the selection. */
+  onSelectToggle: () => void;
 }
 
 function GroupBlock({
@@ -964,6 +970,9 @@ function GroupBlock({
   onAddFilter,
   onSetEnabled,
   renderRow,
+  selectMode,
+  selectState,
+  onSelectToggle,
 }: GroupBlockProps) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(group.name);
@@ -977,6 +986,8 @@ function GroupBlock({
   } = useSortable({
     id: group.id,
     data: { type: "group" },
+    // No reordering while picking a selection — the grip becomes a checkbox.
+    disabled: selectMode,
   });
   const { setNodeRef: setDropRef, isOver } = useDroppable({
     id: `body:${group.id}`,
@@ -1030,9 +1041,29 @@ function GroupBlock({
             />
           }
         >
-          <span className="fs-grip">
-            <GripVertical size={12} />
-          </span>
+          {selectMode ? (
+            // The whole-group select toggle takes the grip's slot. Real
+            // interactive checkbox (unlike the row's presentational one): it
+            // drives selection directly, so stop the click/pointer from reaching
+            // the header (which would collapse the group).
+            <span
+              className="fs-select"
+              onClick={(e) => e.stopPropagation()}
+              onPointerDown={(e) => e.stopPropagation()}
+              title={selectState === "all" ? "Deselect group" : "Select group"}
+            >
+              <Checkbox
+                checked={selectState === "all"}
+                indeterminate={selectState === "some"}
+                onCheckedChange={onSelectToggle}
+                className="fr-sel-check"
+              />
+            </span>
+          ) : (
+            <span className="fs-grip">
+              <GripVertical size={12} />
+            </span>
+          )}
           <button
             className="fs-chevron"
             title={group.collapsed ? "Expand" : "Collapse"}
@@ -1342,6 +1373,7 @@ export function FilterPanel({
   const onDeleteFilter = useStore((s) => s.deleteFilter);
   const onDeleteFilters = useStore((s) => s.deleteFilters);
   const onSetFiltersEnabled = useStore((s) => s.setFiltersEnabled);
+  const onExportFilters = useStore((s) => s.exportSelectedFilters);
   const onDuplicateFilter = useStore((s) => s.duplicateFilter);
   const onViewFilterOnly = useStore((s) => s.setSoloFilterId);
   const onEditFilter = useStore((s) => s.openEditFilter);
@@ -1660,6 +1692,25 @@ export function FilterPanel({
     if (selectedCount === 0) return;
     if (await onDeleteFilters([...selected])) exitSelect();
   };
+  // Whole-group select: how much of a group is currently picked, and a toggle
+  // that selects the group when not fully picked, else clears it.
+  const groupSelState = (gid: string): "all" | "some" | "none" => {
+    const ids = byGroup(gid).map((f) => f.id);
+    if (ids.length === 0) return "none";
+    const n = ids.reduce((acc, id) => acc + (selected.has(id) ? 1 : 0), 0);
+    return n === 0 ? "none" : n === ids.length ? "all" : "some";
+  };
+  const toggleGroupSelect = (gid: string) =>
+    setSelected((prev) => {
+      const ids = byGroup(gid).map((f) => f.id);
+      const all = ids.length > 0 && ids.every((id) => prev.has(id));
+      const next = new Set(prev);
+      for (const id of ids) {
+        if (all) next.delete(id);
+        else next.add(id);
+      }
+      return next;
+    });
 
   function renderRow(f: Filter) {
     return (
@@ -2079,6 +2130,9 @@ export function FilterPanel({
                         onSetGroupEnabled(it.group.id, enabled)
                       }
                       renderRow={renderRow}
+                      selectMode={selectMode}
+                      selectState={groupSelState(it.group.id)}
+                      onSelectToggle={() => toggleGroupSelect(it.group.id)}
                     />
                   ) : (
                     renderRow(it.filter)
@@ -2144,6 +2198,16 @@ export function FilterPanel({
           >
             <EyeOff data-icon="inline-start" />
             <span className="sb-label">Disable</span>
+          </Button>
+          <Button
+            size="xs"
+            variant="outline"
+            disabled={selectedCount === 0}
+            title="Export selected to a filter file"
+            onClick={() => void onExportFilters([...selected])}
+          >
+            <FileDown data-icon="inline-start" />
+            <span className="sb-label">Export</span>
           </Button>
           <Button
             size="xs"

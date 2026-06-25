@@ -2748,7 +2748,8 @@ button {
 }
 /* Fills with the app's active blue (#2c6ce6, the --accent-bg / selected-row hue)
    when the row is selected — consistent with selection elsewhere in the app. */
-.fr-sel-check[data-checked] {
+.fr-sel-check[data-checked],
+.fr-sel-check[data-indeterminate] {
   background: #2c6ce6 !important;
   border-color: #2c6ce6 !important;
 }
@@ -3260,6 +3261,25 @@ button {
 }
 .fsection-head:hover .fs-grip {
   color: var(--text-3);
+}
+/* The whole-group select checkbox takes the grip's slot while selecting. */
+.fs-select {
+  flex: 0 0 auto;
+  width: 13px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+}
+/* Shrink the box (and its glyph) to suit the denser header — the default 16px
+   checkbox reads oversized next to the 14px chevron/add icons. */
+.fs-select [data-slot="checkbox"] {
+  width: 13px;
+  height: 13px;
+}
+.fs-select [data-slot="checkbox"] svg {
+  width: 10px;
+  height: 10px;
 }
 /* interactive controls inside the draggable header keep a pointer cursor */
 .fs-chevron,
