@@ -240,5 +240,52 @@ export function normalizeState(state: AppState): AppState {
   ).structuredView;
   // viewMode moved onto each LogFile; drop the stale app-level field.
   delete (state as Partial<Record<"viewMode", unknown>>).viewMode;
+  // Global filter-pack library: keep only well-formed packs. Don't deep-rewrite
+  // a pack's internals — its `order` references filter/group ids, so coercing
+  // them through makeFilter (fresh ids) would break the layout. Packs are
+  // produced well-formed internally; imported packs are sanitized on import.
+  if (Array.isArray(state.filterPacks)) {
+    state.filterPacks = state.filterPacks.filter(
+      (p) =>
+        p &&
+        typeof p.id === "string" &&
+        typeof p.name === "string" &&
+        Array.isArray(p.filters) &&
+        Array.isArray(p.groups) &&
+        Array.isArray(p.order),
+    );
+    if (state.filterPacks.length === 0) delete state.filterPacks;
+    // Tags are loose user labels — keep only trimmed, non-empty strings; drop the
+    // field entirely when nothing survives so packs without tags stay clean.
+    for (const p of state.filterPacks ?? []) {
+      if (Array.isArray(p.tags)) {
+        const t = p.tags
+          .filter((x): x is string => typeof x === "string" && x.trim() !== "")
+          .map((x) => x.trim());
+        if (t.length) p.tags = t;
+        else delete p.tags;
+      } else if (p.tags !== undefined) {
+        delete p.tags;
+      }
+    }
+  } else if (state.filterPacks !== undefined) {
+    delete state.filterPacks;
+  }
+  // Packs side-panel width: clamp to the same range the resize drag enforces.
+  if (typeof state.packsDrawerW === "number") {
+    state.packsDrawerW = Math.max(
+      280,
+      Math.min(680, Math.round(state.packsDrawerW)),
+    );
+  } else if (state.packsDrawerW !== undefined) {
+    delete state.packsDrawerW;
+  }
+  // Packs list sort: one of the known modes, else drop back to manual (default).
+  if (
+    state.packsSort !== undefined &&
+    !["manual", "name", "created", "count"].includes(state.packsSort)
+  ) {
+    delete state.packsSort;
+  }
   return state;
 }

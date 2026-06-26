@@ -14,11 +14,12 @@ function ContextMenuTrigger({ ...props }: ContextMenuPrimitive.Trigger.Props) {
 
 function ContextMenuContent({
   className,
+  zIndex = 50,
   ...props
-}: ContextMenuPrimitive.Popup.Props) {
+}: ContextMenuPrimitive.Popup.Props & { zIndex?: number }) {
   return (
     <ContextMenuPrimitive.Portal>
-      <ContextMenuPrimitive.Positioner style={{ zIndex: 50 }}>
+      <ContextMenuPrimitive.Positioner style={{ zIndex }}>
         <ContextMenuPrimitive.Popup
           data-slot="context-menu-content"
           className={cn("menu-pop", className)}
