@@ -93,6 +93,7 @@ function SortablePackCard({
   onRemoveFilter,
   onAddFilter,
   onToggleGroup,
+  onRenameGroup,
   onInsertGroup,
   onDissolveGroup,
 }: {
@@ -114,6 +115,7 @@ function SortablePackCard({
   onRemoveFilter: (filterId: string) => void;
   onAddFilter: () => void;
   onToggleGroup: (groupId: string) => void;
+  onRenameGroup: (groupId: string, name: string) => void;
   onInsertGroup: (groupId: string) => void;
   onDissolveGroup: (groupId: string) => void;
 }) {
@@ -151,6 +153,7 @@ function SortablePackCard({
         onRemoveFilter={onRemoveFilter}
         onAddFilter={onAddFilter}
         onToggleGroup={onToggleGroup}
+        onRenameGroup={onRenameGroup}
         onInsertGroup={onInsertGroup}
         onDissolveGroup={onDissolveGroup}
         dragHandle={disabled ? undefined : { attributes, listeners }}
@@ -182,6 +185,7 @@ export function PacksDrawer({
   const duplicatePack = useStore((s) => s.duplicatePack);
   const setPackTags = useStore((s) => s.setPackTags);
   const togglePackGroupCollapsed = useStore((s) => s.togglePackGroupCollapsed);
+  const renamePackGroup = useStore((s) => s.renamePackGroup);
   const dissolvePackGroup = useStore((s) => s.dissolvePackGroup);
   const deletePack = useStore((s) => s.deletePack);
   const exportPackToFile = useStore((s) => s.exportPackToFile);
@@ -334,6 +338,8 @@ export function PacksDrawer({
     onInsertFilter: (fid: string) => void insertPackFilter(p.id, fid),
     onRemoveFilter: (fid: string) => removePackFilter(p.id, fid),
     onToggleGroup: (gid: string) => togglePackGroupCollapsed(p.id, gid),
+    onRenameGroup: (gid: string, name: string) =>
+      renamePackGroup(p.id, gid, name),
     onInsertGroup: (gid: string) => void insertPackGroup(p.id, gid),
     onDissolveGroup: (gid: string) => dissolvePackGroup(p.id, gid),
     onAddFilter: () =>
