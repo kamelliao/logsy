@@ -214,6 +214,116 @@ function PackFilterRow({
   );
 }
 
+/** A collapsible group section header in the expanded detail, reusing the filter
+ *  panel's `.fsection-head` look. Click toggles collapse; double-click the name
+ *  (or the right-click menu) renames it inline; the menu also inserts the whole
+ *  group into the active set or dissolves it (keeping its filters). */
+function PackGroupHeader({
+  group,
+  count,
+  onToggle,
+  onRename,
+  onInsert,
+  onDissolve,
+}: {
+  group: FilterGroup;
+  count: number;
+  onToggle: () => void;
+  onRename: (name: string) => void;
+  onInsert: () => void;
+  onDissolve: () => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [val, setVal] = useState(group.name);
+  const startRename = () => {
+    setVal(group.name);
+    setEditing(true);
+  };
+  const commit = () => {
+    const v = val.trim();
+    if (v && v !== group.name) onRename(v);
+    setEditing(false);
+  };
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger
+        render={
+          <div
+            className="fsection-head"
+            title="Click to collapse / expand · double-click name to rename · right-click for menu"
+            onClick={editing ? undefined : onToggle}
+          />
+        }
+      >
+        <button
+          className="fs-chevron"
+          title={group.collapsed ? "Expand" : "Collapse"}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggle();
+          }}
+        >
+          {group.collapsed ? (
+            <ChevronRight size={14} />
+          ) : (
+            <ChevronDown size={14} />
+          )}
+        </button>
+        {editing ? (
+          <input
+            className="fs-name-input"
+            value={val}
+            autoFocus
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+            onChange={(e) => setVal(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") commit();
+              if (e.key === "Escape") {
+                setVal(group.name);
+                setEditing(false);
+              }
+            }}
+          />
+        ) : (
+          <span
+            className="fs-name"
+            onDoubleClick={(e) => {
+              e.stopPropagation();
+              startRename();
+            }}
+          >
+            {group.name}
+          </span>
+        )}
+        <span className="fs-count">{count}</span>
+      </ContextMenuTrigger>
+      <ContextMenuContent zIndex={130}>
+        <DropdownMenuItem onClick={onInsert}>
+          <span className="mi-ico">
+            <CornerDownLeft size={15} />
+          </span>
+          Insert to filters
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={startRename}>
+          <span className="mi-ico">
+            <Pencil size={15} />
+          </span>
+          Rename
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={onDissolve}>
+          <span className="mi-ico">
+            <Ungroup size={15} />
+          </span>
+          Ungroup (keep filters)
+        </DropdownMenuItem>
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
 /**
  * One library pack: its colour spectrum (the recognizable bit), name, a terse
  * meta line, and an explicit Insert action. Inserting is deliberately NOT bound
@@ -239,6 +349,7 @@ export function PackCard({
   onRemoveFilter,
   onAddFilter,
   onToggleGroup,
+  onRenameGroup,
   onInsertGroup,
   onDissolveGroup,
   dragHandle,
@@ -266,6 +377,8 @@ export function PackCard({
   onAddFilter: () => void;
   /** Collapse/expand a group shown in the expanded detail. */
   onToggleGroup: (groupId: string) => void;
+  /** Rename a group shown in the expanded detail. */
+  onRenameGroup: (groupId: string, name: string) => void;
   /** Insert a whole group (its filters, carrying the group) into the active set. */
   onInsertGroup: (groupId: string) => void;
   /** Dissolve a group (ungroup its filters; the filters stay in the pack). */
@@ -583,57 +696,16 @@ export function PackCard({
                           key={it.group.id}
                           className="fsection pack-fsection"
                         >
-                          <ContextMenu>
-                            <ContextMenuTrigger
-                              render={
-                                <div
-                                  className="fsection-head"
-                                  title="Click to collapse / expand · right-click for menu"
-                                  onClick={() => onToggleGroup(it.group.id)}
-                                />
-                              }
-                            >
-                              <button
-                                className="fs-chevron"
-                                title={
-                                  it.group.collapsed ? "Expand" : "Collapse"
-                                }
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  onToggleGroup(it.group.id);
-                                }}
-                              >
-                                {it.group.collapsed ? (
-                                  <ChevronRight size={14} />
-                                ) : (
-                                  <ChevronDown size={14} />
-                                )}
-                              </button>
-                              <span className="fs-name">{it.group.name}</span>
-                              <span className="fs-count">
-                                {it.members.length}
-                              </span>
-                            </ContextMenuTrigger>
-                            <ContextMenuContent zIndex={130}>
-                              <DropdownMenuItem
-                                onClick={() => onInsertGroup(it.group.id)}
-                              >
-                                <span className="mi-ico">
-                                  <CornerDownLeft size={15} />
-                                </span>
-                                Insert to filters
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem
-                                onClick={() => onDissolveGroup(it.group.id)}
-                              >
-                                <span className="mi-ico">
-                                  <Ungroup size={15} />
-                                </span>
-                                Ungroup (keep filters)
-                              </DropdownMenuItem>
-                            </ContextMenuContent>
-                          </ContextMenu>
+                          <PackGroupHeader
+                            group={it.group}
+                            count={it.members.length}
+                            onToggle={() => onToggleGroup(it.group.id)}
+                            onRename={(name) =>
+                              onRenameGroup(it.group.id, name)
+                            }
+                            onInsert={() => onInsertGroup(it.group.id)}
+                            onDissolve={() => onDissolveGroup(it.group.id)}
+                          />
                           {!it.group.collapsed && (
                             <div className="fsection-body">
                               {it.members.length === 0 ? (
