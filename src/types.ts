@@ -64,6 +64,27 @@ export interface FilterSet {
   savedSnapshot?: string;
 }
 
+/**
+ * A reusable, named bundle of filters — a "pack" saved to the user's global
+ * library and inserted into any set later. Same shape as an exported filter file
+ * minus timeline sources (which bind to one file's time semantics): the filters,
+ * the groups they belong to, and the interleaved top-level `order`. Inserting a
+ * pack remaps ids and appends, so the same pack can be dropped in repeatedly.
+ */
+export interface FilterPack {
+  id: string;
+  name: string;
+  /** Epoch ms the pack was saved; rendered as a relative date on its card. */
+  createdAt: number;
+  /** Flat, ordered filters (across groups), as in a FilterSet. */
+  filters: Filter[];
+  groups: FilterGroup[];
+  /** Top-level interleaved order of group ids and ungrouped filter ids. */
+  order: string[];
+  /** User labels for organizing the library; drives the drawer's tag filter. */
+  tags?: string[];
+}
+
 /** The set of bookmark glyphs a marker can use. */
 export type MarkerIcon = "bookmark" | "star" | "flag" | "bug" | "pin" | "alert";
 
@@ -156,7 +177,20 @@ export interface AppState {
   /** What the filter rows show as their label: the regex `pattern`, the
    *  `description`, or description-with-pattern-fallback (default). */
   filterLabel?: FilterLabelMode;
+  /**
+   * Global, reusable filter packs — the user's library. App-wide (not per-file
+   * or per-set); persisted, but not on the undo stack. Inserting a pack into a
+   * set IS undoable (it edits the set); managing the library is not.
+   */
+  filterPacks?: FilterPack[];
+  /** Width (px) of the filter-packs side panel. */
+  packsDrawerW?: number;
+  /** Sort order for the packs library list ("manual" = user drag order). */
+  packsSort?: PacksSort;
 }
+
+/** How the packs drawer orders its cards; "manual" keeps the drag order. */
+export type PacksSort = "manual" | "name" | "created" | "count";
 
 /** Filter-row label source (global setting). `desc-first` shows the description
  *  when set, else the pattern; `pattern`/`description` always show that field. */

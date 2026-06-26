@@ -28,6 +28,8 @@ import {
   ListX,
   MoreVertical,
   MoreHorizontal,
+  Package,
+  PackagePlus,
   Pencil,
   Plus,
   Save,
@@ -73,6 +75,7 @@ import type {
   FilterLayout,
   FieldDef,
   FilterLabelMode,
+  FilterPack,
 } from "@/types";
 import { trackFieldsOf } from "@/lib/engine";
 import { useStore } from "@/store";
@@ -99,10 +102,15 @@ import {
   ContextMenuContent,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { PacksDrawer } from "@/components/packs/PacksDrawer";
+import { PackNameDialog } from "@/components/packs/PackNameDialog";
+import { AddToPackCombobox } from "@/components/packs/AddToPackCombobox";
 
 // Shared empty array so rows whose filter has no tracks all get the same
 // reference — keeps FilterRow's memo from breaking on every panel render.
 const NO_TRACKED_FIELDS: string[] = [];
+// Stable empty reference for the packs selector (avoids a new [] each render).
+const NO_PACKS: FilterPack[] = [];
 
 // ---- shared menu item groups ----
 // Rendered inside both the "⋮" dropdown and the right-click context menu.
@@ -235,11 +243,13 @@ function RowMenuItems({
 function SetTabMenuItems({
   onRename,
   onDuplicate,
+  onSaveAsPack,
   onDelete,
   canDelete,
 }: {
   onRename: () => void;
   onDuplicate: () => void;
+  onSaveAsPack: () => void;
   onDelete: () => void;
   canDelete: boolean;
 }) {
@@ -256,6 +266,12 @@ function SetTabMenuItems({
           <Copy size={15} />
         </span>
         Duplicate set
+      </DropdownMenuItem>
+      <DropdownMenuItem onClick={onSaveAsPack}>
+        <span className="mi-ico">
+          <PackagePlus size={15} />
+        </span>
+        Save set as pack
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem
@@ -414,6 +430,7 @@ interface SetTabProps {
   onRename: (name: string) => void;
   onDelete: () => void;
   onDuplicate: () => void;
+  onSaveAsPack: () => void;
 }
 
 function SetTab({
@@ -424,6 +441,7 @@ function SetTab({
   onRename,
   onDelete,
   onDuplicate,
+  onSaveAsPack,
 }: SetTabProps) {
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(set.name);
@@ -511,6 +529,7 @@ function SetTab({
             setEditing(true);
           }}
           onDuplicate={onDuplicate}
+          onSaveAsPack={onSaveAsPack}
           onDelete={onDelete}
           canDelete={canDelete}
         />
@@ -549,6 +568,8 @@ interface FilterRowProps {
   selectMode: boolean;
   /** This row is part of the current selection. */
   selected: boolean;
+  /** Briefly flash this row — e.g. it was just inserted from a pack. */
+  flashing: boolean;
   api: RowApi;
 }
 
@@ -602,6 +623,7 @@ const FilterRowCells = memo(
     dragging,
     selectMode,
     selected,
+    flashing,
   }: {
     f: Filter;
     index: number;
@@ -611,6 +633,7 @@ const FilterRowCells = memo(
     dragging: boolean;
     selectMode: boolean;
     selected: boolean;
+    flashing: boolean;
   }) {
     const onEdit = () => api.edit(f.id);
     const onDelete = () => api.remove(f.id);
@@ -645,7 +668,8 @@ const FilterRowCells = memo(
                       (f.enabled ? "" : " disabled") +
                       (dragging ? " dragging" : "") +
                       (selectMode ? " selecting" : "") +
-                      (selected ? " selected" : "")
+                      (selected ? " selected" : "") +
+                      (flashing ? " flash-insert" : "")
                     }
                     onClick={
                       selectMode
@@ -874,7 +898,8 @@ const FilterRowCells = memo(
     prev.dragging === next.dragging &&
     prev.api === next.api &&
     prev.selectMode === next.selectMode &&
-    prev.selected === next.selected,
+    prev.selected === next.selected &&
+    prev.flashing === next.flashing,
 );
 
 // Thin sortable shell: just the dnd hook and a wrapper div carrying the drag
@@ -891,6 +916,7 @@ const FilterRow = memo(
     searching,
     selectMode,
     selected,
+    flashing,
     api,
   }: FilterRowProps) {
     const {
@@ -927,6 +953,7 @@ const FilterRow = memo(
           dragging={isDragging}
           selectMode={selectMode}
           selected={selected}
+          flashing={flashing}
         />
       </div>
     );
@@ -939,7 +966,8 @@ const FilterRow = memo(
     prev.searching === next.searching &&
     prev.api === next.api &&
     prev.selectMode === next.selectMode &&
-    prev.selected === next.selected,
+    prev.selected === next.selected &&
+    prev.flashing === next.flashing,
 );
 
 // ---- group ----
@@ -1374,6 +1402,11 @@ export function FilterPanel({
   const onDeleteFilters = useStore((s) => s.deleteFilters);
   const onSetFiltersEnabled = useStore((s) => s.setFiltersEnabled);
   const onExportFilters = useStore((s) => s.exportSelectedFilters);
+  const onSavePackFromSelection = useStore((s) => s.savePackFromSelection);
+  const onSavePackFromSet = useStore((s) => s.savePackFromSet);
+  const onAddFiltersToPack = useStore((s) => s.addFiltersToPack);
+  const packs = useStore((s) => s.doc.filterPacks ?? NO_PACKS);
+  const flashFilterIds = useStore((s) => s.flashFilterIds);
   const onDuplicateFilter = useStore((s) => s.duplicateFilter);
   const onViewFilterOnly = useStore((s) => s.setSoloFilterId);
   const onEditFilter = useStore((s) => s.openEditFilter);
@@ -1388,6 +1421,10 @@ export function FilterPanel({
   // editor, and the action bar at the panel's foot drives batch ops.
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  // Filter-pack library: the drawer, plus the "save selection as pack" modal.
+  const [packsOpen, setPacksOpen] = useState(false);
+  const [savePackOpen, setSavePackOpen] = useState(false);
+  const flashSet = useMemo(() => new Set(flashFilterIds), [flashFilterIds]);
   // Anchor for Shift-click range selection, and the latest visible row order the
   // range is computed against (read through a ref so the stable rowApi sees it).
   const lastClickedRef = useRef<string | null>(null);
@@ -1723,6 +1760,7 @@ export function FilterPanel({
         searching={searching}
         selectMode={selectMode}
         selected={selected.has(f.id)}
+        flashing={flashSet.has(f.id)}
         api={rowApi}
       />
     );
@@ -1999,6 +2037,7 @@ export function FilterPanel({
                 onRename={(name) => onRenameSet(g.id, name)}
                 onDelete={() => onDeleteSet(g.id)}
                 onDuplicate={() => onDuplicateSet(g.id)}
+                onSaveAsPack={() => onSavePackFromSet(g.id, g.name)}
               />
             ))}
             <div className="gtab-add" title="New filter set" onClick={onAddSet}>
@@ -2028,6 +2067,15 @@ export function FilterPanel({
         <Button size="xs" onClick={() => onAddFilter()}>
           <Plus data-icon="inline-start" />
           <span className="add-filter-label">Add filter</span>
+        </Button>
+
+        <Button
+          variant={packsOpen ? "default" : "outline"}
+          size="icon-xs"
+          title="Filter packs"
+          onClick={() => setPacksOpen((v) => !v)}
+        >
+          <Package />
         </Button>
 
         <DropdownMenu>
@@ -2199,6 +2247,16 @@ export function FilterPanel({
             <EyeOff data-icon="inline-start" />
             <span className="sb-label">Disable</span>
           </Button>
+          <AddToPackCombobox
+            packs={packs}
+            disabled={selectedCount === 0}
+            onPick={(packId) => {
+              onAddFiltersToPack(packId, [...selected]);
+              exitSelect();
+              setPacksOpen(true); // surface the pack the filters just landed in
+            }}
+            onCreateNew={() => setSavePackOpen(true)}
+          />
           <Button
             size="xs"
             variant="outline"
@@ -2225,6 +2283,22 @@ export function FilterPanel({
           </Button>
         </div>
       )}
+
+      <PacksDrawer open={packsOpen} onOpenChange={setPacksOpen} />
+
+      {/* Save the current selection as a pack, then leave select mode. */}
+      <PackNameDialog
+        open={savePackOpen}
+        onOpenChange={setSavePackOpen}
+        title="Save selection as pack"
+        initial={`${selectedCount} filter${selectedCount === 1 ? "" : "s"}`}
+        submitLabel="Save pack"
+        onSubmit={(name) => {
+          onSavePackFromSelection([...selected], name);
+          exitSelect();
+          setPacksOpen(true); // open the library so the new pack is visible
+        }}
+      />
     </div>
   );
 }

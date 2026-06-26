@@ -47,6 +47,34 @@ export interface ImportedFilters {
 }
 
 /**
+ * Rebuild a pack/set's interleaved top-level `order` so it mirrors the filters'
+ * array sequence: walk the filters in order, emitting each loose filter's id and
+ * each group's id at its first member's position. Groups left without a member
+ * are appended (never silently dropped). Used when editing a pack's filter list
+ * in place — reorder / remove / regroup — to keep `order` consistent with the
+ * flat filter sequence the pack card shows.
+ */
+export function rebuildOrder(
+  filters: Pick<Filter, "id" | "groupId">[],
+  groups: Pick<FilterGroup, "id">[],
+): string[] {
+  const order: string[] = [];
+  const seen = new Set<string>();
+  for (const f of filters) {
+    const key = f.groupId ?? f.id;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    order.push(key);
+  }
+  for (const g of groups)
+    if (!seen.has(g.id)) {
+      seen.add(g.id);
+      order.push(g.id);
+    }
+  return order;
+}
+
+/**
  * Serialize a filter set to the on-disk export format (Logsy filters JSON).
  * Keeps the full structure — filters, groups, top-level order and timeline
  * sources — so a load round-trips back to the same arrangement.
@@ -91,6 +119,22 @@ export function projectSelection(
   // `order` interleaves loose-filter ids and group ids; keep the ones still here.
   const order = set.order.filter((id) => sel.has(id) || keptGroups.has(id));
   return { name: set.name, groups, order, filters, sources: [] };
+}
+
+/**
+ * Append an imported document's filters/groups/order/sources into a set draft
+ * (mutates `g` in place). The caller is responsible for giving the import fresh
+ * ids first (`remapImportIds`) so nothing collides, and for normalizing after.
+ * Shared by "Append filters" (from a file) and "Insert pack" (from the library).
+ */
+export function appendImportToSet(
+  g: Pick<FilterSet, "filters" | "groups" | "order" | "sources">,
+  add: ImportedFilters,
+): void {
+  g.filters.push(...add.filters);
+  g.groups.push(...add.groups);
+  g.order.push(...add.order);
+  g.sources = [...(g.sources ?? []), ...add.sources];
 }
 
 /** Parse timeline tracks (one per filter+field) from an imported document. */

@@ -2805,8 +2805,11 @@ button {
 .select-bar .sb-spacer {
   flex: 1 1 auto;
 }
-/* Too narrow for full labels — collapse to icon buttons and a bare count. */
-@container (max-width: 360px) {
+/* Too narrow for full labels — collapse to icon buttons and a bare count. With
+   six labelled actions the row crowds well before it truly overflows, so trip
+   the icon-only mode early (at a comfortably wider dock) rather than at the last
+   possible pixel. */
+@container (max-width: 460px) {
   .select-bar .sb-label {
     display: none;
   }
@@ -4598,6 +4601,20 @@ button {
 .grpc-item[data-highlighted] {
   background: var(--row-hover);
 }
+/* "Save as new pack…" — pinned first, set off from the pack list by a divider
+   and a faint accent so it reads as the create action, not another pack. */
+.grpc-new {
+  margin-bottom: 3px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--divider);
+  color: #2c6ce6;
+}
+.grpc-new .grpc-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 500;
+}
 /* no forced capitalize (group names are user-typed); ellipsis so long names
    don't blow out the popup width */
 .grpc-name {
@@ -5392,4 +5409,690 @@ button {
   display: flex;
   justify-content: flex-end;
   gap: 6px;
+}
+
+/* =====================================================================
+   Filter packs — the reusable-filter library (drawer + spectrum cards)
+   ===================================================================== */
+
+/* ---- the colour spectrum: a pack's recognizable fingerprint ---- */
+.spectrum {
+  display: flex;
+  align-items: stretch;
+  gap: 1.5px;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  transition: height 0.13s ease;
+}
+.spectrum-seg {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 3px;
+}
+.spectrum-seg.empty {
+  background: var(--divider);
+}
+/* Exclude filters hide rather than paint — mark them with a hatch laid over the
+   inline colour (a pseudo-element, so the row's inline background still shows). */
+.spectrum-seg.exclude::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(0, 0, 0, 0.34) 0 1.5px,
+    transparent 1.5px 4px
+  );
+}
+.spectrum-seg.off {
+  opacity: 0.4;
+}
+
+/* ---- the non-modal side panel (coexists with the filter panel) ---- */
+.packs-drawer {
+  position: fixed;
+  top: 32px; /* clear the titlebar so the app's top chrome stays usable */
+  bottom: 0;
+  z-index: 99;
+  max-width: 92vw;
+  display: flex;
+  flex-direction: column;
+  background: var(--panel-bg);
+  box-shadow: var(--shadow-modal);
+  font-family: var(--ui-font);
+  user-select: none; /* cards are click/drag targets — don't let drags select text */
+}
+/* but real text fields stay selectable/editable */
+.packs-drawer input {
+  user-select: text;
+}
+.packs-drawer.right {
+  right: 0;
+  border-left: 1px solid var(--border-strong);
+  animation: drawer-in-right 0.17s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.packs-drawer.left {
+  left: 0;
+  border-right: 1px solid var(--border-strong);
+  animation: drawer-in-left 0.17s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+@keyframes drawer-in-right {
+  from {
+    transform: translateX(18px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes drawer-in-left {
+  from {
+    transform: translateX(-18px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .packs-drawer {
+    animation: none;
+  }
+}
+/* drag the inner edge to resize; a hairline accent surfaces on hover/drag */
+.packs-resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  z-index: 3;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.packs-drawer.right .packs-resize {
+  left: -2px;
+}
+.packs-drawer.left .packs-resize {
+  right: -2px;
+}
+.packs-resize::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: transparent;
+  transition: background 0.12s ease;
+}
+.packs-drawer.right .packs-resize::after {
+  left: 0;
+}
+.packs-drawer.left .packs-resize::after {
+  right: 0;
+}
+.packs-resize:hover::after,
+.packs-resize:active::after {
+  background: #2c6ce6;
+}
+
+.packs-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 8px 10px 13px;
+  border-bottom: 1px solid var(--divider);
+}
+.packs-head-ico {
+  display: grid;
+  place-items: center;
+  color: #2c6ce6;
+}
+.packs-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.packs-head-count {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-3);
+  background: var(--panel-bg-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0 6px;
+  line-height: 16px;
+}
+.packs-head-spacer {
+  flex: 1;
+}
+
+.packs-tools {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 11px;
+}
+.packs-search {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--text-3);
+}
+.packs-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: var(--ui-font);
+  font-size: 12.5px;
+  color: var(--text);
+}
+.packs-search .clear-x {
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--text-3);
+}
+.packs-search .clear-x:hover {
+  color: var(--text);
+}
+
+/* Tag filter strip: a wrapping row of toggle chips under the tools row. */
+.packs-tagbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 0 11px 9px;
+}
+/* Filter-strip chip = the shared tag-chip look, as an interactive toggle button. */
+.packs-tagchip {
+  height: 20px;
+  padding: 0 10px;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background 0.12s ease,
+    border-color 0.12s ease,
+    color 0.12s ease;
+}
+.packs-tagchip:hover {
+  border-color: var(--text-3);
+  color: var(--text);
+}
+.packs-tagchip.on {
+  background: #2c6ce6;
+  border-color: #2c6ce6;
+  color: #fff;
+}
+
+/* ---- the card list ---- */
+.packs-list {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* The viewport must fill the (flex-bounded) root for vertical scrolling to
+   engage — the base default only sizes it to content. */
+.packs-list .scroll-area-viewport {
+  height: 100%;
+}
+/* base-ui's ScrollArea.Content carries an inline `min-width: fit-content` so it
+   can scroll horizontally — which let a long filter chip widen the content and
+   push the drawer's border out. We don't want horizontal scroll here: pin the
+   content to the viewport width (!important to beat the inline style) so the
+   cards stay bounded and their chips truncate instead. */
+.packs-list .scroll-area-content {
+  min-width: 0 !important;
+}
+.packs-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px 11px 14px;
+}
+.packs-noresult {
+  padding: 22px 14px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-3);
+}
+.packs-empty {
+  margin: 18px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 12px;
+  color: var(--text-2);
+}
+
+/* The sortable wrapper and card must be allowed to shrink below their content,
+   or a long filter chip in the expanded detail widens the card and pushes the
+   panel's border out (the chip's max-width:100% only bites against a bounded
+   parent). min-width:0 down the chain keeps width locked to the drawer. */
+.pack-sortable {
+  min-width: 0;
+}
+.pack-card {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
+  padding: 8px 9px 9px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--card, #fff);
+  transition:
+    border-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.pack-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 2px 8px rgba(20, 22, 26, 0.06);
+}
+.pack-card:hover .spectrum {
+  height: 9px;
+}
+.pack-card.expanded {
+  border-color: var(--border-strong);
+}
+
+/* The row never reflows on hover/expand: text flexes (and truncates), every
+   control to its right is fixed-width. */
+.pack-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.pack-expand {
+  flex: 0 0 auto;
+  /* Align to the top of the (two-line) name/meta block rather than its centre,
+     so the grip + chevron sit beside the name, not floating mid-card. */
+  align-self: flex-start;
+  margin-top: 2px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.pack-expand:hover {
+  background: var(--row-hover);
+  color: var(--text-2);
+}
+/* The name/meta block — clicking it toggles the filter detail (a safe, idempotent
+   action; inserting is the explicit button only). */
+.pack-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  padding: 2px 2px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.pack-text:hover {
+  background: var(--row-hover);
+}
+.pack-name {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Inline rename input — compact chrome matching the set tab's rename input
+   (.gtab-name-input): thin accent border, small padding, no glow ring. Keeps the
+   .pack-name metrics so it sits in the name line without bulking up the row. NOTE:
+   a distinct class from the PackNameDialog modal's `.pack-name-input` (38px tall)
+   — they'd otherwise collide and the modal's rule would win. */
+.pack-rename-input {
+  width: 100%;
+  min-width: 0;
+  font-family: var(--ui-font);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  padding: 1px 4px;
+  outline: none;
+  background: #fff;
+}
+.pack-meta {
+  font-size: 10.5px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* Reorder grip — surfaces on hover, the only part of the card that drags. */
+.pack-grip {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  /* Top-aligned with the name line, matching the chevron beside it. */
+  align-self: flex-start;
+  height: 18px;
+  margin-top: 2px;
+  color: var(--text-3);
+  cursor: grab;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  touch-action: none;
+}
+.pack-card:hover .pack-grip {
+  opacity: 1;
+}
+.pack-grip:active {
+  cursor: grabbing;
+}
+/* Explicit insert — the only thing that adds filters to the set. */
+.pack-insert-btn {
+  flex: 0 0 auto;
+}
+/* Post-insert confirmation: a green-tinted "Added ✓" during the cool-down. Keep
+   full opacity despite being disabled — it's feedback, not a dead control. */
+.pack-insert-btn.added {
+  color: #1a7f37;
+  border-color: #1a7f3766;
+  opacity: 1;
+}
+
+/* Read-only tag chips shown on the card whenever a pack has tags. They live
+   inside `.pack-text` (below the name/meta) so they align with the name itself
+   regardless of whether the drag grip is present. */
+.pack-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 3px;
+}
+
+/* ---- shared tag chip ---------------------------------------------------------
+   One look for every tag across the library: the read-only chips on a card, the
+   removable chips in the editor, and (a button variant) the filter strip. Keeps
+   radius / height / type consistent so the tag system reads as one thing. */
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 8px;
+  font-size: 10.5px;
+  line-height: 1; /* keep the label box at glyph height so it centres with the × */
+  border-radius: 999px;
+  background: var(--panel-bg-2);
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.tag-chip.removable {
+  padding-right: 3px;
+}
+/* × stays out of the way until you hover the chip — keeps the editor calm. */
+.tc-x {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    background 0.12s ease,
+    color 0.12s ease;
+}
+.tag-chip.removable:hover .tc-x {
+  opacity: 1;
+}
+.tc-x:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+@keyframes tag-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-3px);
+  }
+  75% {
+    transform: translateX(3px);
+  }
+}
+/* Re-typing an existing tag nudges its chip instead of silently doing nothing. */
+.tag-chip.shake {
+  animation: tag-shake 0.22s ease 1;
+  border-color: var(--accent-bg-strong);
+  color: var(--text);
+}
+
+/* Tag editor at the top of the detail: separated from the filter list below by a
+   bottom divider (the detail's own top border already caps it above). */
+.pack-tags-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  margin-bottom: 6px;
+  padding-bottom: 7px;
+  border-bottom: 1px solid var(--divider);
+}
+.pte-ico {
+  display: grid;
+  place-items: center;
+  color: var(--text-3);
+}
+/* Empty-state pill: an inviting "+ Tag" affordance instead of a bare field. */
+.pte-addpill {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  height: 18px;
+  padding: 0 9px 0 6px;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    border-color 0.12s ease;
+}
+.pte-addpill:hover {
+  color: var(--text);
+  border-color: var(--text-3);
+}
+/* The input grows to fill the row; suggestions hang off it. */
+.pte-field {
+  position: relative;
+  flex: 1;
+  min-width: 90px;
+  display: flex;
+}
+.pte-input {
+  flex: 1;
+  min-width: 0;
+  height: 20px;
+  padding: 0 2px 1px;
+  border: 0;
+  border-bottom: 1.5px solid transparent;
+  outline: 0;
+  background: transparent;
+  font-family: var(--ui-font);
+  font-size: 11.5px;
+  color: var(--text);
+  transition: border-color 0.12s ease;
+}
+.pte-input:focus {
+  border-bottom-color: #2c6ce6;
+}
+.pte-input::placeholder {
+  color: var(--text-3);
+}
+/* Type-ahead suggestions drawn from tags used elsewhere in the library. */
+.pte-suggest {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 5;
+  min-width: 140px;
+  max-width: 220px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--panel-bg, #fff);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-modal);
+}
+.pte-suggest-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 7px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  font-family: var(--ui-font);
+  font-size: 11.5px;
+  color: var(--text-2);
+  text-align: left;
+  cursor: pointer;
+}
+.pte-suggest-item:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+.pte-suggest-item svg {
+  color: var(--text-3);
+  flex: 0 0 auto;
+}
+
+/* Expandable filter detail. Each filter reuses the filter panel's `.filter-row`
+   family verbatim (grip, #N serial, colour chip, exclude flag, actions) so a
+   pack's rows read identically to the set they came from — only the container
+   chrome is pack-local. */
+/* The whole expanded section under the row: one top divider, then the filter
+   list and the Add-filter button. */
+.pack-detail {
+  margin-top: 2px;
+  padding-top: 4px;
+  border-top: 1px solid var(--divider);
+  min-width: 0;
+}
+.pack-filters {
+  padding: 1px;
+  min-width: 0;
+}
+/* Pack groups reuse the filter panel's `.fsection` look, but here the header only
+   collapses (it isn't draggable) — so drop the grab cursor it carries in-panel. */
+.pack-fsection .fsection-head,
+.pack-fsection .fsection-head:active {
+  cursor: pointer;
+}
+.pack-filters-empty {
+  padding: 5px 2px 3px;
+  font-size: 11px;
+  color: var(--text-3);
+}
+/* The remove (×) button sits in the row's `.fr-actions` slot; reveal it on row
+   hover like the panel's ⋮, but keep it visible while its confirm popup is open.
+   Target the <button> element directly — base-ui's render-prop trigger rewrites
+   data-slot to "popover-trigger", so a [data-slot="button"] selector misses. */
+.pack-filters .fr-actions button {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.pack-filters .filter-row:hover .fr-actions button,
+.pack-filters .fr-actions button[data-popup-open] {
+  opacity: 1;
+}
+
+/* Remove-from-pack confirm — a small popover, not a full modal (a per-row micro
+   action). Narrower than the default settings-pop. */
+.pack-del-pop {
+  min-width: 0;
+  width: max-content;
+  padding: 10px 12px;
+}
+.pdc-msg {
+  font-size: 12.5px;
+  color: var(--text);
+  margin-bottom: 9px;
+}
+.pdc-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* ---- inserted rows flash (reuses the nav-flash keyframes) ---- */
+.filter-row.flash-insert {
+  animation: fr-flash-kf 1.25s ease-out;
+}
+
+/* ---- the one-field name/rename modal ---- */
+.pack-name-modal {
+  width: 380px;
+  min-width: 0;
+}
+.pack-name-field {
+  display: block;
+  padding: 4px 20px 8px;
+}
+.pack-name-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 7px;
+}
+.pack-name-input {
+  width: 100%;
+  height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 9px;
+  background: #fff;
+  color: var(--text);
+  font-family: var(--ui-font);
+  font-size: 13.5px;
+  outline: 0;
+}
+.pack-name-input:focus {
+  border-color: #2c6ce6;
+  box-shadow: 0 0 0 3px var(--accent-bg);
 }

@@ -9,6 +9,7 @@ import {
   exportPayload,
   projectSelection,
   remapImportIds,
+  appendImportToSet,
   parseTatFilters,
 } from "@/lib/filterFile";
 import { activeFile, activeSet } from "@/state/selectors";
@@ -480,10 +481,7 @@ export function createFilterActions(
         patch((s) => {
           const g = activeSet(s);
           if (!g) return;
-          g.filters.push(...add.filters);
-          g.groups.push(...add.groups);
-          g.order.push(...add.order);
-          g.sources = [...(g.sources ?? []), ...add.sources];
+          appendImportToSet(g, add);
           normalizeState(s);
         });
         if (!foreign) get().pushRecent("recentFilterFiles", path);
