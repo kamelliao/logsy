@@ -212,3 +212,54 @@ export async function exportFilterSet(
   if (!write) throw new Error("exportFilterSet: no write_text_file call");
   return (write.args as { contents: string }).contents;
 }
+
+// ---- filter packs -----------------------------------------------------------
+
+/** Open the filter-pack drawer via the panel toolbar's "Filter packs" button. */
+export async function openPacksDrawer(page: Page) {
+  await page.getByRole("button", { name: "Filter packs" }).click();
+  await expect(page.locator(".packs-drawer")).toBeVisible();
+}
+
+/** A pack card in the (open) drawer, located by its visible name. */
+export function packCard(page: Page, name: string) {
+  return page
+    .locator(".pack-card")
+    .filter({ has: page.locator(".pack-name", { hasText: name }) });
+}
+
+/**
+ * Select the given (already-added) filter rows in batch-select mode. base-ui
+ * marks each row (a hover-card trigger) disabled in select mode, tripping
+ * Playwright's actionability check even though a real user clicks fine — so we
+ * force the click, asserting visibility ourselves first.
+ */
+export async function selectRows(page: Page, labels: string[]) {
+  await enterSelectMode(page);
+  for (const label of labels) {
+    const row = filterRow(page, label);
+    await expect(row).toBeVisible();
+    await row.click({ force: true });
+  }
+}
+
+/**
+ * Save the current select-mode selection as a brand-new pack via the select
+ * bar's "Add to pack" picker → "Save as new pack…" → name dialog. Leaves the
+ * drawer open (the app surfaces the new pack).
+ */
+export async function saveSelectionAsPack(
+  page: Page,
+  labels: string[],
+  name: string,
+) {
+  await selectRows(page, labels);
+  await page.locator(".select-bar button", { hasText: "Add to pack" }).click();
+  await page.locator(".grpc-item", { hasText: "Save as new pack" }).click();
+  const dlg = page
+    .getByRole("dialog")
+    .filter({ hasText: "Save selection as pack" });
+  await dlg.locator(".pack-name-input").fill(name);
+  await dlg.getByRole("button", { name: "Save pack" }).click();
+  await expect(dlg).toBeHidden();
+}
