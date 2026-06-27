@@ -211,6 +211,18 @@ export function PacksDrawer({
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditTarget>(null);
 
+  // After "new empty pack" appends a card we scroll the list to it. The store
+  // update lands a render later, so flag the intent and run once the new card
+  // is in the DOM (keyed off the pack count, below).
+  const listViewport = useRef<HTMLDivElement>(null);
+  const scrollToEnd = useRef(false);
+  useEffect(() => {
+    if (!scrollToEnd.current) return;
+    scrollToEnd.current = false;
+    const el = listViewport.current;
+    if (el) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+  }, [packs.length]);
+
   // The pack being edited, resolved live so its groups list (for the editor's
   // group combobox) stays current if the pack changes underneath the modal.
   const editingPack = editing && packs.find((p) => p.id === editing.packId);
@@ -382,7 +394,10 @@ export function PacksDrawer({
             variant="ghost"
             size="icon-xs"
             title="New empty pack"
-            onClick={() => createEmptyPack()}
+            onClick={() => {
+              scrollToEnd.current = true;
+              createEmptyPack();
+            }}
           >
             <Plus />
           </Button>
@@ -468,7 +483,10 @@ export function PacksDrawer({
           </div>
         )}
 
-        <ScrollArea className="packs-list">
+        <ScrollArea
+          className="packs-list"
+          viewportProps={{ ref: listViewport }}
+        >
           {packs.length === 0 ? (
             <Empty className="packs-empty">
               <EmptyHeader>
@@ -477,8 +495,9 @@ export function PacksDrawer({
                 </EmptyMedia>
                 <EmptyTitle>No packs yet</EmptyTitle>
                 <EmptyDescription>
-                  Select filters and save them as a reusable pack. Packs drop
-                  into any file with one click.
+                  Packs are your app-wide filter library — they live outside any
+                  single file. Select filters, save them as a pack, and reuse
+                  them in any log with one click.
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>
