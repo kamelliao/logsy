@@ -75,7 +75,7 @@ only asserts that filters drive the rendered `.matched`/`.dim` wiring.
   - enable toggle; matching behaviour (highlight / exclude wiring only)
   - filter sets (tabs): add / switch / rename / delete / duplicate
   - groups: add / collapse / rename / enable-all / delete-keep-filters
-  - select mode: range select, batch enable/disable/delete
+  - select mode: range select, batch enable/disable/delete, copy-to-set (new + existing)
   - search; import / export (round-trip + non-empty replace confirm)
   - solo "view this filter only"; undo / redo (incl. the in-input guard)
   - reorder (drag & drop): filters, into/out of groups, groups, sets
