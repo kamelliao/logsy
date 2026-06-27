@@ -390,6 +390,7 @@ export function PackCard({
   };
 }) {
   const [expanded, setExpanded] = useState(false);
+  const isEmpty = pack.filters.length === 0;
   // Post-insert cool-down: Insert flips to a disabled "Added ✓" state for a beat,
   // so a double/triple click can't pile the pack in two or three times. It both
   // confirms the insert and gates the accidental-repeat window; a deliberate
@@ -596,8 +597,14 @@ export function PackCard({
             size="xs"
             variant="outline"
             className={"pack-insert-btn" + (justInserted ? " added" : "")}
-            disabled={justInserted}
-            title={`Add "${pack.name}" to the current filters`}
+            // An empty pack has nothing to insert — insertPack would no-op
+            // silently, so gate the button rather than letting it dead-end.
+            disabled={justInserted || isEmpty}
+            title={
+              isEmpty
+                ? "This pack is empty — add filters to it first"
+                : `Add "${pack.name}" to the current filters`
+            }
             onClick={handleInsert}
           >
             {justInserted ? (
