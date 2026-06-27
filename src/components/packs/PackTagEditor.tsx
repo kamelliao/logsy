@@ -26,12 +26,23 @@ export function PackTagEditor({
   const shakeTimer = useRef<number | null>(null);
 
   const lower = new Set(tags.map((t) => t.toLowerCase()));
-  const q = draft.trim().toLowerCase();
+  const draftTrim = draft.trim();
+  const q = draftTrim.toLowerCase();
+  // The dropdown now wraps pills and scrolls, so we no longer need to keep this
+  // tight — a generous cap just guards against pathological libraries.
   const suggestions = allTags
     .filter(
       (t) => !lower.has(t.toLowerCase()) && (!q || t.toLowerCase().includes(q)),
     )
-    .slice(0, 6);
+    .slice(0, 40);
+  // Offer an explicit "create" action whenever the draft is a genuinely new tag.
+  // This doubles as the affordance for "press Enter to add": it shows up exactly
+  // when typing something the library doesn't have yet (even if the suggestion
+  // list is otherwise empty), and the ↵ hint teaches the keyboard shortcut.
+  const canCreate =
+    draftTrim.length > 0 &&
+    !lower.has(q) &&
+    !allTags.some((t) => t.toLowerCase() === q);
 
   const flashShake = (tag: string) => {
     setShake(tag);
@@ -120,7 +131,7 @@ export function PackTagEditor({
         <input
           ref={inputRef}
           className="pte-input"
-          placeholder={tags.length ? "Add tag…" : "Add a tag…"}
+          placeholder={tags.length ? "Add tag…" : "Type a tag, press Enter…"}
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={onKeyDown}
@@ -132,8 +143,23 @@ export function PackTagEditor({
             if (draft.trim()) commit(draft);
           }}
         />
-        {focused && suggestions.length > 0 && (
+        {focused && (canCreate || suggestions.length > 0) && (
           <div className="pte-suggest">
+            {canCreate && (
+              <button
+                className="pte-suggest-item pte-create"
+                // commit before blur so the click isn't swallowed by onBlur
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  commit(draft);
+                  inputRef.current?.focus();
+                }}
+              >
+                <Plus size={11} />
+                <span className="pte-create-label">Create “{draftTrim}”</span>
+                <kbd className="pte-kbd">↵</kbd>
+              </button>
+            )}
             {suggestions.map((s) => (
               <button
                 key={s}

@@ -33,6 +33,7 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
   const state = useStore((s) => s.doc);
   const canUndo = useStore((s) => s.canUndo);
   const canRedo = useStore((s) => s.canRedo);
+  const packsOpen = useStore((s) => s.packsOpen);
   const {
     undo,
     redo,
@@ -47,6 +48,7 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
     saveFilters,
     saveFiltersAs,
     loadFilterFromPath,
+    togglePacks,
   } = useStore(
     useShallow((s) => ({
       undo: s.undo,
@@ -62,6 +64,7 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
       saveFilters: s.saveFilters,
       saveFiltersAs: s.saveFiltersAs,
       loadFilterFromPath: s.loadFilterFromPath,
+      togglePacks: s.togglePacks,
     })),
   );
 
@@ -169,6 +172,11 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
         disabled: !file,
         action: deps.toggleFilterCollapsed,
       },
+      {
+        label: "Show filter packs",
+        checked: packsOpen,
+        action: togglePacks,
+      },
       { sep: true },
       {
         label: "Show only matched lines",
@@ -193,7 +201,7 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
     ],
     Filters: [
       {
-        label: "Add new filter…",
+        label: "New filter…",
         disabled: !set,
         action: () => openNewFilter(),
       },

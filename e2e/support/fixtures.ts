@@ -136,8 +136,8 @@ export async function fillNewFilter(
     await dialog
       .getByPlaceholder("What is this filter for?")
       .fill(opts.description);
-  // Footer button reads "Add filter" for a new filter.
-  await dialog.getByRole("button", { name: "Add filter" }).click();
+  // Footer button reads "Create" for a new filter ("Save" when editing).
+  await dialog.getByRole("button", { name: "Create" }).click();
   await expect(dialog).toBeHidden();
 }
 
@@ -147,7 +147,7 @@ export async function addFilter(
   pattern: string,
   opts: FilterOpts = {},
 ) {
-  await page.getByRole("button", { name: "Add filter", exact: true }).click();
+  await page.getByRole("button", { name: "New filter", exact: true }).click();
   await fillNewFilter(page, pattern, opts);
 }
 

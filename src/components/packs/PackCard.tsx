@@ -24,10 +24,10 @@ import {
   ChevronDown,
   ChevronRight,
   Copy,
-  CornerDownLeft,
   EyeOff,
   FileDown,
   GripVertical,
+  ListPlus,
   MoreVertical,
   Pencil,
   Plus,
@@ -199,9 +199,9 @@ function PackFilterRow({
       <ContextMenuContent zIndex={130}>
         <DropdownMenuItem onClick={onInsertToSet}>
           <span className="mi-ico">
-            <CornerDownLeft size={15} />
+            <ListPlus size={15} />
           </span>
-          Insert to filters
+          Add to filters
         </DropdownMenuItem>
         <DropdownMenuItem onClick={onEdit}>
           <span className="mi-ico">
@@ -302,9 +302,9 @@ function PackGroupHeader({
       <ContextMenuContent zIndex={130}>
         <DropdownMenuItem onClick={onInsert}>
           <span className="mi-ico">
-            <CornerDownLeft size={15} />
+            <ListPlus size={15} />
           </span>
-          Insert to filters
+          Add to filters
         </DropdownMenuItem>
         <DropdownMenuItem onClick={startRename}>
           <span className="mi-ico">
@@ -589,69 +589,73 @@ export function PackCard({
             </div>
           )}
         </div>
-        <Button
-          size="xs"
-          variant="outline"
-          className={"pack-insert-btn" + (justInserted ? " added" : "")}
-          disabled={justInserted}
-          title={`Insert "${pack.name}" into the current set`}
-          onClick={handleInsert}
-        >
-          {justInserted ? (
-            <Check data-icon="inline-start" />
-          ) : (
-            <CornerDownLeft data-icon="inline-start" />
-          )}
-          {justInserted ? "Added" : "Insert"}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          className="pack-add-btn"
-          title="Add a filter to this pack"
-          onClick={() => {
-            setExpanded(true);
-            onAddFilter();
-          }}
-        >
-          <Plus />
-        </Button>
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button variant="ghost" size="icon-xs" title="Pack actions" />
-            }
+        {/* The action cluster top-aligns with the name line (align-self in CSS) so
+            it never floats to the middle when the text block grows taller. */}
+        <div className="pack-actions">
+          <Button
+            size="xs"
+            variant="outline"
+            className={"pack-insert-btn" + (justInserted ? " added" : "")}
+            disabled={justInserted}
+            title={`Add "${pack.name}" to the current filters`}
+            onClick={handleInsert}
           >
-            <MoreVertical />
-          </DropdownMenuTrigger>
-          <DropdownMenuContent side="bottom" align="end" zIndex={130}>
-            <DropdownMenuItem onClick={startRename}>
-              <span className="mi-ico">
-                <Pencil size={15} />
-              </span>
-              Rename
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onDuplicate}>
-              <span className="mi-ico">
-                <Copy size={15} />
-              </span>
-              Duplicate
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={onExport}>
-              <span className="mi-ico">
-                <FileDown size={15} />
-              </span>
-              Export to file…
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={onDelete}>
-              <span className="mi-ico">
-                <Trash2 size={15} />
-              </span>
-              Delete pack
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            {justInserted ? (
+              <Check data-icon="inline-start" />
+            ) : (
+              <ListPlus data-icon="inline-start" />
+            )}
+            {justInserted ? "Added" : "Add to filters"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            className="pack-add-btn"
+            title="New filter in this pack"
+            onClick={() => {
+              setExpanded(true);
+              onAddFilter();
+            }}
+          >
+            <Plus />
+          </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button variant="ghost" size="icon-xs" title="Pack actions" />
+              }
+            >
+              <MoreVertical />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent side="bottom" align="end" zIndex={130}>
+              <DropdownMenuItem onClick={startRename}>
+                <span className="mi-ico">
+                  <Pencil size={15} />
+                </span>
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onDuplicate}>
+                <span className="mi-ico">
+                  <Copy size={15} />
+                </span>
+                Duplicate
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={onExport}>
+                <span className="mi-ico">
+                  <FileDown size={15} />
+                </span>
+                Export to file…
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onClick={onDelete}>
+                <span className="mi-ico">
+                  <Trash2 size={15} />
+                </span>
+                Delete pack
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {showExpanded && (

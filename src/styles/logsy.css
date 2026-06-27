@@ -5809,6 +5809,17 @@ button {
 .pack-grip:active {
   cursor: grabbing;
 }
+/* Right-hand action cluster (Insert + add + ⋯). Top-aligned with the name line
+   like the grip/chevron, so it stays beside the title instead of drifting to the
+   vertical centre when the text block (meta, and tags when collapsed) is tall. */
+.pack-actions {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 1px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 /* Explicit insert — the only thing that adds filters to the set. */
 .pack-insert-btn {
   flex: 0 0 auto;
@@ -5830,6 +5841,13 @@ button {
   gap: 4px;
   margin-top: 3px;
 }
+/* When expanded, the PackTagEditor below shows the same tags editably — so the
+   read-only header copy is redundant and only serves to inflate the header (which
+   pushed the action cluster off the name line). Hide it; collapsed cards still
+   show tags as the at-a-glance summary. */
+.pack-card.expanded .pack-tags {
+  display: none;
+}
 
 /* ---- shared tag chip ---------------------------------------------------------
    One look for every tag across the library: the read-only chips on a card, the
@@ -5840,7 +5858,10 @@ button {
   align-items: center;
   gap: 3px;
   height: 18px;
-  padding: 0 8px;
+  /* Extra 1px at the bottom is an optical nudge: with line-height:1 the glyph
+     sits low in its em box, so a mathematically centred chip reads slightly
+     bottom-heavy. The asymmetric padding lifts the content ~0.5px to compensate. */
+  padding: 0 8px 1px;
   font-size: 10.5px;
   line-height: 1; /* keep the label box at glyph height so it centres with the × */
   border-radius: 999px;
@@ -5904,7 +5925,9 @@ button {
   align-items: center;
   gap: 5px;
   margin-bottom: 6px;
-  padding-bottom: 7px;
+  /* 1px left inset matches `.pack-filters` below, so the tag editor and the filter
+     rows share one left edge — the detail reads as a single aligned block. */
+  padding: 0 1px 7px;
   border-bottom: 1px solid var(--divider);
 }
 .pte-ico {
@@ -5961,44 +5984,95 @@ button {
 .pte-input::placeholder {
   color: var(--text-3);
 }
-/* Type-ahead suggestions drawn from tags used elsewhere in the library. */
+/* Type-ahead suggestions drawn from tags used elsewhere in the library. Tags are
+   short, so we pack them as a wrapping pill cloud rather than one-per-row — far
+   more density — and cap the height with a scroll so a big library can't blow the
+   dropdown up. Type-ahead filtering means the scroll is rarely needed in practice. */
 .pte-suggest {
   position: absolute;
   top: calc(100% + 4px);
-  left: 0;
+  /* Anchor to the right: the field is flex:1 and sits hard against the panel's
+     right edge, so a left:0 dropdown would overflow. Growing leftward keeps it in. */
+  right: 0;
+  left: auto;
   z-index: 5;
-  min-width: 140px;
-  max-width: 220px;
-  padding: 4px;
+  min-width: 180px;
+  max-width: 320px;
+  max-height: 132px;
+  overflow-y: auto;
+  padding: 5px;
   display: flex;
-  flex-direction: column;
-  gap: 1px;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 4px;
   background: var(--panel-bg, #fff);
   border: 1px solid var(--border-strong);
   border-radius: 8px;
   box-shadow: var(--shadow-modal);
 }
 .pte-suggest-item {
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 4px 7px;
-  border: 0;
-  border-radius: 5px;
-  background: transparent;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 999px;
+  background: var(--panel-bg, #fff);
   font-family: var(--ui-font);
   font-size: 11.5px;
   color: var(--text-2);
-  text-align: left;
+  white-space: nowrap;
   cursor: pointer;
+  transition:
+    background 0.1s ease,
+    color 0.1s ease,
+    border-color 0.1s ease;
 }
 .pte-suggest-item:hover {
   background: var(--row-hover);
+  border-color: var(--text-3);
   color: var(--text);
 }
 .pte-suggest-item svg {
   color: var(--text-3);
   flex: 0 0 auto;
+}
+/* "Create new tag" action: full-width row above the wrapping pill cloud, so it
+   reads as a header action and carries the ↵ affordance. */
+.pte-suggest-item.pte-create {
+  flex: 0 0 100%;
+  justify-content: flex-start;
+  border-radius: 6px;
+  border-color: transparent;
+  background: transparent;
+  color: var(--text);
+}
+.pte-suggest-item.pte-create:hover {
+  background: var(--row-hover);
+  border-color: transparent;
+}
+.pte-suggest-item.pte-create svg {
+  color: #2c6ce6;
+}
+.pte-create-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.pte-kbd {
+  flex: 0 0 auto;
+  min-width: 16px;
+  padding: 1px 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--panel-bg, #fff);
+  font-family: var(--ui-font);
+  font-size: 10px;
+  line-height: 1.2;
+  color: var(--text-3);
 }
 
 /* Expandable filter detail. Each filter reuses the filter panel's `.filter-row`

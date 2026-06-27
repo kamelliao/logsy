@@ -313,7 +313,7 @@ function GroupMenuItems({
         <span className="mi-ico">
           <Plus size={15} />
         </span>
-        Add filter
+        New filter
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem onClick={() => onSetEnabled(true)}>
@@ -356,7 +356,7 @@ function PanelMenuItems({
         <span className="mi-ico">
           <Plus size={15} />
         </span>
-        Add filter
+        New filter
       </DropdownMenuItem>
       <DropdownMenuItem onClick={onAddGroup}>
         <span className="mi-ico">
@@ -1136,7 +1136,7 @@ function GroupBlock({
           <span className="fs-count">{filters.length}</span>
           <button
             className="fs-add"
-            title="Add filter to this group"
+            title="New filter in this group"
             onClick={onAddFilter}
             onPointerDown={(e) => e.stopPropagation()}
           >
@@ -1421,8 +1421,10 @@ export function FilterPanel({
   // editor, and the action bar at the panel's foot drives batch ops.
   const [selectMode, setSelectMode] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
-  // Filter-pack library: the drawer, plus the "save selection as pack" modal.
-  const [packsOpen, setPacksOpen] = useState(false);
+  // Filter-pack library: the drawer (open state lives in the store so the top
+  // menubar can open it too), plus the "save selection as pack" modal.
+  const packsOpen = useStore((s) => s.packsOpen);
+  const setPacksOpen = useStore((s) => s.setPacksOpen);
   const [savePackOpen, setSavePackOpen] = useState(false);
   const flashSet = useMemo(() => new Set(flashFilterIds), [flashFilterIds]);
   // Anchor for Shift-click range selection, and the latest visible row order the
@@ -1552,6 +1554,25 @@ export function FilterPanel({
     });
     return () => cancelAnimationFrame(raf);
   }, [flashFilterId, flashNonce]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Pack insert flashes the new rows (via `flashFilterIds`), but the rows can land
+  // below the fold — so the flash plays off-screen and the user misses it. Mirror
+  // the single-row flash above: scroll the first inserted row into view so the
+  // flash is actually seen. `block: "nearest"` keeps it gentle — no jump when the
+  // rows are already visible. The flash styling itself is applied via `flashSet`
+  // during render; this only handles the scroll.
+  useEffect(() => {
+    const firstId = flashFilterIds[0];
+    if (!firstId) return;
+    const raf = requestAnimationFrame(() => {
+      const list = panelRef.current?.querySelector<HTMLElement>(".filter-list");
+      const row = list?.querySelector<HTMLElement>(
+        `[data-filter-id="${window.CSS.escape(firstId)}"]`,
+      );
+      row?.scrollIntoView({ block: "nearest" });
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [flashFilterIds]);
 
   // "New group" appends at the end of the list, which can be below the fold;
   // scroll the freshly added group into view once it has rendered.
@@ -2066,14 +2087,14 @@ export function FilterPanel({
 
         <Button size="xs" onClick={() => onAddFilter()}>
           <Plus data-icon="inline-start" />
-          <span className="add-filter-label">Add filter</span>
+          <span className="add-filter-label">New filter</span>
         </Button>
 
         <Button
           variant={packsOpen ? "default" : "outline"}
           size="icon-xs"
           title="Filter packs"
-          onClick={() => setPacksOpen((v) => !v)}
+          onClick={() => setPacksOpen(!packsOpen)}
         >
           <Package />
         </Button>
@@ -2109,7 +2130,7 @@ export function FilterPanel({
             <FilterIcon size={26} style={{ color: "var(--text-3)" }} />
             <div className="fe-title">No filters yet</div>
             <div className="fe-sub">
-              Click "Add filter" to highlight or hide lines.
+              Click "New filter" to highlight or hide lines.
             </div>
           </div>
         </PanelListZone>
