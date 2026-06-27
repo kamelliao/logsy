@@ -21,6 +21,19 @@ Built with **Tauri v2 · React 19 · TypeScript · Vite**.
   large files.
 - **Save / import filters** as JSON to share or reuse filter sets.
 
+## Release highlights
+
+Major features added in each minor version (see the
+[releases page](../../releases) for full changelogs):
+
+| Version  | Main features                                                                                                                                                                                                                                                                                       |
+| -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **v0.1** | Initial release — open large log files as tabs, colour-coded highlight/exclude filters (text or regex), find-in-view, matches-only mode, match map, virtualized rendering, JSON save/import.                                                                                                        |
+| **v0.2** | Structured field parsing — parse profiles, columnar view, per-line field tables (Alt+click) and comparison tables for multi-selected lines; dockable/collapsible Filters + Compare panels; undo/redo with lazy field extraction; multiple-lists drag-and-drop; `.tat` import; tabbed filter editor. |
+| **v0.3** | Line bookmarks panel with previews; multi-encoding file open; interactive regex/pattern builder (chip merge/split, capture/generalize, seed-from-line); live match preview + create-filter-from-selection; shortcuts modal, loading overlay, combined colour-pair palette; per-file icon picker.    |
+| **v0.4** | Event timeline panel — Timeline canvas, date+time stamp parsing, per-point detail cards with inter-point deltas, filter→track flow; filter selection mode with batch delete; append-import (merge into current set); rich logline hover cards; per-file scroll memory; drag-to-reorder open files.  |
+| **v0.5** | Filter packs — a reusable filter-set library to save, organize and insert filters via a slide-out drawer; copy a selection of filters into another set.                                                                                                                                             |
+
 ## Prerequisites
 
 - [Bun](https://bun.sh) (package manager + script runner)
@@ -181,13 +194,17 @@ draft, and **Publish**.
 
 ```
 src/                 React frontend
-  components/         LogView, FilterPanel, Sidebar, EditModal, ui/ (Base UI)
-  data.ts            palettes, makeFilter, initial/normalize state
-  logic.ts           filter compile / match / view computation
-  App.tsx            root state, persistence, file loading, shortcuts
+  components/         UI — LogView, FilterPanel, timeline, compare,
+                     packs/, dialogs/, layout/, widgets/, ui/ (Base UI)
+  store/             Zustand state (sliced) + persistence
+  hooks/             feature hooks (log files, bookmarks, compare, timeline, …)
+  lib/               core logic — engine.ts (compile/match/view), parsing,
+                     regex builder, palettes, filter file I/O
+  state/, config.ts, types.ts   selectors, app config, shared types
+  App.tsx            root composition, wires state + features together
 src-tauri/           Tauri (Rust) backend; window controls + file read/write
 scripts/bump.mjs     version-bump + tag helper
-scripts/profile.ts   benchmarks the logic.ts log-processing hot path
+scripts/profile.ts   benchmarks the engine.ts log-processing hot path
 ```
 
 ## License
