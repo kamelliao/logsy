@@ -38,6 +38,10 @@ export interface FilterActions {
   deleteSet: (gid: string) => Promise<void>;
   reorderSets: (from: number, to: number) => void;
   duplicateSet: (gid: string) => void;
+  /** Copy a select-mode subset into another set — an existing one (by id) or a
+   *  brand-new one (`targetSetId === null`). Copy semantics: the source keeps its
+   *  filters; switches to the destination and flashes the new rows. */
+  copyFiltersToSet: (ids: string[], targetSetId: string | null) => void;
   addGroup: () => void;
   renameGroup: (gid: string, name: string) => void;
   toggleGroup: (gid: string) => void;
@@ -55,7 +59,6 @@ export interface FilterActions {
   saveFilter: (draft: Filter) => void;
   saveFiltersAs: () => Promise<void>;
   saveFilters: () => Promise<void>;
-  exportSelectedFilters: (ids: string[]) => Promise<void>;
   loadFilterFromPath: (
     path: string,
     mode?: "replace" | "append",
@@ -179,6 +182,49 @@ export function createFilterActions(
         f.sets.splice(idx + 1, 0, copy);
         f.activeSetId = copy.id;
       }),
+    // Copy the selected filters into another set, reusing the same projection →
+    // remap → append plumbing packs use (so the destination gets independent
+    // copies with fresh ids; the source is untouched). A new set is created when
+    // targetSetId is null. Activates the destination and flashes the new rows so
+    // the copy is visible; the panel's set-switch effect drops select mode.
+    copyFiltersToSet: (ids, targetSetId) => {
+      const src = activeSet(get().doc);
+      if (!src) return;
+      const proj = projectSelection(src, ids);
+      if (proj.filters.length === 0) return;
+      const add = remapImportIds({
+        filters: proj.filters,
+        groups: proj.groups,
+        order: proj.order,
+        sources: [],
+      });
+      let destName = "";
+      patch((s) => {
+        const f = activeFile(s);
+        if (!f) return;
+        let dest: FilterSet | undefined;
+        if (targetSetId === null) {
+          dest = {
+            id: uid("g"),
+            name: "New set",
+            filters: [],
+            groups: [],
+            order: [],
+          };
+          f.sets.push(dest);
+        } else {
+          dest = f.sets.find((x) => x.id === targetSetId);
+        }
+        if (!dest) return;
+        appendImportToSet(dest, add);
+        f.activeSetId = dest.id;
+        destName = dest.name;
+        normalizeState(s);
+      });
+      get().flashFilters(add.filters.map((x) => x.id));
+      const n = add.filters.length;
+      toast.success(`Copied ${n} filter${n === 1 ? "" : "s"} to "${destName}"`);
+    },
 
     // ---------- groups ----------
     addGroup: () =>
@@ -391,31 +437,6 @@ export function createFilterActions(
         filters: SAVE_DIALOG_FILTERS,
       });
       if (typeof path === "string") await writeFiltersTo(get, path);
-    },
-    // "Export selected": write just the chosen filters to a new file as a
-    // standalone, reusable pack. Unlike Save/Save As this is a side export — it
-    // never becomes the set's save target, so filePath/savedSnapshot are left
-    // untouched.
-    exportSelectedFilters: async (ids) => {
-      const set = activeSet(get().doc);
-      if (!set || ids.length === 0) return;
-      const payload = projectSelection(set, ids);
-      if (payload.filters.length === 0) return;
-      const path = await save({
-        defaultPath: set.name.replace(/\s+/g, "_") + "_selection.json",
-        filters: SAVE_DIALOG_FILTERS,
-      });
-      if (typeof path !== "string") return;
-      try {
-        await invoke("write_text_file", {
-          path,
-          contents: exportPayload(payload),
-        });
-        get().pushRecent("recentFilterFiles", path);
-        toast.success("Selected filters exported");
-      } catch (e) {
-        toast.error("Could not export filters: " + String(e));
-      }
     },
     // "Save filters": update the file it was last saved to; if never saved, behave as Save As.
     saveFilters: async () => {

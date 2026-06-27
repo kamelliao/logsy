@@ -465,6 +465,52 @@ test.describe("FilterPanel", () => {
 
       await expect(page.locator(".select-bar")).toBeHidden();
     });
+
+    test("Copy to set → New set copies the selection, leaving the source intact", async ({
+      page,
+    }) => {
+      await enterSelectMode(page);
+      await clickRow(page, "wifi");
+
+      await page
+        .locator(".select-bar button", { hasText: "Copy to set" })
+        .click();
+      await page.locator(".grpc-item", { hasText: "New set" }).click();
+
+      // Lands on the new set holding just the copied filter…
+      await expect(page.locator(".gtab.active .gtab-name")).toHaveText(
+        "New set",
+      );
+      await expect(page.locator(".filter-row")).toHaveCount(1);
+      await expect(filterRow(page, "wifi")).toBeVisible();
+
+      // …and the source set still has all three (copy, not move).
+      await setTab(page, "Filters").click();
+      await expect(page.locator(".filter-row")).toHaveCount(3);
+    });
+
+    test("Copy to set → existing set merges the selection in", async ({
+      page,
+    }) => {
+      await addSet(page); // "New set", empty, becomes active
+      await setTab(page, "Filters").click();
+
+      await enterSelectMode(page);
+      await clickRow(page, "ERROR");
+      await page
+        .locator(".select-bar button", { hasText: "Copy to set" })
+        .click();
+      // The sentinel ("New set…") shares the name, so target the real set item.
+      await page
+        .locator(".grpc-item:not(.grpc-new)", { hasText: "New set" })
+        .click();
+
+      await expect(page.locator(".gtab.active .gtab-name")).toHaveText(
+        "New set",
+      );
+      await expect(page.locator(".filter-row")).toHaveCount(1);
+      await expect(filterRow(page, "ERROR")).toBeVisible();
+    });
   });
 
   // ---- Suite E: search ----

@@ -105,6 +105,7 @@ import {
 import { PacksDrawer } from "@/components/packs/PacksDrawer";
 import { PackNameDialog } from "@/components/packs/PackNameDialog";
 import { AddToPackCombobox } from "@/components/packs/AddToPackCombobox";
+import { CopyToSetCombobox } from "@/components/CopyToSetCombobox";
 
 // Shared empty array so rows whose filter has no tracks all get the same
 // reference — keeps FilterRow's memo from breaking on every panel render.
@@ -1401,7 +1402,7 @@ export function FilterPanel({
   const onDeleteFilter = useStore((s) => s.deleteFilter);
   const onDeleteFilters = useStore((s) => s.deleteFilters);
   const onSetFiltersEnabled = useStore((s) => s.setFiltersEnabled);
-  const onExportFilters = useStore((s) => s.exportSelectedFilters);
+  const onCopyFiltersToSet = useStore((s) => s.copyFiltersToSet);
   const onSavePackFromSelection = useStore((s) => s.savePackFromSelection);
   const onSavePackFromSet = useStore((s) => s.savePackFromSet);
   const onAddFiltersToPack = useStore((s) => s.addFiltersToPack);
@@ -2278,16 +2279,20 @@ export function FilterPanel({
             }}
             onCreateNew={() => setSavePackOpen(true)}
           />
-          <Button
-            size="xs"
-            variant="outline"
+          <CopyToSetCombobox
+            sets={file.sets
+              .filter((g) => g.id !== set.id)
+              .map((g) => ({ id: g.id, name: g.name }))}
             disabled={selectedCount === 0}
-            title="Export selected to a filter file"
-            onClick={() => void onExportFilters([...selected])}
-          >
-            <FileDown data-icon="inline-start" />
-            <span className="sb-label">Export</span>
-          </Button>
+            onPick={(setId) => {
+              onCopyFiltersToSet([...selected], setId);
+              exitSelect();
+            }}
+            onCreateNew={() => {
+              onCopyFiltersToSet([...selected], null);
+              exitSelect();
+            }}
+          />
           <Button
             size="xs"
             variant="destructive"
