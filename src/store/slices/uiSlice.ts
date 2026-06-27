@@ -16,6 +16,12 @@ export interface UiSlice {
   flashFilterIds: string[];
   /** Flash these filter rows, then clear after a beat (no-op for an empty set). */
   flashFilters: (ids: string[]) => void;
+  /** Filter-packs drawer open state. Lives here (not in `doc`) so the top menubar
+   *  and the panel's toolbar button can both toggle it without prop-drilling, and
+   *  it resets to closed on reload. */
+  packsOpen: boolean;
+  setPacksOpen: (v: boolean) => void;
+  togglePacks: () => void;
 }
 
 export function createUiSlice(set: StoreSet): UiSlice {
@@ -33,5 +39,8 @@ export function createUiSlice(set: StoreSet): UiSlice {
         set((s) => (s.flashFilterIds === ids ? { flashFilterIds: [] } : {}));
       }, 1100);
     },
+    packsOpen: false,
+    setPacksOpen: (v) => set({ packsOpen: v }),
+    togglePacks: () => set((s) => ({ packsOpen: !s.packsOpen })),
   };
 }

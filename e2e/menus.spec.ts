@@ -72,9 +72,9 @@ test.describe("menu bar", () => {
     await expect(page.locator(".file-item")).toHaveCount(2);
   });
 
-  test("Filters ▸ Add new filter… opens the editor", async ({ page }) => {
+  test("Filters ▸ New filter… opens the editor", async ({ page }) => {
     await openMenu(page, "Filters");
-    await menuItem(page, "Add new filter").click();
+    await menuItem(page, "New filter").click();
     await expect(
       page.getByRole("dialog").filter({ hasText: "New filter" }),
     ).toBeVisible();

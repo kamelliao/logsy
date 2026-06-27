@@ -47,7 +47,7 @@ async function clickRow(
 // Add a filter into the (single) group via its "+" button.
 async function addFilterToGroup(page: Page, pattern: string) {
   await section(page)
-    .getByRole("button", { name: "Add filter to this group" })
+    .getByRole("button", { name: "New filter in this group" })
     .click();
   await fillNewFilter(page, pattern);
 }

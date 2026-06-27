@@ -1015,7 +1015,7 @@ export function EditModal({
             style={valid ? undefined : { opacity: 0.5, cursor: "not-allowed" }}
             onClick={save}
           >
-            {isNew ? "Add filter" : "Save"}
+            {isNew ? "Create" : "Save"}
           </Button>
         </DialogFooter>
 
