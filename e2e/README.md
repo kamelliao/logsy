@@ -97,6 +97,11 @@ only asserts that filters drive the rendered `.matched`/`.dim` wiring.
 - `menus.spec.ts` — the menu bar (open / hover-switch / arrow-nav / Escape; View,
   File, Filters, Edit, Help items) and the remaining keyboard shortcuts (Ctrl+B
   panel toggle, Ctrl+Shift+N new filter, Ctrl+Shift+L focus search).
+- `packs.spec.ts` — the filter-pack drawer: open/close + empty state, new-empty-
+  pack (insert disabled until non-empty), search; create (from selection, from a
+  set, add-to-existing); insert a whole pack / single filter / overlap-confirm;
+  rename / duplicate / delete, add-filter, tags; import / export (payload, round-
+  trip, non-Logsy error). The dedupe/merge math stays in `src/__tests__/packs`.
 
 ### Driving dnd-kit drags
 
@@ -111,6 +116,6 @@ always the drop-target timing.
 
 ## Coverage
 
-The panels and app-level surfaces are now covered end to end (~109 tests). Add
+The panels and app-level surfaces are now covered end to end (~126 tests). Add
 new tests beside the matching panel's spec; keep pure-logic assertions in the
 `src/__tests__` unit tests, not here.
