@@ -5497,6 +5497,34 @@ button {
     opacity: 1;
   }
 }
+/* Slide-out mirrors the entrance, drifting back toward the docked edge as it
+   fades. The component keeps the node mounted (`closing`) until this ends. */
+.packs-drawer.right.closing {
+  animation: drawer-out-right 0.16s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+.packs-drawer.left.closing {
+  animation: drawer-out-left 0.16s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+}
+@keyframes drawer-out-right {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(18px);
+    opacity: 0;
+  }
+}
+@keyframes drawer-out-left {
+  from {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  to {
+    transform: translateX(-18px);
+    opacity: 0;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .packs-drawer {
     animation: none;

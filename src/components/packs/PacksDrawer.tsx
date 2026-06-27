@@ -211,6 +211,27 @@ export function PacksDrawer({
   const [tagFilter, setTagFilter] = useState<string | null>(null);
   const [editing, setEditing] = useState<EditTarget>(null);
 
+  // Keep the drawer mounted through its slide-out. `open` is parent state, but
+  // unmounting the moment it flips false would skip the exit animation (the panel
+  // just vanishes). Instead lag a local `render` flag: on close, mark `closing`
+  // so the reverse keyframe plays, then drop the node on animationEnd. Reopening
+  // mid-close cancels it. Under reduced motion there's no animation (so no
+  // animationEnd would fire) — unmount straight away.
+  const [render, setRender] = useState(open);
+  const [closing, setClosing] = useState(false);
+  useEffect(() => {
+    if (open) {
+      setRender(true);
+      setClosing(false);
+    } else if (render) {
+      const reduced = window.matchMedia(
+        "(prefers-reduced-motion: reduce)",
+      ).matches;
+      if (reduced) setRender(false);
+      else setClosing(true);
+    }
+  }, [open, render]);
+
   // After "new empty pack" appends a card we scroll the list to it. The store
   // update lands a render later, so flag the intent and run once the new card
   // is in the DOM (keyed off the pack count, below).
@@ -362,12 +383,20 @@ export function PacksDrawer({
       }),
   });
 
-  if (!open) return null;
+  if (!render) return null;
 
   return createPortal(
     <>
       <aside
-        className={"packs-drawer " + side}
+        className={"packs-drawer " + side + (closing ? " closing" : "")}
+        onAnimationEnd={(e) => {
+          // animationend bubbles, so ignore child animations (e.g. a card flash)
+          // and the slide-IN end — only the aside's own slide-OUT unmounts.
+          if (e.target === e.currentTarget && closing) {
+            setClosing(false);
+            setRender(false);
+          }
+        }}
         style={
           {
             width,
