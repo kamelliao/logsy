@@ -580,15 +580,6 @@ export function PackCard({
             </span>
           )}
           <span className="pack-meta">{meta.join(" · ")}</span>
-          {tags.length > 0 && (
-            <div className="pack-tags">
-              {tags.map((t) => (
-                <span key={t} className="tag-chip">
-                  {t}
-                </span>
-              ))}
-            </div>
-          )}
         </div>
         {/* The action cluster top-aligns with the name line (align-self in CSS) so
             it never floats to the middle when the text block grows taller. */}
@@ -663,6 +654,18 @@ export function PackCard({
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
+        {/* Tags span their own grid row under the name, stretching the full card
+            width (past the action cluster) rather than wrapping in the narrow
+            name column. Hidden when expanded — the detail's editor shows them. */}
+        {tags.length > 0 && (
+          <div className="pack-tags">
+            {tags.map((t) => (
+              <span key={t} className="tag-chip">
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       {showExpanded && (

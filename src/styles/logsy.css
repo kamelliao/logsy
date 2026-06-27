@@ -5738,10 +5738,36 @@ button {
 
 /* The row never reflows on hover/expand: text flexes (and truncates), every
    control to its right is fixed-width. */
+/* A 4-column grid: grip · chevron · name/meta · actions. Tags get a second row
+   spanning the name+actions columns, so a long tag list uses the full card width
+   instead of wrapping inside the narrow name column. `align-items: start` keeps
+   the grip/chevron/actions on the name line (they used to flex `align-self`). The
+   grip column is `auto`, collapsing to 0 when the drag handle is absent (search),
+   so the name still lines up. */
 .pack-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  grid-template-areas:
+    "grip expand text actions"
+    "grip expand tags  tags";
+  align-items: start;
+  column-gap: 6px;
+  row-gap: 0;
+}
+.pack-grip {
+  grid-area: grip;
+}
+.pack-expand {
+  grid-area: expand;
+}
+.pack-text {
+  grid-area: text;
+}
+.pack-actions {
+  grid-area: actions;
+}
+.pack-tags {
+  grid-area: tags;
 }
 .pack-expand {
   flex: 0 0 auto;
@@ -5860,9 +5886,9 @@ button {
   opacity: 1;
 }
 
-/* Read-only tag chips shown on the card whenever a pack has tags. They live
-   inside `.pack-text` (below the name/meta) so they align with the name itself
-   regardless of whether the drag grip is present. */
+/* Read-only tag chips shown on the card whenever a pack has tags. They sit in
+   the grid's second row (`grid-area: tags`, set above) under the name, spanning
+   the name+actions columns so a long list uses the full card width. */
 .pack-tags {
   display: flex;
   flex-wrap: wrap;
