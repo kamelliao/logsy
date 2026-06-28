@@ -2407,8 +2407,8 @@ button {
 /* ---- group tabs (shadcn ScrollArea, horizontal) ---- */
 .group-tabs {
   position: relative;
-  height: 34px;
-  flex: 0 0 34px;
+  height: 38px;
+  flex: 0 0 38px;
   border-bottom: 1px solid var(--border);
   background: var(--panel-bg-2);
   overflow: hidden;
@@ -2416,9 +2416,18 @@ button {
 .group-tabs .scroll-area-viewport {
   height: 100%;
   width: 100%;
+  /* Reserve a lane at the bottom for the horizontal scrollbar so it sits below
+     the tab underline instead of overlapping it (Base UI pins the scrollbar to
+     bottom: 0 of the root, which lands right on the underline band). */
+  padding-bottom: 6px;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
+}
+/* Thinner horizontal scrollbar so it fits the reserved bottom lane. */
+.group-tabs .scroll-area-scrollbar[data-orientation="horizontal"] {
+  height: 6px;
+  padding: 1px 2px;
 }
 .group-tabs .scroll-area-content {
   display: flex;
