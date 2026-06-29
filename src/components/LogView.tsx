@@ -194,6 +194,7 @@ interface LogViewProps {
   timelineLines: Set<number>;
   onAddToTimeline: (ns: number[]) => void;
   onRemoveFromTimeline: (ns: number[]) => void;
+  onAddToNotebook?: (ns: number[]) => void;
 }
 
 export function LogView({
@@ -227,6 +228,7 @@ export function LogView({
   timelineLines,
   onAddToTimeline,
   onRemoveFromTimeline,
+  onAddToNotebook,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
   // Filter id → 1-based position in the set, so a matched row's tooltip can name
@@ -1817,6 +1819,25 @@ export function LogView({
                     ? `Remove ${inTl.length} lines from timeline`
                     : "Remove from timeline"}
                 </div>
+              )}
+              {onAddToNotebook && (
+                <>
+                  <div className="menu-sep" />
+                  <div
+                    className="menu-item"
+                    onClick={() => {
+                      onAddToNotebook(sel);
+                      setRowMenu(null);
+                    }}
+                  >
+                    <span className="mi-ico">
+                      <FileText size={14} />
+                    </span>
+                    {sel.length > 1
+                      ? `Add ${sel.length} lines to notebook`
+                      : "Add to notebook"}
+                  </div>
+                </>
               )}
             </div>
           );

@@ -7,6 +7,7 @@ import {
   Download,
   ListX,
   ListPlus,
+  NotebookPen,
   X,
 } from "lucide-react";
 import type { ViewRow } from "@/types";
@@ -34,6 +35,12 @@ interface CompareTableProps {
   onJump: (n: number) => void;
   /** Reveal + flash the filter row that produced a group (clicking its header). */
   onFocusFilter: (id: string) => void;
+  /** Snapshot this group's table into the notebook. */
+  onAddToNotebook?: (
+    label: string,
+    cols: string[],
+    rows: { n: number; cells: Record<string, string> }[],
+  ) => void;
   /** Group ids currently collapsed (header only). Lifted to the app so the dock's
    *  collapse-all toggle and each table's chevron share one source of truth. */
   collapsed: Set<string>;
@@ -151,6 +158,7 @@ export function CompareTable({
   onImportMatching,
   onJump,
   onFocusFilter,
+  onAddToNotebook,
   collapsed,
   onToggleCollapse,
 }: CompareTableProps) {
@@ -189,6 +197,7 @@ export function CompareTable({
           onImportMatching={onImportMatching}
           onJump={onJump}
           onFocusFilter={onFocusFilter}
+          onAddToNotebook={onAddToNotebook}
         />
       ))}
     </div>
@@ -206,6 +215,7 @@ interface CompareGroupProps {
   onImportMatching: (id: string | undefined) => void;
   onJump: (n: number) => void;
   onFocusFilter: (id: string) => void;
+  onAddToNotebook?: CompareTableProps["onAddToNotebook"];
 }
 
 /** One pattern's table: a sticky toolbar header plus (when expanded) a bounded,
@@ -220,6 +230,7 @@ function CompareGroup({
   onExport,
   onClearGroup,
   onImportMatching,
+  onAddToNotebook,
   onJump,
   onFocusFilter,
 }: CompareGroupProps) {
@@ -297,6 +308,25 @@ function CompareGroup({
           >
             <Download />
           </Button>
+          {onAddToNotebook && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="text-muted-foreground hover:text-foreground"
+              title="Add this table to notebook"
+              onClick={() => {
+                const noteRows = g.rows.map((r) => ({
+                  n: r.n,
+                  cells: Object.fromEntries(
+                    g.cols.map((c) => [c, r.fields?.[c]?.raw ?? ""]),
+                  ),
+                }));
+                onAddToNotebook(g.label, g.cols, noteRows);
+              }}
+            >
+              <NotebookPen />
+            </Button>
+          )}
         </div>
       </div>
       {!collapsed && (

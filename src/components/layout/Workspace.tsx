@@ -33,6 +33,7 @@ interface Props {
   compareBody: ReactNode;
   bookmarksBody: ReactNode;
   timelineBody: ReactNode;
+  notebookBody: ReactNode;
 
   // Dock layout + per-table compare collapse bundles.
   dock: DockLayout;
@@ -90,6 +91,7 @@ export function Workspace({
   compareBody,
   bookmarksBody,
   timelineBody,
+  notebookBody,
   dock,
   compareCollapse,
   panelPos,
@@ -152,7 +154,9 @@ export function Workspace({
                   ? `Bookmarks · ${markerCount}`
                   : activePanelTab === "timeline"
                     ? `Timeline · ${markCount}`
-                    : "Filters"}
+                    : activePanelTab === "notebook"
+                      ? "Notebook"
+                      : "Filters"}
             </span>
           </div>
         </div>
@@ -212,6 +216,14 @@ export function Workspace({
                 )}
               </button>
             )}
+            <button
+              className={
+                "ptab" + (activePanelTab === "notebook" ? " active" : "")
+              }
+              onClick={() => selectPanelTab("notebook")}
+            >
+              Notebook
+            </button>
           </div>
           <div className="dock-spacer" />
           {activePanelTab === "compare" && (
@@ -301,7 +313,9 @@ export function Workspace({
                 ? compareBody
                 : activePanelTab === "timeline"
                   ? timelineBody
-                  : bookmarksBody}
+                  : activePanelTab === "notebook"
+                    ? notebookBody
+                    : bookmarksBody}
           </div>
         )}
       </div>
