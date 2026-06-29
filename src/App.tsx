@@ -46,6 +46,14 @@ import { useCompare } from "@/hooks/useCompare";
 import { useTimeline } from "@/hooks/useTimeline";
 import { useBookmarks } from "@/hooks/useBookmarks";
 import { useStore } from "@/store";
+import {
+  NotebookHost,
+  callAddPinnedLines,
+  callAddCompareCard,
+  callAddTimelineCard,
+} from "@/context/NotebookContext";
+import { NotebookPanel } from "@/components/notebook/NotebookPanel";
+import { setPinnedLinesJumpHandler } from "@/components/notebook/PinnedLinesNode";
 import { activeFile } from "@/state/selectors";
 import { SAFE_MODE, DOCS_URL, APP_VERSION_FALLBACK } from "@/config";
 import { useShallow } from "zustand/react/shallow";
@@ -319,6 +327,9 @@ export function App() {
     setMarkerJump({ n, nonce: Date.now() });
   };
 
+  // Wire the pinned-lines "jump to line" button into the app's jump mechanism.
+  setPinnedLinesJumpHandler(jumpToMarker);
+
   // Export the filtered log view via a native save dialog. LogView builds the
   // text (it knows which rows are visible) and hands it here to write.
   const exportFilteredView = useCallback(
@@ -467,6 +478,15 @@ export function App() {
         onSetMarker={setMarker}
         onRemoveMarker={removeMarker}
         onSetEncoding={(label) => setFileEncoding(file!.id, label)}
+        onAddToNotebook={(ns) => {
+          const picked = ns
+            .map((n) => ({ n, text: view.rows[n - 1]?.text ?? "" }))
+            .filter((l) => l.text !== "");
+          if (picked.length) {
+            callAddPinnedLines(picked, file!.name);
+            selectPanelTab("notebook");
+          }
+        }}
       />
     );
 
@@ -503,6 +523,10 @@ export function App() {
           set!.filters.find((x) => x.id === id)?.textColor ?? "#c2c7cd"
         }
         indexFor={(id) => set!.filters.findIndex((x) => x.id === id)}
+        onAddToNotebook={(label, cols, rows) => {
+          callAddCompareCard(label, cols, rows);
+          selectPanelTab("notebook");
+        }}
       />
     );
     const bookmarksBody = (
@@ -539,8 +563,14 @@ export function App() {
         sheetH={state.timelineSheetH ?? 200}
         onSetSheetH={(h) => setState((s) => ({ ...s, timelineSheetH: h }))}
         iconSize={state.timelineIconSize ?? "M"}
+        onAddToNotebook={(dataUrl) => {
+          callAddTimelineCard(dataUrl);
+          selectPanelTab("notebook");
+        }}
       />
     );
+
+    const notebookBody = <NotebookPanel />;
 
     return (
       <Workspace
@@ -549,6 +579,7 @@ export function App() {
         compareBody={compareBody}
         bookmarksBody={bookmarksBody}
         timelineBody={timelineBody}
+        notebookBody={notebookBody}
         dock={dock}
         compareCollapse={compareCollapse}
         panelPos={state.panelPos}
@@ -572,175 +603,185 @@ export function App() {
   }
 
   return (
-    <TooltipProvider delay={350}>
-      <div
-        className="app"
-        style={
-          {
-            "--log-font-size": `${fontSize}px`,
-            "--log-font-weight": fontWeight,
-            "--log-row-h": `${rowH}px`,
-            "--filter-row-h": `${filterRowH}px`,
-          } as CSSProperties
-        }
-      >
-        {/* titlebar */}
-        <Titlebar menus={MENUS} openMenu={openMenu} setOpenMenu={setOpenMenu} />
-
-        {/* body */}
-        <div className="body">
-          <Sidebar
-            state={state}
-            collapsed={state.sidebarCollapsed}
-            openScreen={openScreen}
-            onToggleCollapse={toggleSidebar}
-            onSelectFile={selectFile}
-            onOpenFile={() => setOpenScreen(true)}
-            onDeleteFile={deleteFile}
-            onSetFileIcon={(id, icon) =>
-              patchState(
-                (s) => {
-                  const f = s.files.find((x) => x.id === id);
-                  if (f) f.icon = icon;
-                },
-                { undoable: false },
-              )
-            }
-            onReorderFiles={(from, to) =>
-              patchState(
-                (s) => {
-                  if (
-                    from < 0 ||
-                    to < 0 ||
-                    from >= s.files.length ||
-                    to >= s.files.length ||
-                    from === to
-                  )
-                    return;
-                  const [m] = s.files.splice(from, 1);
-                  s.files.splice(to, 0, m);
-                },
-                { undoable: false },
-              )
-            }
-            onSetPanelPos={(pos) => setState((s) => ({ ...s, panelPos: pos }))}
-            onSetMapColorMode={(mode) =>
-              setState((s) => ({ ...s, mapColorMode: mode }))
-            }
-            onSetMapWidth={(w) => setState((s) => ({ ...s, mapWidth: w }))}
-            onSetFontWeight={(w) => setState((s) => ({ ...s, fontWeight: w }))}
-            onSetTimelineIconSize={(sz) =>
-              setState((s) => ({ ...s, timelineIconSize: sz }))
-            }
-            onSetFilterLabel={(mode) =>
-              setState((s) => ({ ...s, filterLabel: mode }))
-            }
-            onManagePalette={() => setPaletteModalOpen(true)}
+    <NotebookHost>
+      <TooltipProvider delay={350}>
+        <div
+          className="app"
+          style={
+            {
+              "--log-font-size": `${fontSize}px`,
+              "--log-font-weight": fontWeight,
+              "--log-row-h": `${rowH}px`,
+              "--filter-row-h": `${filterRowH}px`,
+            } as CSSProperties
+          }
+        >
+          {/* titlebar */}
+          <Titlebar
+            menus={MENUS}
+            openMenu={openMenu}
+            setOpenMenu={setOpenMenu}
           />
-          {file && set && !openScreen ? (
-            renderWorkspace()
-          ) : (
-            <div
-              className={"empty-workspace" + (dragOver ? " dragover" : "")}
-              onClick={() => void openFiles()}
-              title="Click to open a log file, or drop one here"
-            >
-              <div className="ew-card">
-                <div className="ew-icon">
-                  <FolderOpen size={40} />
+
+          {/* body */}
+          <div className="body">
+            <Sidebar
+              state={state}
+              collapsed={state.sidebarCollapsed}
+              openScreen={openScreen}
+              onToggleCollapse={toggleSidebar}
+              onSelectFile={selectFile}
+              onOpenFile={() => setOpenScreen(true)}
+              onDeleteFile={deleteFile}
+              onSetFileIcon={(id, icon) =>
+                patchState(
+                  (s) => {
+                    const f = s.files.find((x) => x.id === id);
+                    if (f) f.icon = icon;
+                  },
+                  { undoable: false },
+                )
+              }
+              onReorderFiles={(from, to) =>
+                patchState(
+                  (s) => {
+                    if (
+                      from < 0 ||
+                      to < 0 ||
+                      from >= s.files.length ||
+                      to >= s.files.length ||
+                      from === to
+                    )
+                      return;
+                    const [m] = s.files.splice(from, 1);
+                    s.files.splice(to, 0, m);
+                  },
+                  { undoable: false },
+                )
+              }
+              onSetPanelPos={(pos) =>
+                setState((s) => ({ ...s, panelPos: pos }))
+              }
+              onSetMapColorMode={(mode) =>
+                setState((s) => ({ ...s, mapColorMode: mode }))
+              }
+              onSetMapWidth={(w) => setState((s) => ({ ...s, mapWidth: w }))}
+              onSetFontWeight={(w) =>
+                setState((s) => ({ ...s, fontWeight: w }))
+              }
+              onSetTimelineIconSize={(sz) =>
+                setState((s) => ({ ...s, timelineIconSize: sz }))
+              }
+              onSetFilterLabel={(mode) =>
+                setState((s) => ({ ...s, filterLabel: mode }))
+              }
+              onManagePalette={() => setPaletteModalOpen(true)}
+            />
+            {file && set && !openScreen ? (
+              renderWorkspace()
+            ) : (
+              <div
+                className={"empty-workspace" + (dragOver ? " dragover" : "")}
+                onClick={() => void openFiles()}
+                title="Click to open a log file, or drop one here"
+              >
+                <div className="ew-card">
+                  <div className="ew-icon">
+                    <FolderOpen size={40} />
+                  </div>
+                  <div className="ew-title">
+                    {state.files.length ? "Open another log" : "No log open"}
+                  </div>
+                  <div className="ew-sub">
+                    Click here to choose a log file, or drag &amp; drop one into
+                    this window.
+                  </div>
+                  <Button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void openFiles();
+                    }}
+                  >
+                    <Upload data-icon="inline-start" />
+                    Open log file
+                  </Button>
+                  <div className="ew-hint">Ctrl O</div>
                 </div>
-                <div className="ew-title">
-                  {state.files.length ? "Open another log" : "No log open"}
-                </div>
-                <div className="ew-sub">
-                  Click here to choose a log file, or drag &amp; drop one into
-                  this window.
-                </div>
-                <Button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void openFiles();
-                  }}
-                >
-                  <Upload data-icon="inline-start" />
-                  Open log file
-                </Button>
-                <div className="ew-hint">Ctrl O</div>
               </div>
-            </div>
+            )}
+          </div>
+
+          {/* modal */}
+          {editing && set && (
+            <EditModal
+              filter={editing.filter}
+              isNew={editing.isNew}
+              genSeed={editing.genSeed}
+              lines={lines}
+              groups={set.order
+                .map((id) => set.groups.find((g) => g.id === id))
+                .filter((g): g is FilterGroup => !!g)
+                .concat(set.groups.filter((g) => !set.order.includes(g.id)))}
+              palette={effectivePalette}
+              onSave={saveFilter}
+              onClose={() => setEditing(null)}
+              onDelete={() => deleteFilter(editing.filter.id)}
+            />
           )}
+
+          {/* palette management modal */}
+          {paletteModalOpen && (
+            <PaletteModal
+              palette={effectivePalette}
+              onChange={applyPalette}
+              onClose={() => setPaletteModalOpen(false)}
+            />
+          )}
+
+          <Overlays
+            busy={busy}
+            loadingLabel={loadingLabel}
+            isSwitchingFile={isSwitchingFile}
+            dragOver={dragOver}
+          />
+
+          {openMenu && (
+            <MenuPopup
+              key={openMenu.name}
+              items={menuDefs[openMenu.name]}
+              x={openMenu.x}
+              y={openMenu.y + 2}
+              onClose={() => setOpenMenu(null)}
+            />
+          )}
+
+          {/* go-to-line dialog */}
+          {gotoOpen && (
+            <GotoDialog
+              onSubmit={(n) => setGotoSignal({ n, nonce: Date.now() })}
+              onClose={() => setGotoOpen(false)}
+            />
+          )}
+
+          {/* about dialog */}
+          {aboutOpen && (
+            <AboutModal
+              version={appVersion}
+              onClose={() => setAboutOpen(false)}
+            />
+          )}
+
+          {/* keyboard shortcuts dialog */}
+          {shortcutsOpen && (
+            <ShortcutsModal onClose={() => setShortcutsOpen(false)} />
+          )}
+
+          {/* app-styled confirmations (replaces native confirm()) */}
+          {confirmNode}
+
+          <Toaster />
         </div>
-
-        {/* modal */}
-        {editing && set && (
-          <EditModal
-            filter={editing.filter}
-            isNew={editing.isNew}
-            genSeed={editing.genSeed}
-            lines={lines}
-            groups={set.order
-              .map((id) => set.groups.find((g) => g.id === id))
-              .filter((g): g is FilterGroup => !!g)
-              .concat(set.groups.filter((g) => !set.order.includes(g.id)))}
-            palette={effectivePalette}
-            onSave={saveFilter}
-            onClose={() => setEditing(null)}
-            onDelete={() => deleteFilter(editing.filter.id)}
-          />
-        )}
-
-        {/* palette management modal */}
-        {paletteModalOpen && (
-          <PaletteModal
-            palette={effectivePalette}
-            onChange={applyPalette}
-            onClose={() => setPaletteModalOpen(false)}
-          />
-        )}
-
-        <Overlays
-          busy={busy}
-          loadingLabel={loadingLabel}
-          isSwitchingFile={isSwitchingFile}
-          dragOver={dragOver}
-        />
-
-        {openMenu && (
-          <MenuPopup
-            key={openMenu.name}
-            items={menuDefs[openMenu.name]}
-            x={openMenu.x}
-            y={openMenu.y + 2}
-            onClose={() => setOpenMenu(null)}
-          />
-        )}
-
-        {/* go-to-line dialog */}
-        {gotoOpen && (
-          <GotoDialog
-            onSubmit={(n) => setGotoSignal({ n, nonce: Date.now() })}
-            onClose={() => setGotoOpen(false)}
-          />
-        )}
-
-        {/* about dialog */}
-        {aboutOpen && (
-          <AboutModal
-            version={appVersion}
-            onClose={() => setAboutOpen(false)}
-          />
-        )}
-
-        {/* keyboard shortcuts dialog */}
-        {shortcutsOpen && (
-          <ShortcutsModal onClose={() => setShortcutsOpen(false)} />
-        )}
-
-        {/* app-styled confirmations (replaces native confirm()) */}
-        {confirmNode}
-
-        <Toaster />
-      </div>
-    </TooltipProvider>
+      </TooltipProvider>
+    </NotebookHost>
   );
 }

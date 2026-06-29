@@ -200,6 +200,7 @@ interface LogViewProps {
   onRemoveFromTimeline: (ns: number[]) => void;
   /** Re-decode the file with a forced encoding label (null = auto-detect). */
   onSetEncoding?: (label: string | null) => void;
+  onAddToNotebook?: (ns: number[]) => void;
 }
 
 export function LogView({
@@ -235,6 +236,7 @@ export function LogView({
   onAddToTimeline,
   onRemoveFromTimeline,
   onSetEncoding,
+  onAddToNotebook,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
   // Filter id → 1-based position in the set, so a matched row's tooltip can name
@@ -1916,6 +1918,25 @@ export function LogView({
                     ? `Remove ${inTl.length} lines from timeline`
                     : "Remove from timeline"}
                 </div>
+              )}
+              {onAddToNotebook && (
+                <>
+                  <div className="menu-sep" />
+                  <div
+                    className="menu-item"
+                    onClick={() => {
+                      onAddToNotebook(sel);
+                      setRowMenu(null);
+                    }}
+                  >
+                    <span className="mi-ico">
+                      <FileText size={14} />
+                    </span>
+                    {sel.length > 1
+                      ? `Add ${sel.length} lines to notebook`
+                      : "Add to notebook"}
+                  </div>
+                </>
               )}
             </div>
           );

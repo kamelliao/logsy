@@ -201,6 +201,143 @@ function estCardH(m: EventMark): number {
   return 16 + 18 + timeBlock + (n > 0 ? 10 + rows * 16 : 0);
 }
 
+type CardItem = {
+  m: EventMark;
+  left: number;
+  top: number;
+  w: number;
+  maxH: number;
+  rank: number;
+  clipTop: number;
+};
+
+function rrect(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  r: number,
+) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + r, r);
+  ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
+  ctx.arcTo(x, y + h, x, y + h - r, r);
+  ctx.arcTo(x, y, x + r, y, r);
+  ctx.closePath();
+}
+
+function drawCardOnCanvas(
+  ctx: CanvasRenderingContext2D,
+  c: CardItem,
+  colors: {
+    bg: string;
+    border: string;
+    text: string;
+    dim: string;
+    accent: string;
+  },
+) {
+  const { m, left, top, w, maxH, clipTop } = c;
+  const PX = 8,
+    PY = 6;
+
+  ctx.save();
+  if (clipTop > 0) {
+    ctx.beginPath();
+    ctx.rect(left, top + clipTop, w, maxH - clipTop);
+    ctx.clip();
+  }
+
+  // Background + border
+  rrect(ctx, left, top, w, maxH, 7);
+  ctx.fillStyle = colors.bg;
+  ctx.fill();
+  ctx.strokeStyle = colors.border;
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  let y = top + PY;
+  const x0 = left + PX;
+  const xR = left + w - PX;
+
+  // --- Header: lane chip + line number ---
+  ctx.font = "bold 10px ui-sans-serif,system-ui,sans-serif";
+  ctx.textBaseline = "middle";
+  const chipPad = 5;
+  const chipH = 14;
+  const rawChipW = ctx.measureText(m.lane).width + chipPad * 2;
+  const chipW = Math.min(rawChipW, w - PX * 2 - 32);
+
+  rrect(ctx, x0, y, chipW, chipH, 3);
+  ctx.fillStyle = m.color || "#94a3b8";
+  ctx.fill();
+  ctx.fillStyle = colors.text;
+  ctx.textAlign = "left";
+  ctx.fillText(m.lane, x0 + chipPad, y + chipH / 2, chipW - chipPad * 2);
+
+  ctx.font = "11px ui-sans-serif,system-ui,sans-serif";
+  ctx.fillStyle = colors.dim;
+  ctx.fillText(` L${m.lineN}`, x0 + chipW + 3, y + chipH / 2);
+
+  y += chipH + 5;
+
+  // --- Time ---
+  if (m.end !== undefined) {
+    const rows = [
+      { k: "begin", v: fmtNs(m.t), accent: false },
+      { k: "end", v: fmtNs(m.end), accent: false },
+      { k: "dur", v: fmtNs(m.end - m.t), accent: true },
+    ];
+    for (const row of rows) {
+      ctx.font = "11px ui-sans-serif,system-ui,sans-serif";
+      ctx.fillStyle = colors.dim;
+      ctx.textAlign = "left";
+      ctx.fillText(row.k, x0, y + 7);
+      ctx.font = "600 11px ui-sans-serif,system-ui,sans-serif";
+      ctx.fillStyle = row.accent ? colors.accent : colors.text;
+      ctx.textAlign = "right";
+      ctx.fillText(row.v, xR, y + 8);
+      y += 16;
+    }
+  } else {
+    ctx.font = "600 11px ui-sans-serif,system-ui,sans-serif";
+    ctx.fillStyle = colors.text;
+    ctx.textAlign = "left";
+    ctx.fillText(fmtNs(m.t), x0, y + 8);
+    y += 16;
+  }
+
+  // --- Fields ---
+  const entries = m.fields ? Object.entries(m.fields) : [];
+  if (entries.length > 0) {
+    y += 4;
+    ctx.strokeStyle = colors.border;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x0, y);
+    ctx.lineTo(xR, y);
+    ctx.stroke();
+    y += 4;
+
+    const valW = Math.max(60, (xR - x0) * 0.55);
+    ctx.font = "11px ui-sans-serif,system-ui,sans-serif";
+    for (const [k, fv] of entries) {
+      if (y + 16 > top + maxH) break;
+      ctx.fillStyle = colors.dim;
+      ctx.textAlign = "left";
+      ctx.fillText(k, x0, y + 8, xR - x0 - valW - 4);
+      ctx.fillStyle = colors.text;
+      ctx.textAlign = "right";
+      ctx.fillText(fv.raw, xR, y + 8, valW);
+      y += 16;
+    }
+  }
+
+  ctx.restore();
+}
+
 /** Inner content of an event card — shared by the hover tooltip and the expanded
  *  lanes' per-point overlay cards (same information either way). */
 function EventCardBody({ m, cols }: { m: EventMark; cols?: number }) {
@@ -283,6 +420,10 @@ interface Props {
   /** Lane names whose track is expanded: the lane grows taller and shows a
    *  per-point detail card (same content as the hover card) below each point. */
   expandedLanes?: Set<string>;
+  /** Called once on mount with a function that captures the visible plot area
+   *  (canvas + DOM overlay cards) as a WebP dataURL — used by the notebook
+   *  "snapshot" button. */
+  onRegisterCapture?: (capture: () => Promise<string | null>) => void;
 }
 
 // Marker geometry per icon-size setting: `r` = point radius (px), `hot` = its
@@ -302,9 +443,58 @@ export function TimelineCanvas({
   iconSize = "M",
   deltaLanes,
   expandedLanes,
+  onRegisterCapture,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
+  const vpRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  // Kept current on every render so the capture closure always sees the latest cards.
+  const cardsRef = useRef<CardItem[]>([]);
+
+  // Register a capture fn once so the notebook snapshot button can grab the
+  // visible plot area. Composites the canvas onto an offscreen canvas with a
+  // solid background (the raw canvas is transparent), then draws the DOM overlay
+  // cards (expanded per-point detail cards) directly via canvas 2D API so they
+  // appear in the exported image.
+  useEffect(() => {
+    onRegisterCapture?.(async () => {
+      const cv = canvasRef.current;
+      if (!cv) return null;
+      try {
+        const dpr = window.devicePixelRatio || 1;
+        const w = cv.clientWidth;
+        const h = cv.clientHeight;
+        const off = document.createElement("canvas");
+        off.width = Math.round(w * dpr);
+        off.height = Math.round(h * dpr);
+        const ctx = off.getContext("2d")!;
+
+        const cs = getComputedStyle(cv);
+        const bg = cs.getPropertyValue("--panel-bg").trim() || "#fbfbfc";
+        const border = cs.getPropertyValue("--border").trim() || "#e3e6ea";
+        const text = cs.getPropertyValue("--text").trim() || "#1c1f23";
+        const dim = cs.getPropertyValue("--text-3").trim() || "#8c929b";
+        const accent = "#2c6ce6";
+
+        ctx.fillStyle = bg;
+        ctx.fillRect(0, 0, off.width, off.height);
+        ctx.drawImage(cv, 0, 0);
+
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        for (const c of cardsRef.current) {
+          drawCardOnCanvas(ctx, c, { bg, border, text, dim, accent });
+        }
+        ctx.restore();
+
+        return off.toDataURL("image/png");
+      } catch {
+        return null;
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // `size` is the scroll VIEWPORT (the wrap's client box); the canvas always fills
   // it and lanes beyond it are reached by vertical scroll, not by shrinking.
   const [size, setSize] = useState({ w: 0, h: 0 });
@@ -678,6 +868,7 @@ export function TimelineCanvas({
     xOf,
     GUTTER,
   ]);
+  cardsRef.current = cards;
 
   // Hit-test the overlay cards (viewport coords): a card counts as part of its
   // point, so hovering/clicking a card behaves like hovering/clicking the dot. The
@@ -1433,7 +1624,7 @@ export function TimelineCanvas({
           setScrollY((e.currentTarget as HTMLDivElement).scrollTop)
         }
       >
-        <div className="tlc-vp">
+        <div className="tlc-vp" ref={vpRef}>
           <canvas
             ref={canvasRef}
             style={{

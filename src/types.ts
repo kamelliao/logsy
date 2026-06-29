@@ -123,6 +123,8 @@ export interface LogFile {
   viewMode?: "all" | "matches";
   /** Per-document log-view header state: whether the find bar is open. */
   findOpen?: boolean;
+  /** Serialized TipTap doc JSON for this document's notebook. Source of truth. */
+  notebookDoc?: Record<string, unknown> | null;
 }
 
 export interface AppState {
@@ -146,8 +148,8 @@ export interface AppState {
   comparePos: "bottom" | "right";
   /** Collapsed (rolled-up) state of the main tabbed panel. */
   filterCollapsed: boolean;
-  /** Active tab in the main panel (Filters, Compare, Bookmarks, Timeline share one tabbed dock). */
-  activePanelTab: "filters" | "compare" | "bookmarks" | "timeline";
+  /** Active tab in the main panel. */
+  activePanelTab: "filters" | "compare" | "bookmarks" | "timeline" | "notebook";
   /** When true, Compare is shown in the popped dock (beside Filters) instead of as
    *  a tab in the main panel. */
   comparePopped: boolean;
