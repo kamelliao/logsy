@@ -190,7 +190,7 @@ export function normalizeState(state: AppState): AppState {
     state.comparePos = "right";
   if (state.filterCollapsed === undefined) state.filterCollapsed = false;
   if (
-    !["filters", "compare", "bookmarks", "timeline"].includes(
+    !["filters", "compare", "bookmarks", "timeline", "notebook"].includes(
       state.activePanelTab,
     )
   )

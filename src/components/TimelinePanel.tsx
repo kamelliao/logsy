@@ -28,6 +28,7 @@ import {
   StickyNoteOff,
   AlertTriangle,
   MoreHorizontal,
+  NotebookPen,
   createLucideIcon,
 } from "lucide-react";
 import {
@@ -156,6 +157,8 @@ interface Props {
   onSetSheetH: (h: number) => void;
   /** Global event-marker size setting. */
   iconSize?: "S" | "M" | "L";
+  /** Snapshot the timeline canvas into the notebook; receives the WebP dataURL. */
+  onAddToNotebook?: (dataUrl: string) => void;
 }
 
 // The always-present (collapsed) handle height: the canvas reserves this much
@@ -220,10 +223,12 @@ export function TimelinePanel({
   sheetH,
   onSetSheetH,
   iconSize,
+  onAddToNotebook,
 }: Props) {
   // The bottom sheet's height is driven locally during a drag (no per-move
   // round-trip through app state); the final value is committed on release.
   const rootRef = useRef<HTMLDivElement>(null);
+  const captureRef = useRef<(() => Promise<string | null>) | null>(null);
   const [h, setH] = useState(sheetH);
   const hRef = useRef(h);
   hRef.current = h;
@@ -370,6 +375,9 @@ export function TimelinePanel({
           iconSize={iconSize}
           deltaLanes={deltaLanes}
           expandedLanes={expandedLanes}
+          onRegisterCapture={(fn) => {
+            captureRef.current = fn;
+          }}
         />
       </div>
 
@@ -388,6 +396,21 @@ export function TimelinePanel({
             line{lineCount === 1 ? "" : "s"}
           </span>
           {hint && <span className="tl-sheet-counts">{hint}</span>}
+
+          {onAddToNotebook && marks.length > 0 && (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className="ml-1 shrink-0 text-muted-foreground hover:text-foreground"
+              title="Snapshot timeline to notebook"
+              onClick={async () => {
+                const dataUrl = await captureRef.current?.();
+                if (dataUrl) onAddToNotebook(dataUrl);
+              }}
+            >
+              <NotebookPen />
+            </Button>
+          )}
 
           {/* "… all" bulk actions: the per-row icons applied to every track at
               once. Mirrors the per-row order (import / remove lines / cards /

@@ -4,7 +4,12 @@ import type { AppState } from "@/types";
 import { useStore } from "@/store";
 import { activeFile } from "@/state/selectors";
 
-export type PanelTab = "filters" | "compare" | "bookmarks" | "timeline";
+export type PanelTab =
+  | "filters"
+  | "compare"
+  | "bookmarks"
+  | "timeline"
+  | "notebook";
 export type PoppedTab = "compare" | "timeline";
 
 // Collapsed strip size — shared by both docks so the popped Compare/Timeline
@@ -65,11 +70,13 @@ export function useDockLayout() {
   const resolveActiveTab = (s: AppState): PanelTab =>
     s.activePanelTab === "bookmarks"
       ? "bookmarks"
-      : s.activePanelTab === "timeline" && !s.timelinePopped
-        ? "timeline"
-        : s.activePanelTab === "compare" && !s.comparePopped
-          ? "compare"
-          : "filters";
+      : s.activePanelTab === "notebook"
+        ? "notebook"
+        : s.activePanelTab === "timeline" && !s.timelinePopped
+          ? "timeline"
+          : s.activePanelTab === "compare" && !s.comparePopped
+            ? "compare"
+            : "filters";
   // Select a tab in the main panel (always expands it if it was collapsed). When
   // that tab is already shown expanded, do nothing — re-running the transition
   // would needlessly dim the panel body even though no content re-renders.
