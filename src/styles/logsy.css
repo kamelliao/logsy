@@ -6566,6 +6566,189 @@ button {
   border-radius: 6px;
 }
 
+/* ── syntax-highlighted code block (lowlight, Notion-style) ────────────────── */
+.nb-prosemirror .ProseMirror .cb-card {
+  position: relative;
+  margin: 0.7em 0;
+  border: none;
+  border-radius: 6px;
+  background: var(--panel-bg-2);
+}
+/* floating controls, top-right, surfaced on hover (overlay the code) */
+.cb-toolbar {
+  position: absolute;
+  top: 7px;
+  right: 7px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  background: var(--app-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.cb-card:hover .cb-toolbar,
+.cb-toolbar:focus-within,
+.cb-toolbar:has([data-popup-open]) {
+  opacity: 1;
+}
+.cb-tool-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 2px 1px;
+  background: var(--border);
+}
+.cb-tool-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.cb-tool-btn:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+.cb-lang-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  color: var(--text-2);
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 0 4px 0 6px;
+  cursor: pointer;
+}
+.cb-lang-trigger:hover,
+.cb-lang-trigger[data-popup-open] {
+  background: var(--row-hover);
+  color: var(--text);
+}
+.cb-lang-chev {
+  display: inline-flex;
+  color: var(--text-3);
+}
+.cb-lang-popup {
+  min-width: 9rem;
+  padding: 4px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop);
+  font-family: var(--ui-font);
+  font-size: 12px;
+  outline: none;
+}
+.cb-lang-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.cb-lang-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: var(--text);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+.cb-lang-item[data-highlighted],
+.cb-lang-item:hover {
+  background: var(--row-hover);
+}
+.cb-lang-check {
+  display: inline-flex;
+  color: var(--accent);
+}
+.nb-prosemirror .ProseMirror .cb-card pre.cb-pre {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.75em 1em;
+  font-family: var(--mono-font);
+  font-size: 12.5px;
+  line-height: 1.6;
+  overflow-x: auto;
+  tab-size: 4;
+}
+.nb-prosemirror .ProseMirror .cb-card pre.cb-pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+}
+
+/* highlight.js token palette (GitHub-light, tuned for the notebook surface) */
+.nb-prosemirror .hljs-comment,
+.nb-prosemirror .hljs-quote {
+  color: #6e7781;
+  font-style: italic;
+}
+.nb-prosemirror .hljs-keyword,
+.nb-prosemirror .hljs-selector-tag,
+.nb-prosemirror .hljs-literal,
+.nb-prosemirror .hljs-type {
+  color: #cf222e;
+}
+.nb-prosemirror .hljs-string,
+.nb-prosemirror .hljs-regexp,
+.nb-prosemirror .hljs-meta .hljs-string {
+  color: #0a3069;
+}
+.nb-prosemirror .hljs-number,
+.nb-prosemirror .hljs-built_in,
+.nb-prosemirror .hljs-symbol,
+.nb-prosemirror .hljs-attr,
+.nb-prosemirror .hljs-attribute,
+.nb-prosemirror .hljs-variable,
+.nb-prosemirror .hljs-template-variable {
+  color: #0550ae;
+}
+.nb-prosemirror .hljs-title,
+.nb-prosemirror .hljs-section,
+.nb-prosemirror .hljs-name {
+  color: #8250df;
+}
+.nb-prosemirror .hljs-tag {
+  color: #116329;
+}
+.nb-prosemirror .hljs-meta {
+  color: #6e7781;
+}
+.nb-prosemirror .hljs-deletion {
+  color: #82071e;
+  background: #ffebe9;
+}
+.nb-prosemirror .hljs-addition {
+  color: #116329;
+  background: #dafbe1;
+}
+.nb-prosemirror .hljs-emphasis {
+  font-style: italic;
+}
+.nb-prosemirror .hljs-strong {
+  font-weight: 600;
+}
+
 /* pinned lines card */
 .pl-card {
   margin: 6px 0 14px;

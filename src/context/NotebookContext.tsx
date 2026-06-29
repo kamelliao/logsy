@@ -15,6 +15,7 @@ import { Highlight } from "@tiptap/extension-highlight";
 import { PinnedLinesNode } from "@/components/notebook/PinnedLinesNode";
 import { CompareCardNode } from "@/components/notebook/CompareCardNode";
 import { TimelineCardNode } from "@/components/notebook/TimelineCardNode";
+import { CodeBlockNode } from "@/components/notebook/CodeBlockNode";
 import { useStore } from "@/store";
 
 interface NotebookCtx {
@@ -91,7 +92,7 @@ export function NotebookProvider({ documentId, children }: ProviderProps) {
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      StarterKit.configure({ codeBlock: false }),
       Placeholder.configure({ placeholder: "Start writing your analysis…" }),
       TextStyle,
       Color,
@@ -99,6 +100,7 @@ export function NotebookProvider({ documentId, children }: ProviderProps) {
       PinnedLinesNode,
       CompareCardNode,
       TimelineCardNode,
+      CodeBlockNode,
     ],
     content: (initialDoc as object | null) ?? "",
     immediatelyRender: true,

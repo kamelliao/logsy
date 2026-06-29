@@ -12,6 +12,7 @@ import {
   ListOrdered,
   Quote,
   Code,
+  SquareCode,
   Undo2,
   Redo2,
   FileCode2,
@@ -23,8 +24,10 @@ import {
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
+import { NodeSelection } from "@tiptap/pm/state";
 import { useNotebookEditor } from "@/context/NotebookContext";
 import { triggerPLSave } from "@/components/notebook/PinnedLinesNode";
+import { lowlight } from "@/components/notebook/lowlight";
 import type { Editor } from "@tiptap/react";
 
 // ── PinnedLines detection ────────────────────────────────────────────────────
@@ -232,13 +235,58 @@ function BgColorBtn({ editor }: { editor: Editor }) {
 
 // ── Export helpers ───────────────────────────────────────────────────────────
 
+/** Minimal hast → HTML string serializer. lowlight only emits `span` elements
+ *  (with a className array) and text nodes, so this is all we need. */
+function hastToHtml(node: HastNode): string {
+  if (node.type === "text") {
+    return node.value
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;");
+  }
+  const children = ("children" in node ? node.children : [])
+    .map(hastToHtml)
+    .join("");
+  if (node.type === "root") return children;
+  const cls = node.properties?.className?.join(" ");
+  return `<span${cls ? ` class="${cls}"` : ""}>${children}</span>`;
+}
+
+type HastNode =
+  | { type: "text"; value: string }
+  | { type: "root"; children: HastNode[] }
+  | {
+      type: "element";
+      tagName: string;
+      properties?: { className?: string[] };
+      children: HastNode[];
+    };
+
+/** getHTML() emits plain `<pre><code>` — highlighting lives in editor
+ *  decorations, not the document model — so re-run lowlight over the exported
+ *  markup (reusing the editor's instance, only our registered languages). */
+function highlightExportedCode(html: string): string {
+  if (!/language-/.test(html)) return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.querySelectorAll("pre code").forEach((code) => {
+    const m = (code.getAttribute("class") || "").match(/language-([\w-]+)/);
+    const lang = m?.[1];
+    const text = code.textContent || "";
+    if (lang && lang !== "plaintext" && lowlight.registered(lang)) {
+      code.innerHTML = hastToHtml(lowlight.highlight(lang, text) as HastNode);
+      code.classList.add("hljs");
+    }
+  });
+  return doc.body.innerHTML;
+}
+
 async function exportHTML(editor: Editor, title: string) {
   const path = await save({
     defaultPath: `${title}.html`,
     filters: [{ name: "HTML", extensions: ["html"] }],
   });
   if (typeof path !== "string") return;
-  const body = editor.getHTML();
+  const body = highlightExportedCode(editor.getHTML());
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const html = `<!doctype html>
@@ -256,8 +304,20 @@ async function exportHTML(editor: Editor, title: string) {
   table{border-collapse:collapse;width:100%}
   td,th{border:1px solid #ccc;padding:4px 8px;font-size:.85rem}
   th{background:#f5f5f5;font-weight:600}
-  pre{background:#f5f5f5;padding:1rem;border-radius:6px;overflow-x:auto;font-family:ui-monospace,monospace;font-size:.85rem}
+  pre{background:#f6f8fa;padding:1rem;border-radius:6px;overflow-x:auto;font-family:ui-monospace,monospace;font-size:.85rem}
+  pre code{background:none;padding:0}
   blockquote{border-left:3px solid #ccc;margin:0;padding-left:1rem;color:#555}
+  .hljs-comment,.hljs-quote{color:#6e7781;font-style:italic}
+  .hljs-keyword,.hljs-selector-tag,.hljs-literal,.hljs-type{color:#cf222e}
+  .hljs-string,.hljs-regexp,.hljs-meta .hljs-string{color:#0a3069}
+  .hljs-number,.hljs-built_in,.hljs-symbol,.hljs-attr,.hljs-attribute,.hljs-variable,.hljs-template-variable{color:#0550ae}
+  .hljs-title,.hljs-section,.hljs-name{color:#8250df}
+  .hljs-tag{color:#116329}
+  .hljs-meta{color:#6e7781}
+  .hljs-deletion{color:#82071e;background:#ffebe9}
+  .hljs-addition{color:#116329;background:#dafbe1}
+  .hljs-emphasis{font-style:italic}
+  .hljs-strong{font-weight:600}
   [data-type="pinned-lines"]{border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin:1rem 0}
   [data-type="compare-card"]{border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin:1rem 0}
   [data-type="timeline-card"]{margin:1rem 0}
@@ -435,6 +495,16 @@ function Toolbar({
       >
         <Code size={14} />
       </ToolbarBtn>
+      <ToolbarBtn
+        title="Code block"
+        active={editor.isActive("codeBlock")}
+        onClick={() => {
+          if (selectionInPL()) return;
+          editor.chain().focus().toggleCodeBlock().run();
+        }}
+      >
+        <SquareCode size={14} />
+      </ToolbarBtn>
       <div className="nb-tsep" />
       <ToolbarBtn
         title="Undo (Ctrl+Z)"
@@ -487,6 +557,20 @@ function FloatingBubble({ editor }: { editor: Editor }) {
   const isPLRef = useRef(false);
 
   const syncPos = useCallback(() => {
+    // An atom embed (timeline/compare card) selects as a ProseMirror
+    // NodeSelection — its DOM anchor is the .ProseMirror container, not the
+    // card, so a `.closest(".tc-card")` test misses it. Guard on the PM
+    // selection instead. (pinnedLines is also an atom, but its inner pl-body
+    // stays text-editable, so we still want the bubble there.)
+    const psel = editor.state.selection;
+    if (psel instanceof NodeSelection) {
+      const name = psel.node.type.name;
+      if (name === "timelineCard" || name === "compareCard") {
+        setAnchor(null);
+        setColorOpen(null);
+        return;
+      }
+    }
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
       setAnchor(null);
@@ -518,7 +602,7 @@ function FloatingBubble({ editor }: { editor: Editor }) {
     savedRange.current = range.cloneRange();
     isPLRef.current = inPL;
     setAnchor({ top: rect.top - 48, left: rect.left + rect.width / 2 });
-  }, []);
+  }, [editor]);
 
   useEffect(() => {
     document.addEventListener("selectionchange", syncPos);

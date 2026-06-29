@@ -1100,8 +1100,10 @@ export function LogView({
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === "INPUT" || tag === "TEXTAREA") return;
+      // Ignore keys aimed at any editable field — text inputs and the notebook's
+      // contenteditable editor (incl. code blocks) own their own arrow/nav keys.
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('input, textarea, [contenteditable="true"]')) return;
       if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
         // Select every currently-visible line — but only when this pane is the
         // user's context (pointer over it, or focus inside it), so Ctrl+A over
