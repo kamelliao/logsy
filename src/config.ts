@@ -15,6 +15,9 @@ export const APP_VERSION_FALLBACK = "0.2.1";
 // so the version number lives in exactly ONE place.
 export const STATE_VERSION = 6;
 export const STATE_KEY = `logsy.state.v${STATE_VERSION}`;
+// Notebooks persist under their own key: their embeds (timeline PNG data URLs)
+// can be megabytes, so they must not ride along in every workspace-doc write.
+export const NOTEBOOKS_KEY = `${STATE_KEY}.notebooks`;
 
 // Safe mode (app launched with `--safe`): the Rust side injects
 // `window.__LOGSY_SAFE_MODE__` before the bundle runs. We then neither read nor

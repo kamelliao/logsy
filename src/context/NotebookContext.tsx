@@ -3,7 +3,9 @@ import {
   useContext,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
+  useState,
   type ReactNode,
 } from "react";
 import { useEditor, type Editor } from "@tiptap/react";
@@ -16,6 +18,7 @@ import { PinnedLinesNode } from "@/components/notebook/PinnedLinesNode";
 import { CompareCardNode } from "@/components/notebook/CompareCardNode";
 import { TimelineCardNode } from "@/components/notebook/TimelineCardNode";
 import { CodeBlockNode } from "@/components/notebook/CodeBlockNode";
+import { SlashCommand } from "@/components/notebook/SlashCommand";
 import { useStore } from "@/store";
 
 interface NotebookCtx {
@@ -31,16 +34,25 @@ let _insertEmbed:
   | ((type: string, attrs: Record<string, unknown>) => void)
   | null = null;
 
+// "Add to notebook" may fire the same tick a notebook is first created (its
+// editor hasn't mounted yet). Buffer such inserts and let the manager drain
+// them once its editor is ready, so the first capture into a brand-new notebook
+// isn't dropped.
+const _pendingEmbeds: { type: string; attrs: Record<string, unknown> }[] = [];
+
 function callInsertEmbed(type: string, attrs: Record<string, unknown>) {
-  _insertEmbed?.(type, attrs);
+  if (_insertEmbed) _insertEmbed(type, attrs);
+  else _pendingEmbeds.push({ type, attrs });
 }
 
 export function callAddPinnedLines(
   lines: { n: number; text: string }[],
   file: string,
+  fileId: string,
 ) {
   callInsertEmbed("pinnedLines", {
     file,
+    fileId,
     lines: JSON.stringify(lines),
     caption: "",
   });
@@ -63,32 +75,37 @@ export function callAddTimelineCard(src: string) {
   callInsertEmbed("timelineCard", { src, caption: "" });
 }
 
-// ── provider ────────────────────────────────────────────────────────────────
+// ── editor manager ──────────────────────────────────────────────────────────
 
-interface ProviderProps {
-  documentId: string;
-  children: ReactNode;
+interface ManagerProps {
+  notebookId: string;
+  onEditor: (e: Editor | null) => void;
 }
 
-export function NotebookProvider({ documentId, children }: ProviderProps) {
-  const initialDoc = useStore(
-    (s) => s.doc.files.find((f) => f.id === documentId)?.notebookDoc ?? null,
-  );
-  const setState = useStore((s) => s.setDoc);
-
+/**
+ * Owns one notebook's TipTap editor: creation, autosave, embed inserts. Renders
+ * nothing — NotebookHost keys THIS component by notebook id, so switching
+ * notebooks remounts a null-rendering leaf (fresh editor + fresh private undo
+ * history) instead of the whole app subtree, which made the log view flash.
+ * It lives at app level (not in the panel) so the editor survives dock-tab
+ * switches that unmount the Notebook panel.
+ */
+function NotebookEditorManager({ notebookId, onEditor }: ManagerProps) {
+  const saveNotebookDoc = useStore((s) => s.saveNotebookDoc);
   const saveDoc = useCallback(
-    (doc: Record<string, unknown>) => {
-      setState((s) => {
-        const files = s.files.map((f) =>
-          f.id === documentId ? { ...f, notebookDoc: doc } : f,
-        );
-        return { ...s, files };
-      });
-    },
-    [documentId, setState],
+    (doc: Record<string, unknown>) => saveNotebookDoc(notebookId, doc),
+    [notebookId, saveNotebookDoc],
   );
 
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Initial content is read once, non-reactively: the editor is the source of
+  // truth while mounted, and subscribing here would re-render on every autosave.
+  const [initialDoc] = useState(
+    () =>
+      useStore.getState().notebooks.find((n) => n.id === notebookId)?.doc ??
+      null,
+  );
 
   const editor = useEditor({
     extensions: [
@@ -101,20 +118,37 @@ export function NotebookProvider({ documentId, children }: ProviderProps) {
       CompareCardNode,
       TimelineCardNode,
       CodeBlockNode,
+      SlashCommand,
     ],
     content: (initialDoc as object | null) ?? "",
     immediatelyRender: true,
     onUpdate: ({ editor: e }) => {
       if (timerRef.current) clearTimeout(timerRef.current);
       timerRef.current = setTimeout(() => {
+        timerRef.current = null;
         saveDoc(e.getJSON() as Record<string, unknown>);
       }, 400);
     },
   });
 
+  // Flush a pending debounced autosave when this notebook's editor goes away
+  // (switching notebooks / deleting) so the last <400ms of edits aren't lost.
+  useEffect(() => {
+    return () => {
+      if (!timerRef.current) return;
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+      try {
+        if (!editor.isDestroyed)
+          saveDoc(editor.getJSON() as Record<string, unknown>);
+      } catch {
+        /* editor already torn down — the debounced save had it anyway */
+      }
+    };
+  }, [editor, saveDoc]);
+
   const insertEmbed = useCallback(
     (type: string, attrs: Record<string, unknown>) => {
-      if (!editor) return;
       editor.chain().focus().insertContent({ type, attrs }).run();
     },
     [editor],
@@ -122,25 +156,53 @@ export function NotebookProvider({ documentId, children }: ProviderProps) {
 
   useEffect(() => {
     _insertEmbed = insertEmbed;
+    // Drain anything captured before this editor was ready (e.g. an embed added
+    // the same tick a fresh notebook was created).
+    if (_pendingEmbeds.length) {
+      const queued = _pendingEmbeds.splice(0);
+      for (const e of queued) insertEmbed(e.type, e.attrs);
+    }
     return () => {
       _insertEmbed = null;
     };
   }, [insertEmbed]);
 
-  return (
-    <NotebookContext.Provider value={{ editor }}>
-      {children}
-    </NotebookContext.Provider>
-  );
+  useEffect(() => {
+    onEditor(editor);
+    // Dev-only escape hatch so e2e tests can inspect ProseMirror state.
+    if (import.meta.env.DEV)
+      (window as unknown as { __nbEditor?: Editor | null }).__nbEditor = editor;
+    return () => {
+      onEditor(null);
+      if (import.meta.env.DEV)
+        (window as unknown as { __nbEditor?: Editor | null }).__nbEditor = null;
+    };
+  }, [editor, onEditor]);
+
+  return null;
 }
 
+// ── host ────────────────────────────────────────────────────────────────────
+
 export function NotebookHost({ children }: { children: ReactNode }) {
-  const activeFileId = useStore((s) => s.doc.activeFileId);
-  if (!activeFileId) return <>{children}</>;
+  const activeNotebookId = useStore((s) => s.activeNotebookId);
+  const [editor, setEditor] = useState<Editor | null>(null);
+  const ctx = useMemo(() => ({ editor }), [editor]);
+  // The manager (not this provider) carries the per-notebook key: `children` is
+  // the whole app, and re-keying an ancestor of it remounted everything — the
+  // log view flashed on every notebook switch. No notebook → no editor; the
+  // panel renders its empty state.
   return (
-    <NotebookProvider key={activeFileId} documentId={activeFileId}>
+    <NotebookContext.Provider value={ctx}>
+      {activeNotebookId && (
+        <NotebookEditorManager
+          key={activeNotebookId}
+          notebookId={activeNotebookId}
+          onEditor={setEditor}
+        />
+      )}
       {children}
-    </NotebookProvider>
+    </NotebookContext.Provider>
   );
 }
 

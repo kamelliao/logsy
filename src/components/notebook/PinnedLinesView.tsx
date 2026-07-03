@@ -25,10 +25,12 @@ function buildHtmlFromLines(lines: LineEntry[]): string {
 export function PinnedLinesView({ node, updateAttributes }: NodeViewProps) {
   const {
     file,
+    fileId,
     lines: linesJson,
     richContent,
   } = node.attrs as {
     file: string;
+    fileId: string;
     lines: string;
     richContent: string;
   };
@@ -73,7 +75,7 @@ export function PinnedLinesView({ node, updateAttributes }: NodeViewProps) {
             title={`Jump to line ${lines[0].n}`}
             onClick={() => {
               const jump = getPinnedLinesJumpHandler();
-              if (jump && lines[0]) jump(lines[0].n);
+              if (jump && lines[0]) jump(fileId, lines[0].n);
             }}
           >
             <ArrowUpRight size={13} />

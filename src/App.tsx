@@ -328,7 +328,33 @@ export function App() {
   };
 
   // Wire the pinned-lines "jump to line" button into the app's jump mechanism.
-  setPinnedLinesJumpHandler(jumpToMarker);
+  // A notebook can cite lines from several logs, so a card carries its source
+  // file id: switch to that file first (if it's still open), then jump. When the
+  // card's file is the active one — or its id is blank (pre-fileId cards) — fall
+  // straight through to the in-file jump.
+  const jumpToNotebookLine = (fileId: string, n: number) => {
+    if (fileId && fileId !== file?.id) {
+      if (!state.files.some((f) => f.id === fileId)) {
+        toast.info("That log isn't open anymore.");
+        return;
+      }
+      // Show the target file (deferred file-switch remounts LogView) and push the
+      // jump; the new LogView reads markerJump on mount. Force "show all" on the
+      // target so a matches-only view can't hide the cited line.
+      setState((s) => ({ ...s, activeFileId: fileId }));
+      patchState(
+        (s) => {
+          const f = s.files.find((x) => x.id === fileId);
+          if (f) f.viewMode = "all";
+        },
+        { undoable: false },
+      );
+      setMarkerJump({ n, nonce: Date.now() });
+      return;
+    }
+    jumpToMarker(n);
+  };
+  setPinnedLinesJumpHandler(jumpToNotebookLine);
 
   // Export the filtered log view via a native save dialog. LogView builds the
   // text (it knows which rows are visible) and hands it here to write.
@@ -483,7 +509,8 @@ export function App() {
             .map((n) => ({ n, text: view.rows[n - 1]?.text ?? "" }))
             .filter((l) => l.text !== "");
           if (picked.length) {
-            callAddPinnedLines(picked, file!.name);
+            useStore.getState().ensureNotebook();
+            callAddPinnedLines(picked, file!.name, file!.id);
             selectPanelTab("notebook");
           }
         }}
@@ -524,6 +551,7 @@ export function App() {
         }
         indexFor={(id) => set!.filters.findIndex((x) => x.id === id)}
         onAddToNotebook={(label, cols, rows) => {
+          useStore.getState().ensureNotebook();
           callAddCompareCard(label, cols, rows);
           selectPanelTab("notebook");
         }}
@@ -564,6 +592,7 @@ export function App() {
         onSetSheetH={(h) => setState((s) => ({ ...s, timelineSheetH: h }))}
         iconSize={state.timelineIconSize ?? "M"}
         onAddToNotebook={(dataUrl) => {
+          useStore.getState().ensureNotebook();
           callAddTimelineCard(dataUrl);
           selectPanelTab("notebook");
         }}
