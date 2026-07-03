@@ -1,6 +1,7 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import { createPortal } from "react-dom";
-import { EditorContent } from "@tiptap/react";
+import { EditorContent, useEditorState } from "@tiptap/react";
+import { DragHandle } from "@tiptap/extension-drag-handle-react";
 import {
   Bold,
   Italic,
@@ -20,11 +21,13 @@ import {
   Type,
   Highlighter,
   Eraser,
+  GripVertical,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { NodeSelection } from "@tiptap/pm/state";
+import { useStore } from "@/store";
 import { useNotebookEditor } from "@/context/NotebookContext";
 import { triggerPLSave } from "@/components/notebook/PinnedLinesNode";
 import { lowlight } from "@/components/notebook/lowlight";
@@ -393,11 +396,32 @@ function Toolbar({
   editor: Editor;
   onGetTitle: () => string;
 }) {
+  // v3's useEditor no longer re-renders per transaction, so the button states
+  // must subscribe explicitly — this re-renders just the toolbar (deep-equal
+  // gated), not the provider subtree like the old per-transaction render did.
+  const st = useEditorState({
+    editor,
+    selector: ({ editor: e }) => ({
+      bold: e.isActive("bold"),
+      italic: e.isActive("italic"),
+      underline: e.isActive("underline"),
+      strike: e.isActive("strike"),
+      h1: e.isActive("heading", { level: 1 }),
+      h2: e.isActive("heading", { level: 2 }),
+      bulletList: e.isActive("bulletList"),
+      orderedList: e.isActive("orderedList"),
+      blockquote: e.isActive("blockquote"),
+      code: e.isActive("code"),
+      codeBlock: e.isActive("codeBlock"),
+      canUndo: e.can().undo(),
+      canRedo: e.can().redo(),
+    }),
+  });
   return (
     <div className="nb-toolbar">
       <ToolbarBtn
         title="Bold (Ctrl+B)"
-        active={editor.isActive("bold")}
+        active={st.bold}
         onClick={() =>
           selectionInPL()
             ? plExec("bold")
@@ -408,7 +432,7 @@ function Toolbar({
       </ToolbarBtn>
       <ToolbarBtn
         title="Italic (Ctrl+I)"
-        active={editor.isActive("italic")}
+        active={st.italic}
         onClick={() =>
           selectionInPL()
             ? plExec("italic")
@@ -419,7 +443,7 @@ function Toolbar({
       </ToolbarBtn>
       <ToolbarBtn
         title="Underline (Ctrl+U)"
-        active={editor.isActive("underline")}
+        active={st.underline}
         onClick={() =>
           selectionInPL()
             ? plExec("underline")
@@ -430,7 +454,7 @@ function Toolbar({
       </ToolbarBtn>
       <ToolbarBtn
         title="Strikethrough"
-        active={editor.isActive("strike")}
+        active={st.strike}
         onClick={() =>
           selectionInPL()
             ? plExec("strikeThrough")
@@ -454,14 +478,14 @@ function Toolbar({
       <div className="nb-tsep" />
       <ToolbarBtn
         title="Heading 1"
-        active={editor.isActive("heading", { level: 1 })}
+        active={st.h1}
         onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
       >
         <Heading1 size={14} />
       </ToolbarBtn>
       <ToolbarBtn
         title="Heading 2"
-        active={editor.isActive("heading", { level: 2 })}
+        active={st.h2}
         onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
       >
         <Heading2 size={14} />
@@ -469,35 +493,35 @@ function Toolbar({
       <div className="nb-tsep" />
       <ToolbarBtn
         title="Bullet list"
-        active={editor.isActive("bulletList")}
+        active={st.bulletList}
         onClick={() => editor.chain().focus().toggleBulletList().run()}
       >
         <List size={14} />
       </ToolbarBtn>
       <ToolbarBtn
         title="Ordered list"
-        active={editor.isActive("orderedList")}
+        active={st.orderedList}
         onClick={() => editor.chain().focus().toggleOrderedList().run()}
       >
         <ListOrdered size={14} />
       </ToolbarBtn>
       <ToolbarBtn
         title="Blockquote"
-        active={editor.isActive("blockquote")}
+        active={st.blockquote}
         onClick={() => editor.chain().focus().toggleBlockquote().run()}
       >
         <Quote size={14} />
       </ToolbarBtn>
       <ToolbarBtn
         title="Inline code"
-        active={editor.isActive("code")}
+        active={st.code}
         onClick={() => editor.chain().focus().toggleCode().run()}
       >
         <Code size={14} />
       </ToolbarBtn>
       <ToolbarBtn
         title="Code block"
-        active={editor.isActive("codeBlock")}
+        active={st.codeBlock}
         onClick={() => {
           if (selectionInPL()) return;
           editor.chain().focus().toggleCodeBlock().run();
@@ -508,14 +532,14 @@ function Toolbar({
       <div className="nb-tsep" />
       <ToolbarBtn
         title="Undo (Ctrl+Z)"
-        disabled={!editor.can().undo()}
+        disabled={!st.canUndo}
         onClick={() => editor.chain().focus().undo().run()}
       >
         <Undo2 size={14} />
       </ToolbarBtn>
       <ToolbarBtn
         title="Redo (Ctrl+Y)"
-        disabled={!editor.can().redo()}
+        disabled={!st.canRedo}
         onClick={() => editor.chain().focus().redo().run()}
       >
         <Redo2 size={14} />
@@ -790,15 +814,189 @@ function FloatingBubble({ editor }: { editor: Editor }) {
   );
 }
 
+// ── block drag (pointer-based) ───────────────────────────────────────────────
+// The @tiptap drag-handle plugin gives us hover-tracking + positioning, but its
+// actual drag is native HTML5 DnD — which Tauri's dragDropEnabled (needed for
+// OS file drops onto the window) swallows on Windows WebView2. So the grip
+// implements the move itself with pointer events: track the hovered block via
+// onNodeChange, and on drag compute the drop slot with posAtCoords.
+
+function useBlockDrag(editor: Editor) {
+  const hovered = useRef<{ pos: number } | null>(null);
+
+  const onNodeChange = useCallback(
+    ({ node, pos }: { node: unknown; pos: number }) => {
+      hovered.current = node && pos >= 0 ? { pos } : null;
+    },
+    [],
+  );
+
+  const startDrag = useCallback(
+    (e: React.PointerEvent) => {
+      const src = hovered.current;
+      if (!src) return;
+      e.preventDefault(); // no text selection / native drag while moving
+      const view = editor.view;
+      const container = view.dom.closest(".nb-content") as HTMLElement | null;
+      if (!container) return;
+
+      let indicator: HTMLDivElement | null = null;
+      let target: { pos: number; before: boolean } | null = null;
+      let moved = false;
+      const startY = e.clientY;
+      const clearIndicator = () => {
+        indicator?.remove();
+        indicator = null;
+      };
+
+      const onMove = (ev: PointerEvent) => {
+        if (!moved && Math.abs(ev.clientY - startY) < 4) return; // click, not drag
+        moved = true;
+        document.body.classList.add("nb-block-dragging");
+        const hit = view.posAtCoords({ left: ev.clientX, top: ev.clientY });
+        if (!hit) {
+          target = null;
+          clearIndicator();
+          return;
+        }
+        // Top-level drop slot: the doc child under the pointer (atoms report
+        // themselves via `inside`), split into before/after at its midline.
+        const $pos = view.state.doc.resolve(hit.pos);
+        const blockPos = $pos.depth > 0 ? $pos.before(1) : hit.inside;
+        const node = blockPos >= 0 ? view.state.doc.nodeAt(blockPos) : null;
+        const dom =
+          blockPos >= 0 ? (view.nodeDOM(blockPos) as HTMLElement | null) : null;
+        if (blockPos < 0 || !node || !dom || dom.nodeType !== 1) {
+          target = null;
+          clearIndicator();
+          return;
+        }
+        const rect = dom.getBoundingClientRect();
+        const before = ev.clientY < rect.top + rect.height / 2;
+        target = { pos: blockPos, before };
+        if (!indicator) {
+          indicator = document.createElement("div");
+          indicator.className = "nb-drop-indicator";
+          container.appendChild(indicator);
+        }
+        const cRect = container.getBoundingClientRect();
+        indicator.style.top = `${(before ? rect.top : rect.bottom) - cRect.top + container.scrollTop - 1}px`;
+        indicator.style.left = `${rect.left - cRect.left}px`;
+        indicator.style.width = `${rect.width}px`;
+      };
+
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+        window.removeEventListener("pointerup", onUp);
+        document.body.classList.remove("nb-block-dragging");
+        clearIndicator();
+        if (!moved || !target) return;
+        const state = view.state;
+        const node = state.doc.nodeAt(src.pos);
+        const targetNode = state.doc.nodeAt(target.pos);
+        if (!node || !targetNode) return;
+        let insertPos = target.before
+          ? target.pos
+          : target.pos + targetNode.nodeSize;
+        // Dropping onto / directly around itself is a no-op.
+        if (insertPos >= src.pos && insertPos <= src.pos + node.nodeSize)
+          return;
+        const tr = state.tr.delete(src.pos, src.pos + node.nodeSize);
+        insertPos = tr.mapping.map(insertPos);
+        tr.insert(insertPos, node);
+        view.dispatch(tr);
+      };
+
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp);
+    },
+    [editor],
+  );
+
+  return { onNodeChange, startDrag };
+}
+
+// ── page title (Notion-style) ────────────────────────────────────────────────
+// A permanent, editable H1 above the document, two-way bound to the notebook's
+// name (the switcher, exports and this header all show the same string). It is
+// app chrome, not a ProseMirror node — so it can't be deleted, dragged, or
+// captured into the doc JSON.
+
+function NotebookTitle({ editor }: { editor: Editor }) {
+  const activeId = useStore((s) => s.activeNotebookId);
+  const name = useStore(
+    (s) => s.notebooks.find((n) => n.id === s.activeNotebookId)?.name ?? "",
+  );
+  const renameNotebook = useStore((s) => s.renameNotebook);
+  // renameNotebook keeps the old name when handed an empty string (so a blur
+  // can't wipe it) — a local draft lets the field go visibly empty mid-edit.
+  const [draft, setDraft] = useState<string | null>(null);
+  useEffect(() => setDraft(null), [activeId]);
+
+  return (
+    <div className="nb-title-wrap">
+      <input
+        className="nb-title"
+        value={draft ?? name}
+        placeholder="Untitled"
+        spellCheck={false}
+        onChange={(e) => {
+          setDraft(e.target.value);
+          if (activeId && e.target.value.trim())
+            renameNotebook(activeId, e.target.value);
+        }}
+        onBlur={() => setDraft(null)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === "ArrowDown") {
+            e.preventDefault();
+            editor.chain().focus("start").run();
+          }
+        }}
+      />
+    </div>
+  );
+}
+
 export function NoteEditor({ onGetTitle }: { onGetTitle: () => string }) {
   const editor = useNotebookEditor();
   if (!editor) return null;
+  return <NoteEditorInner editor={editor} onGetTitle={onGetTitle} />;
+}
+
+function NoteEditorInner({
+  editor,
+  onGetTitle,
+}: {
+  editor: Editor;
+  onGetTitle: () => string;
+}) {
+  const { onNodeChange, startDrag } = useBlockDrag(editor);
 
   return (
     <div className="nb-editor-wrap">
       <Toolbar editor={editor} onGetTitle={onGetTitle} />
       <div className="nb-content">
+        <NotebookTitle editor={editor} />
         <EditorContent editor={editor} className="nb-prosemirror" />
+        {/* Notion-style block grip: hover a block's left edge to grab it. */}
+        <DragHandle
+          editor={editor}
+          className="nb-drag-handle"
+          onNodeChange={onNodeChange}
+        >
+          <div
+            className="nb-drag-grip"
+            onPointerDown={startDrag}
+            // Kill the plugin's native HTML5 drag: pointer drag is the only
+            // path, so browser dev and the Tauri app behave identically.
+            onDragStart={(ev) => {
+              ev.preventDefault();
+              ev.stopPropagation();
+            }}
+          >
+            <GripVertical size={15} />
+          </div>
+        </DragHandle>
       </div>
       <FloatingBubble editor={editor} />
     </div>

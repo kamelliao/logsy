@@ -1,5 +1,17 @@
-import type { AppState, Filter } from "@/types";
+import type { AppState, Filter, Notebook } from "@/types";
 import { DEFAULT_TEXT_COLOR, DEFAULT_BG_COLOR, FONT_DEFAULT } from "@/config";
+
+/** A TipTap doc counts as "written in" once it holds more than a lone empty
+ *  paragraph — used to skip migrating untouched per-file notebooks. */
+function docHasContent(doc: unknown): boolean {
+  const c = (doc as { content?: unknown[] } | null)?.content;
+  if (!Array.isArray(c) || c.length === 0) return false;
+  if (c.length === 1) {
+    const only = c[0] as { type?: string; content?: unknown };
+    if (only?.type === "paragraph" && only.content === undefined) return false;
+  }
+  return true;
+}
 
 let _uid = 1;
 export function uid(prefix: string): string {
@@ -287,5 +299,65 @@ export function normalizeState(state: AppState): AppState {
   ) {
     delete state.packsSort;
   }
+  // Notebooks are NOT doc state anymore (they live beside it in the store, with
+  // their own persistence key) — but old blobs from this branch still carry them,
+  // and pre-app-level files carry a per-file `notebookDoc`. `extractNotebooks`
+  // (called by the storage adapter at hydration) lifts both shapes out; here we
+  // only guarantee a normalized doc never keeps them.
   return state;
+}
+
+/**
+ * Lift notebooks out of a just-parsed persisted blob (and strip them from the
+ * doc). Handles both legacy shapes: per-file `notebookDoc` (pre-app-level) and
+ * doc-level `notebooks`/`activeNotebookId` (early feat/notebook builds). The
+ * caller passes what it read from the dedicated notebooks key, which wins when
+ * present — the blob-derived value is only the migration fallback.
+ */
+export function extractNotebooks(
+  state: AppState,
+  fromOwnKey?: { notebooks?: unknown; activeNotebookId?: unknown } | null,
+): { notebooks: Notebook[]; activeNotebookId: string | null } {
+  const migrated: Notebook[] = [];
+  if (!Array.isArray(state.notebooks)) {
+    // Pre-app-level: lift each file's written-in doc into its own notebook.
+    for (const f of state.files) {
+      if (docHasContent(f.notebookDoc)) {
+        const now = Date.now();
+        migrated.push({
+          id: uid("nb"),
+          name: f.name.replace(/\.[^.]+$/, "") || "Untitled",
+          doc: f.notebookDoc ?? null,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+    }
+  } else {
+    migrated.push(...state.notebooks);
+  }
+  const fromBlobActive = state.activeNotebookId;
+  // A live doc never carries notebook fields — strip all legacy shapes.
+  for (const f of state.files)
+    delete (f as Partial<Record<"notebookDoc", unknown>>).notebookDoc;
+  delete state.notebooks;
+  delete state.activeNotebookId;
+
+  const own = fromOwnKey?.notebooks;
+  const raw: unknown[] = Array.isArray(own) ? own : migrated;
+  const notebooks = raw.filter(
+    (n): n is Notebook =>
+      !!n &&
+      typeof (n as Notebook).id === "string" &&
+      typeof (n as Notebook).name === "string",
+  );
+  const wanted = Array.isArray(own)
+    ? fromOwnKey?.activeNotebookId
+    : fromBlobActive;
+  // Active notebook must point at one that exists (else fall back to the first,
+  // or null when there are none — the panel then shows its empty state).
+  const activeNotebookId = notebooks.some((n) => n.id === wanted)
+    ? (wanted as string)
+    : (notebooks[0]?.id ?? null);
+  return { notebooks, activeNotebookId };
 }

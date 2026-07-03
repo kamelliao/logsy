@@ -42,7 +42,34 @@ export function CompareCardView({ node }: NodeViewProps) {
         <span className="cc-source-name">{label || "Compare"}</span>
         <span className="cc-badge">{rows.length} rows</span>
       </div>
-      <div className="cc-table-wrap">
+      <div
+        className="cc-table-wrap"
+        contentEditable={true}
+        suppressContentEditableWarning
+        // Read-only-but-selectable: a contentEditable island lets the browser
+        // place a selection inside the otherwise atomic node (same trick as
+        // pl-body). Allow navigation / select-all / copy, block every edit.
+        onKeyDown={(e) => {
+          e.stopPropagation();
+          const mod = e.ctrlKey || e.metaKey;
+          const nav = [
+            "ArrowLeft",
+            "ArrowRight",
+            "ArrowUp",
+            "ArrowDown",
+            "Home",
+            "End",
+            "PageUp",
+            "PageDown",
+          ];
+          if (nav.includes(e.key)) return;
+          if (mod && (e.key === "a" || e.key === "c")) return;
+          e.preventDefault();
+        }}
+        onKeyUp={(e) => e.stopPropagation()}
+        onPaste={(e) => e.preventDefault()}
+        onDrop={(e) => e.preventDefault()}
+      >
         <table className="cc-table">
           <thead>
             <tr>
