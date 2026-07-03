@@ -123,8 +123,27 @@ export interface LogFile {
   viewMode?: "all" | "matches";
   /** Per-document log-view header state: whether the find bar is open. */
   findOpen?: boolean;
-  /** Serialized TipTap doc JSON for this document's notebook. Source of truth. */
+  /**
+   * @deprecated Notebooks are app-level now (see `AppState.notebooks`); a report
+   * can reference lines from several files. This per-file doc only survives so a
+   * one-time migration (in `normalizeState`) can lift it into a `Notebook`.
+   */
   notebookDoc?: Record<string, unknown> | null;
+}
+
+/**
+ * A user-authored report. App-level (not per-file): one notebook can embed pinned
+ * lines / compare tables / timeline images drawn from *several* log files, so it
+ * lives on `AppState`, decoupled from the active document. Persisted, not undoable.
+ */
+export interface Notebook {
+  id: string;
+  name: string;
+  /** Serialized TipTap doc JSON. Source of truth for the editor content. */
+  doc?: Record<string, unknown> | null;
+  /** Epoch ms created / last edited; `updatedAt` could drive a sort later. */
+  createdAt: number;
+  updatedAt: number;
 }
 
 export interface AppState {
@@ -194,6 +213,17 @@ export interface AppState {
   packsDrawerW?: number;
   /** Sort order for the packs library list ("manual" = user drag order). */
   packsSort?: PacksSort;
+  /**
+   * @deprecated Notebooks now live OUTSIDE the document, as top-level store
+   * state with their own persistence key (see `store/index.ts`). Keeping them
+   * on the doc put megabytes of embed payloads (timeline PNG data URLs) on
+   * every undo snapshot + doc serialize, and let an app-level undo resurrect
+   * deleted notebooks. These fields only survive so `extractNotebooks` can
+   * lift them out of an old saved blob once; a live `doc` never carries them.
+   */
+  notebooks?: Notebook[];
+  /** @deprecated See `notebooks` above — lifted into the store at hydration. */
+  activeNotebookId?: string | null;
 }
 
 /** How the packs drawer orders its cards; "manual" keeps the drag order. */

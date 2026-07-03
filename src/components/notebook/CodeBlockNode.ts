@@ -1,6 +1,6 @@
 import { CodeBlockLowlight } from "@tiptap/extension-code-block-lowlight";
 import { ReactNodeViewRenderer } from "@tiptap/react";
-import { TextSelection } from "@tiptap/pm/state";
+import { Selection, TextSelection } from "@tiptap/pm/state";
 import type { Editor } from "@tiptap/core";
 import { CodeBlockView } from "./CodeBlockView";
 import { lowlight } from "./lowlight";
@@ -65,6 +65,36 @@ export const CodeBlockNode = CodeBlockLowlight.extend({
           $from.parent.type.name === "codeBlock" &&
           $from.parent.content.size === 0
         );
+      },
+      // Escape hatch: the React node view breaks the native caret walk out of
+      // the block, so ArrowLeft at the very start hops to the block before —
+      // creating a paragraph above when the code block opens the document.
+      ArrowLeft: ({ editor }) => {
+        const { state } = editor;
+        const { empty, $from } = state.selection;
+        if (
+          !empty ||
+          $from.parent.type.name !== "codeBlock" ||
+          $from.parentOffset !== 0
+        )
+          return false;
+        const beforePos = $from.before();
+        if (beforePos > 0) {
+          const sel = Selection.findFrom(
+            state.doc.resolve(beforePos),
+            -1,
+            true,
+          );
+          if (sel) {
+            editor.view.dispatch(state.tr.setSelection(sel).scrollIntoView());
+            return true;
+          }
+        }
+        return editor
+          .chain()
+          .insertContentAt(beforePos, { type: "paragraph" })
+          .setTextSelection(beforePos + 1)
+          .run();
       },
     };
   },

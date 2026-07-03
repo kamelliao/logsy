@@ -6342,6 +6342,101 @@ button {
   background: var(--app-bg);
 }
 
+/* notebook switcher bar (above the editor toolbar) */
+.nb-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-bg);
+  flex-shrink: 0;
+}
+.nb-bar-rename {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--accent-bg);
+  border-radius: 5px;
+  background: var(--app-bg);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  outline: none;
+}
+.nb-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.nb-bar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+  transition:
+    background 0.1s,
+    color 0.1s;
+}
+.nb-bar-btn:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+.nb-bar-btn-danger:hover {
+  background: #fdecec;
+  color: #d44c47;
+}
+
+/* empty state — no notebook created yet */
+.nb-empty {
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  text-align: center;
+  padding: 24px;
+  color: var(--text-2);
+}
+.nb-empty-icon {
+  color: var(--text-3, var(--text-2));
+  opacity: 0.6;
+}
+.nb-empty-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 4px 0 0;
+}
+.nb-empty-sub {
+  font-size: 12px;
+  max-width: 240px;
+  margin: 0;
+}
+.nb-empty-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.nb-empty-btn:hover {
+  background: var(--row-hover);
+}
+
 /* toolbar */
 .nb-toolbar {
   display: flex;
@@ -6494,11 +6589,49 @@ button {
   flex: 1;
   overflow-y: auto;
   padding: 0;
+  /* anchors the block-drag drop indicator (and the drag-handle wrapper) */
+  position: relative;
+  display: flex;
+  flex-direction: column;
 }
-.nb-prosemirror .ProseMirror {
+/* Notion-style page title: app chrome above the document, bound to the
+   notebook's name. Same column width as the editor body. */
+.nb-title-wrap {
+  width: 100%;
   max-width: 760px;
   margin: 0 auto;
-  padding: 24px 32px 80px;
+  padding: 26px 32px 0;
+  flex-shrink: 0;
+}
+.nb-title {
+  width: 100%;
+  border: none;
+  outline: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--ui-font);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+}
+.nb-title::placeholder {
+  color: var(--text-3);
+}
+/* Fill the rest of the scroll area so the roomy bottom padding belongs to the
+   editor: clicking the empty space under the last block drops the caret at
+   the end. */
+.nb-prosemirror {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+.nb-prosemirror .ProseMirror {
+  width: 100%;
+  flex: 1;
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 10px 32px 120px;
   outline: none;
   font-family: var(--ui-font);
   font-size: 14px;
@@ -6527,6 +6660,20 @@ button {
   font-size: 1em;
   font-weight: 600;
   margin: 0.8em 0 0.2em;
+}
+/* Tailwind's preflight resets `list-style: none` on ul/ol — put the markers
+   back inside the editor (with the usual disc→circle→square nesting). */
+.nb-prosemirror .ProseMirror ul {
+  list-style: disc;
+}
+.nb-prosemirror .ProseMirror ul ul {
+  list-style: circle;
+}
+.nb-prosemirror .ProseMirror ul ul ul {
+  list-style: square;
+}
+.nb-prosemirror .ProseMirror ol {
+  list-style: decimal;
 }
 .nb-prosemirror .ProseMirror ul,
 .nb-prosemirror .ProseMirror ol {
@@ -6564,6 +6711,113 @@ button {
   outline: 2px solid #2c6ce6;
   outline-offset: 2px;
   border-radius: 6px;
+}
+/* divider (inserted from the slash menu) */
+.nb-prosemirror .ProseMirror hr {
+  border: none;
+  border-top: 2px solid var(--border);
+  margin: 1.2em 0;
+}
+.nb-prosemirror .ProseMirror hr.ProseMirror-selectednode {
+  outline: none;
+  border-top-color: var(--accent-bg);
+}
+
+/* ── slash command menu ("/" to insert a block) ────────────────────────────── */
+.nb-slash-menu {
+  min-width: 230px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  background: var(--app-bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+}
+.nb-slash-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 4px 7px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.nb-slash-item.active {
+  background: var(--row-hover);
+}
+.nb-slash-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex: none;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--panel-bg);
+  color: var(--text-2);
+}
+.nb-slash-label {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.25;
+}
+.nb-slash-title {
+  font-size: 12.5px;
+  font-weight: 500;
+}
+.nb-slash-hint {
+  font-size: 11px;
+  color: var(--text-3);
+}
+.nb-slash-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: var(--text-3);
+}
+
+/* ── block drag handle (Notion-style grip in the left margin) ──────────────── */
+.nb-drag-handle {
+  /* nudge the grip a bit further from the block's left edge */
+  margin-left: -10px;
+}
+.nb-drag-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  border-radius: 5px;
+  color: var(--text-3);
+  cursor: grab;
+  touch-action: none;
+}
+.nb-drag-grip:hover {
+  background: var(--row-hover);
+  color: var(--text-2);
+}
+.nb-drag-grip:active {
+  cursor: grabbing;
+}
+/* while a block drag is live: no stray text selection, grabby cursor */
+body.nb-block-dragging,
+body.nb-block-dragging * {
+  cursor: grabbing !important;
+  user-select: none !important;
+}
+.nb-drop-indicator {
+  position: absolute;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--accent-bg);
+  pointer-events: none;
+  z-index: 60;
 }
 
 /* ── syntax-highlighted code block (lowlight, Notion-style) ────────────────── */
@@ -6939,6 +7193,11 @@ button {
   overflow-y: auto;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
+  /* read-only contentEditable island — selectable text, no edit chrome */
+  outline: none;
+  cursor: text;
+  user-select: text;
+  -webkit-user-select: text;
 }
 .cc-table {
   width: max-content;
@@ -6968,6 +7227,9 @@ button {
 .cc-ln,
 .cc-ln-h {
   color: var(--text-3);
+  /* keep the row-number gutter out of copied text */
+  user-select: none;
+  -webkit-user-select: none;
 }
 .cc-caption {
   display: block;

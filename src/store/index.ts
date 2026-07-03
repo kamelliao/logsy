@@ -6,8 +6,14 @@ import {
 } from "zustand/middleware";
 import { produce, setAutoFreeze } from "immer";
 import type { AppState } from "@/types";
-import { initialState, normalizeState } from "@/lib/defaults";
-import { STATE_KEY, STATE_VERSION, SAFE_MODE, HISTORY_CAP } from "@/config";
+import { initialState, normalizeState, extractNotebooks } from "@/lib/defaults";
+import {
+  STATE_KEY,
+  NOTEBOOKS_KEY,
+  STATE_VERSION,
+  SAFE_MODE,
+  HISTORY_CAP,
+} from "@/config";
 import type { ConfirmOptions } from "@/components/dialogs/ConfirmDialog";
 import {
   createFilterActions,
@@ -34,6 +40,11 @@ import {
   createPacksActions,
   type PacksActions,
 } from "@/store/slices/packsSlice";
+import {
+  createNotebookActions,
+  type NotebookActions,
+  type NotebookState,
+} from "@/store/slices/notebookSlice";
 
 export type { EditingState } from "@/store/slices/filterSlice";
 export { selectActiveMarkers } from "@/store/slices/bookmarkSlice";
@@ -59,7 +70,9 @@ export interface Store
     RecentsActions,
     BookmarkActions,
     LinesActions,
-    PacksActions {
+    PacksActions,
+    NotebookState,
+    NotebookActions {
   /** The persisted, undoable workspace document (everything that used to be AppState). */
   doc: AppState;
   /** Menu-enablement flags, mirrored into store state so selectors re-render on change. */
@@ -93,16 +106,29 @@ const past: AppState[] = [];
 const future: AppState[] = [];
 let coalesceKey: string | null = null;
 
+/** What actually persists: the workspace doc + the app-level notebooks. */
+type PersistedSlice = Pick<Store, "doc" | "notebooks" | "activeNotebookId">;
+
 /**
  * A localStorage adapter that keeps the on-disk format byte-compatible with the
  * pre-store payload: a bare `AppState` JSON under STATE_KEY (no persist wrapper).
- * Writes are debounced 300ms and flushed on unload — same optimization the old
- * useUndoableState had. SAFE_MODE neither reads nor writes (preserves a bad state
- * on disk for the next normal launch).
+ * Notebooks live under their own NOTEBOOKS_KEY so their heavy embeds (timeline
+ * PNG data URLs) don't ride along in every doc write. Writes are debounced 300ms
+ * and flushed on unload; serialization is ALSO deferred to the flush — persist
+ * calls setItem on every set(), and stringifying a large doc synchronously per
+ * set() is exactly the undo/redo jank we removed. Snapshots are safe to hold by
+ * reference: patchState (immer produce) and the slices never mutate in place.
+ * SAFE_MODE neither reads nor writes (preserves a bad state on disk for the
+ * next normal launch).
  */
-function createRawStorage(): PersistStorage<Pick<Store, "doc">> {
+function createRawStorage(): PersistStorage<PersistedSlice> {
   let timer: ReturnType<typeof setTimeout> | null = null;
-  let pending: string | null = null;
+  let pending: PersistedSlice | null = null;
+  // Identity of what each key last wrote, so a flush only stringifies the part
+  // that actually changed (a filter edit shouldn't re-serialize the notebooks).
+  let writtenDoc: AppState | undefined;
+  let writtenNbs: Store["notebooks"] | undefined;
+  let writtenActiveNb: string | null | undefined;
   const flush = () => {
     if (timer) {
       clearTimeout(timer);
@@ -110,7 +136,24 @@ function createRawStorage(): PersistStorage<Pick<Store, "doc">> {
     }
     if (pending == null) return;
     try {
-      localStorage.setItem(STATE_KEY, pending);
+      if (pending.doc !== writtenDoc) {
+        localStorage.setItem(STATE_KEY, JSON.stringify(pending.doc));
+        writtenDoc = pending.doc;
+      }
+      if (
+        pending.notebooks !== writtenNbs ||
+        pending.activeNotebookId !== writtenActiveNb
+      ) {
+        localStorage.setItem(
+          NOTEBOOKS_KEY,
+          JSON.stringify({
+            activeNotebookId: pending.activeNotebookId,
+            notebooks: pending.notebooks,
+          }),
+        );
+        writtenNbs = pending.notebooks;
+        writtenActiveNb = pending.activeNotebookId;
+      }
     } catch {
       /* ignore */
     }
@@ -126,23 +169,35 @@ function createRawStorage(): PersistStorage<Pick<Store, "doc">> {
       try {
         const raw = localStorage.getItem(STATE_KEY);
         if (!raw) return null;
+        const doc = normalizeState(JSON.parse(raw) as AppState);
+        let own: Parameters<typeof extractNotebooks>[1] = null;
+        try {
+          const rawNb = localStorage.getItem(NOTEBOOKS_KEY);
+          if (rawNb) own = JSON.parse(rawNb);
+        } catch {
+          /* corrupt notebooks blob → fall back to whatever the doc carries */
+        }
+        // Lift notebooks out of the doc (old blobs stored them inline); the
+        // dedicated key wins when present.
+        const { notebooks, activeNotebookId } = extractNotebooks(doc, own);
         return {
-          state: { doc: normalizeState(JSON.parse(raw) as AppState) },
+          state: { doc, notebooks, activeNotebookId },
           version: STATE_VERSION,
         };
       } catch {
         return null;
       }
     },
-    setItem: (_name, value: StorageValue<Pick<Store, "doc">>) => {
+    setItem: (_name, value: StorageValue<PersistedSlice>) => {
       if (SAFE_MODE) return; // never overwrite the preserved state in safe mode
-      pending = JSON.stringify(value.state.doc);
+      pending = value.state;
       if (timer) clearTimeout(timer);
       timer = setTimeout(flush, 300);
     },
     removeItem: () => {
       try {
         localStorage.removeItem(STATE_KEY);
+        localStorage.removeItem(NOTEBOOKS_KEY);
       } catch {
         /* ignore */
       }
@@ -174,6 +229,7 @@ export const useStore = create<Store>()(
       ...createBookmarkActions(get),
       ...createLinesActions(set),
       ...createPacksActions(get),
+      ...createNotebookActions(set, get),
 
       // ---- undo engine ----
       patchState: (fn, opts) => {
@@ -227,8 +283,12 @@ export const useStore = create<Store>()(
       name: STATE_KEY,
       version: STATE_VERSION,
       storage: createRawStorage(),
-      // Only the document is persisted; canUndo/canRedo and actions are not.
-      partialize: (st) => ({ doc: st.doc }),
+      // Only the document + notebooks persist; canUndo/canRedo and actions don't.
+      partialize: (st) => ({
+        doc: st.doc,
+        notebooks: st.notebooks,
+        activeNotebookId: st.activeNotebookId,
+      }),
       // Safe mode: stay on the fresh initialState, don't read the saved blob.
       skipHydration: SAFE_MODE,
     },
