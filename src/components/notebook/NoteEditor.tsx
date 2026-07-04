@@ -13,7 +13,7 @@ import {
   ListOrdered,
   Quote,
   Code,
-  SquareCode,
+  CodeXml,
   Table as TableIcon,
   Undo2,
   Redo2,
@@ -331,10 +331,10 @@ async function exportHTML(editor: Editor, title: string) {
   [data-type="compare-card"]{border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin:1rem 0}
   [data-type="timeline-card"]{margin:1rem 0}
   .pl-source-bar{display:flex;align-items:center;gap:6px;padding:5px 10px;background:#f8f9fa;border-bottom:1px solid #e2e8f0;font-size:12px;color:#555}
-  pre.pl-body{margin:0;padding:8px 10px;overflow-x:auto;line-height:1.65;font-family:ui-monospace,monospace;font-size:12.5px}
-  .pl-row{display:block}
-  .pl-num{display:inline-block;min-width:3.5em;color:#9b9a97;padding-right:.5em;user-select:none}
-  .pl-text{color:#1c1f23}
+  pre.pl-body{margin:0;padding:6px 10px 8px;line-height:1.55;font-family:ui-monospace,monospace;font-size:12.5px;white-space:pre-wrap}
+  .pl-row{display:flex;gap:10px}
+  .pl-num{min-width:4ch;text-align:right;color:#9b9a97;flex-shrink:0;user-select:none}
+  .pl-text{color:#1c1f23;min-width:0;overflow-wrap:anywhere;word-break:break-word}
 </style>
 </head>
 <body>
@@ -417,7 +417,6 @@ function Toolbar({
       bulletList: e.isActive("bulletList"),
       orderedList: e.isActive("orderedList"),
       blockquote: e.isActive("blockquote"),
-      code: e.isActive("code"),
       codeBlock: e.isActive("codeBlock"),
       canUndo: e.can().undo(),
       canRedo: e.can().redo(),
@@ -519,13 +518,6 @@ function Toolbar({
         <Quote size={14} />
       </ToolbarBtn>
       <ToolbarBtn
-        title="Inline code"
-        active={st.code}
-        onClick={() => editor.chain().focus().toggleCode().run()}
-      >
-        <Code size={14} />
-      </ToolbarBtn>
-      <ToolbarBtn
         title="Code block"
         active={st.codeBlock}
         onClick={() => {
@@ -533,7 +525,7 @@ function Toolbar({
           editor.chain().focus().toggleCodeBlock().run();
         }}
       >
-        <SquareCode size={14} />
+        <CodeXml size={14} />
       </ToolbarBtn>
       <ToolbarBtn
         title="Insert table"
@@ -755,6 +747,17 @@ function FloatingBubble({ editor }: { editor: Editor }) {
         }
       >
         <Strikethrough size={13} />
+      </button>
+      <button
+        className="nb-bbtn"
+        title="Inline code"
+        onClick={() => {
+          // Inline code is an editor-only mark (pl-body has no execCommand for
+          // it), so skip when the selection is in a pinned-lines block.
+          if (!isPLRef.current) editor.chain().focus().toggleCode().run();
+        }}
+      >
+        <Code size={13} />
       </button>
       <div className="nb-bsep" />
 
