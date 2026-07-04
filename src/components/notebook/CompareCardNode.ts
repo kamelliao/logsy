@@ -51,7 +51,19 @@ export const CompareCardNode = Node.create({
       [
         "table",
         { class: "cc-table" },
-        ["thead", {}, ["tr", {}, ...cols.map((c) => ["th", {}, c])]],
+        // Leading gutter header (`#`) mirrors the body rows' `cc-ln` cell;
+        // without it the header row is one cell short and every column shifts,
+        // dropping the rightmost header.
+        [
+          "thead",
+          {},
+          [
+            "tr",
+            {},
+            ["th", { class: "cc-ln-h" }, "#"],
+            ...cols.map((c) => ["th", {}, c]),
+          ],
+        ],
         [
           "tbody",
           {},
