@@ -397,11 +397,14 @@ export function TimelinePanel({
           </span>
           {hint && <span className="tl-sheet-counts">{hint}</span>}
 
+          {/* Snapshot-to-notebook: right-aligned (ml-auto) but kept to the LEFT of
+              the bulk-actions divider (the border-l below). When it's shown it owns
+              the ml-auto push, so the bulk cluster drops its own (see below). */}
           {onAddToNotebook && marks.length > 0 && (
             <Button
               variant="ghost"
               size="icon-xs"
-              className="ml-1 shrink-0 text-muted-foreground hover:text-foreground"
+              className="ml-auto shrink-0 text-muted-foreground hover:text-foreground"
               title="Snapshot timeline to notebook"
               onClick={async () => {
                 const dataUrl = await captureRef.current?.();
@@ -420,10 +423,14 @@ export function TimelinePanel({
               + 10px body pad + 1px row border + 6px row pad), so the six icons line
               up in columns. The collapse chevron is absolutely positioned past this
               margin (see below) so it can stay on the right without shoving the
-              cluster out of column. */}
+              cluster out of column. ml-auto only when the snapshot button (which
+              already pushes right) isn't there, so the two don't both grab space. */}
           {tracks.length > 0 && (
             <div
-              className="ml-auto flex shrink-0 items-center gap-0.5 border-l border-border/60 pl-1"
+              className={
+                (onAddToNotebook && marks.length > 0 ? "" : "ml-auto ") +
+                "flex shrink-0 items-center gap-0.5 border-l border-border/60 pl-1"
+              }
               style={{ marginRight: 21 }}
             >
               <Button

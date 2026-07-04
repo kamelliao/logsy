@@ -24,10 +24,7 @@ import {
   Eraser,
   GripVertical,
   X,
-  ArrowLeftToLine,
-  ArrowRightToLine,
-  ArrowUpToLine,
-  ArrowDownToLine,
+  PaintBucket,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -335,6 +332,18 @@ async function exportHTML(editor: Editor, title: string) {
   .pl-row{display:flex;gap:10px}
   .pl-num{min-width:4ch;text-align:right;color:#9b9a97;flex-shrink:0;user-select:none}
   .pl-text{color:#1c1f23;min-width:0;overflow-wrap:anywhere;word-break:break-word}
+  strong,b{font-weight:800}
+  /* compare-card: same bordered "log block" chrome as pinned-lines (header bar +
+     a borderless, mono, horizontally-ruled table) instead of the generic full
+     table styling above. */
+  [data-type="compare-card"]{overflow-x:auto}
+  .cc-source-bar{display:flex;align-items:center;gap:6px;padding:5px 10px;background:#f8f9fa;border-bottom:1px solid #e2e8f0;font-size:12px;color:#555}
+  .cc-table{width:100%;border-collapse:collapse;font-family:ui-monospace,monospace;font-size:12.5px}
+  .cc-table th,.cc-table td{border:none;border-bottom:1px solid #eee;padding:3px 10px;font-size:12.5px;text-align:left;white-space:nowrap;vertical-align:top}
+  .cc-table th{background:#fff;font-family:-apple-system,"Noto Sans TC",sans-serif;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#555}
+  .cc-table tr:last-child td{border-bottom:none}
+  .cc-ln,.cc-ln-h{color:#9b9a97;user-select:none}
+  .cc-caption{display:block;padding:5px 10px;border-top:1px solid #e2e8f0;font-size:12.5px;color:#555}
 </style>
 </head>
 <body>
@@ -1038,6 +1047,148 @@ function DeleteColumnIcon({ size = 15 }: { size?: number }) {
   );
 }
 
+// Insert-row/column glyphs, lucide-style line-art to match the delete icons and
+// the rest of the toolbar: an outlined 2×2 grid = the existing table, and a `+`
+// on the edge where the new row / column lands (plus position = direction).
+const iconGProps = {
+  stroke: "currentColor",
+  strokeWidth: 2,
+  strokeLinecap: "round" as const,
+  strokeLinejoin: "round" as const,
+};
+function InsertColLeftIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      {...iconGProps}
+    >
+      <rect x="10" y="4" width="11" height="16" rx="1.5" />
+      <line x1="15.5" y1="4" x2="15.5" y2="20" />
+      <line x1="10" y1="12" x2="21" y2="12" />
+      <line x1="2" y1="12" x2="7" y2="12" />
+      <line x1="4.5" y1="9.5" x2="4.5" y2="14.5" />
+    </svg>
+  );
+}
+function InsertColRightIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      {...iconGProps}
+    >
+      <rect x="3" y="4" width="11" height="16" rx="1.5" />
+      <line x1="8.5" y1="4" x2="8.5" y2="20" />
+      <line x1="3" y1="12" x2="14" y2="12" />
+      <line x1="17" y1="12" x2="22" y2="12" />
+      <line x1="19.5" y1="9.5" x2="19.5" y2="14.5" />
+    </svg>
+  );
+}
+function InsertRowAboveIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      {...iconGProps}
+    >
+      <rect x="4" y="10" width="16" height="11" rx="1.5" />
+      <line x1="4" y1="15.5" x2="20" y2="15.5" />
+      <line x1="12" y1="10" x2="12" y2="21" />
+      <line x1="9.5" y1="4.5" x2="14.5" y2="4.5" />
+      <line x1="12" y1="2" x2="12" y2="7" />
+    </svg>
+  );
+}
+function InsertRowBelowIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      {...iconGProps}
+    >
+      <rect x="4" y="3" width="16" height="11" rx="1.5" />
+      <line x1="4" y1="8.5" x2="20" y2="8.5" />
+      <line x1="12" y1="3" x2="12" y2="14" />
+      <line x1="9.5" y1="19.5" x2="14.5" y2="19.5" />
+      <line x1="12" y1="17" x2="12" y2="22" />
+    </svg>
+  );
+}
+
+// Palette for tinting the selected table cell(s). Reuses the highlight BG hues.
+const CELL_BG_PALETTE = [
+  { label: "None", value: null },
+  { label: "Gray", value: "#f1f1ef" },
+  { label: "Brown", value: "#f4eeee" },
+  { label: "Orange", value: "#fbecdd" },
+  { label: "Yellow", value: "#fbf3db" },
+  { label: "Green", value: "#edf3ec" },
+  { label: "Blue", value: "#e7f3f8" },
+  { label: "Purple", value: "#f6f3f9" },
+  { label: "Pink", value: "#faf1f5" },
+  { label: "Red", value: "#fdebec" },
+];
+
+function CellColorBtn({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const apply = (value: string | null) => {
+    editor.chain().focus().setCellAttribute("backgroundColor", value).run();
+    setOpen(false);
+  };
+
+  return (
+    <div ref={wrapRef} className="nb-ttcolor">
+      <button
+        className="nb-ttbtn"
+        title="Cell background color"
+        onClick={(e) => {
+          e.preventDefault();
+          setOpen((o) => !o);
+        }}
+      >
+        <PaintBucket size={15} />
+      </button>
+      {open && (
+        <div className="nb-ttswatches">
+          {CELL_BG_PALETTE.map((c) => (
+            <button
+              key={c.label}
+              className={"nb-ttswatch" + (c.value === null ? " is-none" : "")}
+              title={c.label}
+              style={c.value ? { background: c.value } : undefined}
+              onClick={(e) => {
+                e.preventDefault();
+                apply(c.value);
+              }}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TableToolbar({ editor }: { editor: Editor }) {
   const [rect, setRect] = useState<DOMRect | null>(null);
 
@@ -1073,14 +1224,14 @@ function TableToolbar({ editor }: { editor: Editor }) {
         title="Insert column left"
         onClick={run((e) => e.chain().focus().addColumnBefore().run())}
       >
-        <ArrowLeftToLine size={15} />
+        <InsertColLeftIcon size={15} />
       </button>
       <button
         className="nb-ttbtn"
         title="Insert column right"
         onClick={run((e) => e.chain().focus().addColumnAfter().run())}
       >
-        <ArrowRightToLine size={15} />
+        <InsertColRightIcon size={15} />
       </button>
       <span className="nb-ttsep" />
       <button
@@ -1088,15 +1239,17 @@ function TableToolbar({ editor }: { editor: Editor }) {
         title="Insert row above"
         onClick={run((e) => e.chain().focus().addRowBefore().run())}
       >
-        <ArrowUpToLine size={15} />
+        <InsertRowAboveIcon size={15} />
       </button>
       <button
         className="nb-ttbtn"
         title="Insert row below"
         onClick={run((e) => e.chain().focus().addRowAfter().run())}
       >
-        <ArrowDownToLine size={15} />
+        <InsertRowBelowIcon size={15} />
       </button>
+      <span className="nb-ttsep" />
+      <CellColorBtn editor={editor} />
       <span className="nb-ttsep" />
       <button
         className="nb-ttbtn is-danger"
