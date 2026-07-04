@@ -14,7 +14,10 @@ import Placeholder from "@tiptap/extension-placeholder";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
 import { Highlight } from "@tiptap/extension-highlight";
+import { TableKit } from "@tiptap/extension-table";
 import { PinnedLinesNode } from "@/components/notebook/PinnedLinesNode";
+import { ResizableImageNode } from "@/components/notebook/ResizableImageNode";
+import { ImagePaste } from "@/components/notebook/ImagePaste";
 import { CompareCardNode } from "@/components/notebook/CompareCardNode";
 import { TimelineCardNode } from "@/components/notebook/TimelineCardNode";
 import { CodeBlockNode } from "@/components/notebook/CodeBlockNode";
@@ -114,6 +117,14 @@ function NotebookEditorManager({ notebookId, onEditor }: ManagerProps) {
       TextStyle,
       Color,
       Highlight.configure({ multicolor: true }),
+      TableKit.configure({
+        table: { resizable: true, HTMLAttributes: { class: "nb-table" } },
+      }),
+      ResizableImageNode.configure({
+        allowBase64: true,
+        HTMLAttributes: { class: "nb-image" },
+      }),
+      ImagePaste,
       PinnedLinesNode,
       CompareCardNode,
       TimelineCardNode,

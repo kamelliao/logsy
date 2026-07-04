@@ -6441,8 +6441,13 @@ button {
 .nb-toolbar {
   display: flex;
   align-items: center;
+  justify-content: flex-start;
+  flex-wrap: wrap;
   gap: 2px;
-  padding: 4px 8px;
+  /* Left-align the icons to the centered content column's text edge (max-width
+     760 + 32px inset), minus the button's 6px internal inset so the first GLYPH
+     — not just its hit-box — starts at the column edge. Full-width bar/border. */
+  padding: 4px max(26px, calc(50% - 354px));
   border-bottom: 1px solid var(--border);
   background: var(--panel-bg);
   flex-shrink: 0;
@@ -6480,6 +6485,7 @@ button {
   background: var(--divider);
   margin: 0 4px;
 }
+/* flex:1 spacer that pushes the export buttons to the far right */
 .nb-tsep-push {
   flex: 1;
   background: transparent;
@@ -6661,6 +6667,12 @@ button {
   font-weight: 600;
   margin: 0.8em 0 0.2em;
 }
+/* block rhythm: top-level paragraphs carry the gap (Tailwind preflight zeroes
+   p margins). Scoped to direct children so list-item / cell paragraphs aren't
+   spaced apart. */
+.nb-prosemirror .ProseMirror > p {
+  margin: 0.7em 0;
+}
 /* Tailwind's preflight resets `list-style: none` on ul/ol — put the markers
    back inside the editor (with the usual disc→circle→square nesting). */
 .nb-prosemirror .ProseMirror ul {
@@ -6685,9 +6697,166 @@ button {
 }
 .nb-prosemirror .ProseMirror blockquote {
   border-left: 3px solid var(--border-strong);
-  margin: 0.6em 0;
+  margin: 0.9em 0;
   padding: 0.1em 1em;
   color: var(--text-2);
+}
+
+/* ── tables (prosemirror-tables, Notion-style) ─────────────────────────────── */
+/* NOTE: with `resizable: true` the table is drawn by a prosemirror-tables
+   NodeView (TableView) that does NOT copy the node's HTMLAttributes, so the
+   `nb-table` class never lands on the live element — style the bare `table`. */
+.nb-prosemirror .ProseMirror .tableWrapper {
+  margin: 0.95em 0;
+  /* overflow-x:auto alone makes the browser compute overflow-y as auto too, so
+     the resize handle's edge overhang would pop a scrollbar and jitter the
+     block — pin overflow-y hidden and keep the handle inside the table. */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.nb-prosemirror .ProseMirror table {
+  border-collapse: collapse;
+  table-layout: fixed;
+  width: 100%;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.nb-prosemirror .ProseMirror table td,
+.nb-prosemirror .ProseMirror table th {
+  position: relative;
+  min-width: 4em;
+  padding: 6px 9px;
+  border: 1px solid var(--border-strong);
+  vertical-align: top;
+  text-align: left;
+  box-sizing: border-box;
+}
+.nb-prosemirror .ProseMirror table th {
+  background: var(--panel-bg-2);
+  font-weight: 600;
+  color: var(--text);
+}
+.nb-prosemirror .ProseMirror table td > *,
+.nb-prosemirror .ProseMirror table th > * {
+  margin: 0;
+}
+/* active cell-range selection overlay */
+.nb-prosemirror .ProseMirror table .selectedCell::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: rgba(44, 108, 230, 0.13);
+  pointer-events: none;
+  z-index: 1;
+}
+/* column resize handle (resizable: true) — kept flush to the cell edge (no
+   negative overhang) so it never spills past the table and trips the wrapper's
+   scrollbar. */
+.nb-prosemirror .ProseMirror table .column-resize-handle {
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--accent-bg);
+  pointer-events: none;
+  z-index: 2;
+}
+.nb-prosemirror .ProseMirror.resize-cursor {
+  cursor: col-resize;
+}
+/* floating add/remove-row-column bar, pinned above the active table */
+.nb-table-toolbar {
+  position: fixed;
+  z-index: 200;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 3px;
+  background: var(--app-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop);
+  font-family: var(--ui-font);
+}
+.nb-ttbtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.nb-ttbtn:hover {
+  background: var(--row-hover);
+  color: var(--text);
+}
+.nb-ttbtn.is-danger:hover {
+  background: rgba(212, 76, 71, 0.12);
+  color: #d44c47;
+}
+.nb-ttsep {
+  width: 1px;
+  align-self: stretch;
+  margin: 3px 2px;
+  background: var(--border);
+}
+
+/* ── pasted / dropped images (stored inline as base64, resizable) ──────────── */
+.nb-prosemirror .ProseMirror .nb-image-wrap {
+  position: relative;
+  /* block (not inline-block) so it doesn't pick up the parent's 1.7 line-height
+     as extra leading above/below the image; width:fit-content still shrink-wraps
+     to the image so the resize handle hugs its corner. */
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  margin: 0.4em 0;
+  line-height: 0;
+}
+.nb-prosemirror .ProseMirror .nb-image-wrap img.nb-image {
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+}
+.nb-prosemirror
+  .ProseMirror
+  .nb-image-wrap.ProseMirror-selectednode
+  img.nb-image {
+  border-color: transparent;
+}
+/* bottom-right resize handle — revealed on hover / when the node is selected */
+.nb-image-resize {
+  position: absolute;
+  right: 7px;
+  bottom: 7px;
+  width: 12px;
+  height: 12px;
+  border: 2px solid #fff;
+  border-radius: 3px;
+  background: var(--accent-bg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  cursor: nwse-resize;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.nb-image-wrap:hover .nb-image-resize,
+.nb-image-wrap.is-selected .nb-image-resize {
+  opacity: 1;
+}
+body.nb-img-resizing,
+body.nb-img-resizing * {
+  cursor: nwse-resize !important;
+  user-select: none !important;
 }
 .nb-prosemirror .ProseMirror pre:not(.pl-body) {
   background: var(--panel-bg-2);
@@ -6706,11 +6875,17 @@ button {
   font-family: var(--mono-font);
   font-size: 0.88em;
 }
-/* selected node highlight */
+/* selected node highlight — Notion-style soft blue fill + a matching box-shadow
+   spread that pads it a few px past the block edges, so it reads as a filled
+   rounded rectangle wrapping the block. Applies to every block type, tables
+   included (the box-shadow ring wraps the table; the fill shows through). */
 .nb-prosemirror .ProseMirror .ProseMirror-selectednode {
-  outline: 2px solid #2c6ce6;
-  outline-offset: 2px;
-  border-radius: 6px;
+  background: rgba(44, 108, 230, 0.13);
+  border-radius: 4px;
+  box-shadow: 0 0 0 4px rgba(44, 108, 230, 0.13);
+  transition:
+    background 0.12s ease,
+    box-shadow 0.12s ease;
 }
 /* divider (inserted from the slash menu) */
 .nb-prosemirror .ProseMirror hr {
@@ -6719,7 +6894,8 @@ button {
   margin: 1.2em 0;
 }
 .nb-prosemirror .ProseMirror hr.ProseMirror-selectednode {
-  outline: none;
+  background: none;
+  box-shadow: none;
   border-top-color: var(--accent-bg);
 }
 
@@ -6782,10 +6958,35 @@ button {
   color: var(--text-3);
 }
 
-/* ── block drag handle (Notion-style grip in the left margin) ──────────────── */
+/* ── block gutter controls (delete X + drag grip, in the left margin) ──────── */
 .nb-drag-handle {
-  /* nudge the grip a bit further from the block's left edge */
-  margin-left: -10px;
+  /* holds the X + grip side by side. The RIGHTMOST button (grip) must overlap
+     the block's left edge — like the old single grip did — so moving the pointer
+     from the block onto the handle never crosses a dead gap that hides it.
+     cluster = 20 (del) + 1 (gap) + 20 (grip) = 41px; grip's right lands ~+10
+     into the block at margin-left: -31px. */
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: -31px;
+}
+/* one-click delete — muted until hovered, then red (destructive; undo is the
+   safety net). Only visible while the handle is (i.e. on block hover). */
+.nb-drag-del {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 24px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.nb-drag-del:hover {
+  background: rgba(212, 76, 71, 0.12);
+  color: #d44c47;
 }
 .nb-drag-grip {
   display: flex;
@@ -6813,9 +7014,15 @@ body.nb-block-dragging * {
 }
 .nb-drop-indicator {
   position: absolute;
-  height: 3px;
+  height: 4px;
   border-radius: 2px;
-  background: var(--accent-bg);
+  background: rgba(
+    44,
+    108,
+    230,
+    0.55
+  ); /* midway between the faint --accent-bg
+                          (10%) tint and the too-heavy solid #2c6ce6 */
   pointer-events: none;
   z-index: 60;
 }
@@ -6823,7 +7030,7 @@ body.nb-block-dragging * {
 /* ── syntax-highlighted code block (lowlight, Notion-style) ────────────────── */
 .nb-prosemirror .ProseMirror .cb-card {
   position: relative;
-  margin: 0.7em 0;
+  margin: 0.95em 0;
   border: none;
   border-radius: 6px;
   background: var(--panel-bg-2);
@@ -6936,7 +7143,7 @@ body.nb-block-dragging * {
   border: none;
   border-radius: 0;
   background: transparent;
-  padding: 0.75em 1em;
+  padding: 1.25em 1em;
   font-family: var(--mono-font);
   font-size: 12.5px;
   line-height: 1.6;

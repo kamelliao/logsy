@@ -18,6 +18,7 @@ import {
   Quote,
   SquareCode,
   Minus,
+  Table as TableIcon,
   type LucideIcon,
 } from "lucide-react";
 
@@ -91,6 +92,19 @@ const ITEMS: SlashItem[] = [
     icon: SquareCode,
     keywords: ["code", "pre"],
     run: (e, r) => e.chain().focus().deleteRange(r).toggleCodeBlock().run(),
+  },
+  {
+    title: "Table",
+    hint: "3×3 grid with header row",
+    icon: TableIcon,
+    keywords: ["grid", "table", "biao"],
+    run: (e, r) =>
+      e
+        .chain()
+        .focus()
+        .deleteRange(r)
+        .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+        .run(),
   },
   {
     title: "Divider",
@@ -196,10 +210,15 @@ const SlashMenu = forwardRef<SlashMenuHandle, SlashMenuProps>(
 
 function positionMenu(el: HTMLElement, rect: DOMRect | null) {
   if (!rect) return;
-  const menuH = el.offsetHeight || 320;
+  const gap = 6;
+  // Pin the menu's BOTTOM edge just above the caret and let it grow UPWARD.
+  // Anchoring via `bottom` is height-independent, so it stays above the caret
+  // even before the (async-rendered) menu has measured — measuring the height
+  // and setting `top` raced the render and let the menu cover the block below.
   const menuW = el.offsetWidth || 240;
-  const below = rect.bottom + 4 + menuH <= window.innerHeight;
-  el.style.top = `${below ? rect.bottom + 4 : Math.max(4, rect.top - 4 - menuH)}px`;
+  el.style.top = "auto";
+  el.style.bottom = `${window.innerHeight - rect.top + gap}px`;
+  el.style.maxHeight = `${Math.max(120, rect.top - gap - 4)}px`;
   el.style.left = `${Math.min(rect.left, window.innerWidth - menuW - 8)}px`;
 }
 

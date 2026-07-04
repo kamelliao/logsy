@@ -14,6 +14,7 @@ import {
   Quote,
   Code,
   SquareCode,
+  Table as TableIcon,
   Undo2,
   Redo2,
   FileCode2,
@@ -22,6 +23,11 @@ import {
   Highlighter,
   Eraser,
   GripVertical,
+  X,
+  ArrowLeftToLine,
+  ArrowRightToLine,
+  ArrowUpToLine,
+  ArrowDownToLine,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
 import { invoke } from "@tauri-apps/api/core";
@@ -69,29 +75,29 @@ function plExec(cmd: string, value?: string) {
 // ── Color palettes (Notion-style) ────────────────────────────────────────────
 
 const TEXT_PALETTE = [
-  { label: "預設", value: null },
-  { label: "灰色", value: "#787774" },
-  { label: "棕色", value: "#9f6b53" },
-  { label: "橘色", value: "#d9730d" },
-  { label: "黃色", value: "#cb912f" },
-  { label: "綠色", value: "#448361" },
-  { label: "藍色", value: "#337ea9" },
-  { label: "紫色", value: "#9065b0" },
-  { label: "粉紅", value: "#c14f8a" },
-  { label: "紅色", value: "#d44c47" },
+  { label: "Default", value: null },
+  { label: "Gray", value: "#787774" },
+  { label: "Brown", value: "#9f6b53" },
+  { label: "Orange", value: "#d9730d" },
+  { label: "Yellow", value: "#cb912f" },
+  { label: "Green", value: "#448361" },
+  { label: "Blue", value: "#337ea9" },
+  { label: "Purple", value: "#9065b0" },
+  { label: "Pink", value: "#c14f8a" },
+  { label: "Red", value: "#d44c47" },
 ];
 
 const BG_PALETTE = [
-  { label: "預設", value: null },
-  { label: "灰色背景", value: "#f1f1ef" },
-  { label: "棕色背景", value: "#f4eeee" },
-  { label: "橘色背景", value: "#fbecdd" },
-  { label: "黃色背景", value: "#fbf3db" },
-  { label: "綠色背景", value: "#edf3ec" },
-  { label: "藍色背景", value: "#e7f3f8" },
-  { label: "紫色背景", value: "#f6f3f9" },
-  { label: "粉紅背景", value: "#faf1f5" },
-  { label: "紅色背景", value: "#fdebec" },
+  { label: "Default", value: null },
+  { label: "Gray", value: "#f1f1ef" },
+  { label: "Brown", value: "#f4eeee" },
+  { label: "Orange", value: "#fbecdd" },
+  { label: "Yellow", value: "#fbf3db" },
+  { label: "Green", value: "#edf3ec" },
+  { label: "Blue", value: "#e7f3f8" },
+  { label: "Purple", value: "#f6f3f9" },
+  { label: "Pink", value: "#faf1f5" },
+  { label: "Red", value: "#fdebec" },
 ];
 
 function TextColorBtn({ editor }: { editor: Editor }) {
@@ -133,7 +139,7 @@ function TextColorBtn({ editor }: { editor: Editor }) {
     <div ref={wrapRef} className="nb-palette-wrap">
       <button
         className="nb-tbtn"
-        title="文字顏色"
+        title="Text color"
         onMouseDown={(e) => {
           e.preventDefault();
           const sel = window.getSelection();
@@ -142,13 +148,11 @@ function TextColorBtn({ editor }: { editor: Editor }) {
         }}
         onClick={() => setOpen((o) => !o)}
       >
-        <span className="nb-color-a" style={{ color: active ?? undefined }}>
-          A
-        </span>
+        <Type size={14} style={active ? { color: active } : undefined} />
       </button>
       {open && (
         <div className="nb-palette-panel">
-          <p className="nb-palette-label">文字顏色</p>
+          <p className="nb-palette-label">Text color</p>
           <div className="nb-palette-grid">
             {TEXT_PALETTE.map(({ label, value }) => (
               <button
@@ -204,7 +208,7 @@ function BgColorBtn({ editor }: { editor: Editor }) {
     <div ref={wrapRef} className="nb-palette-wrap">
       <button
         className="nb-tbtn"
-        title="背景顏色"
+        title="Background color"
         onMouseDown={(e) => {
           e.preventDefault();
           const sel = window.getSelection();
@@ -217,7 +221,7 @@ function BgColorBtn({ editor }: { editor: Editor }) {
       </button>
       {open && (
         <div className="nb-palette-panel">
-          <p className="nb-palette-label">背景顏色</p>
+          <p className="nb-palette-label">Background color</p>
           <div className="nb-palette-grid">
             {BG_PALETTE.map(({ label, value }) => (
               <button
@@ -303,10 +307,12 @@ async function exportHTML(editor: Editor, title: string) {
   h1,h2,h3{line-height:1.3}
   figure{margin:1.5rem 0}
   figure img{max-width:100%;border:1px solid #ddd;border-radius:6px}
+  img{max-width:100%;height:auto;border:1px solid #ddd;border-radius:6px;display:block;margin:.8rem 0}
   figcaption{font-size:.85rem;color:#666;margin-top:.4rem}
+  .tableWrapper{overflow-x:auto;margin:1rem 0}
   table{border-collapse:collapse;width:100%}
-  td,th{border:1px solid #ccc;padding:4px 8px;font-size:.85rem}
-  th{background:#f5f5f5;font-weight:600}
+  td,th{border:1px solid #ccc;padding:6px 9px;font-size:.85rem;vertical-align:top}
+  th{background:#f5f5f5;font-weight:600;text-align:left}
   pre{background:#f6f8fa;padding:1rem;border-radius:6px;overflow-x:auto;font-family:ui-monospace,monospace;font-size:.85rem}
   pre code{background:none;padding:0}
   blockquote{border-left:3px solid #ccc;margin:0;padding-left:1rem;color:#555}
@@ -466,7 +472,7 @@ function Toolbar({
       <TextColorBtn editor={editor} />
       <BgColorBtn editor={editor} />
       <ToolbarBtn
-        title="移除 Styling"
+        title="Clear formatting"
         onClick={() =>
           selectionInPL()
             ? plExec("removeFormat")
@@ -529,6 +535,19 @@ function Toolbar({
       >
         <SquareCode size={14} />
       </ToolbarBtn>
+      <ToolbarBtn
+        title="Insert table"
+        onClick={() => {
+          if (selectionInPL()) return;
+          editor
+            .chain()
+            .focus()
+            .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
+            .run();
+        }}
+      >
+        <TableIcon size={14} />
+      </ToolbarBtn>
       <div className="nb-tsep" />
       <ToolbarBtn
         title="Undo (Ctrl+Z)"
@@ -581,15 +600,15 @@ function FloatingBubble({ editor }: { editor: Editor }) {
   const isPLRef = useRef(false);
 
   const syncPos = useCallback(() => {
-    // An atom embed (timeline/compare card) selects as a ProseMirror
-    // NodeSelection — its DOM anchor is the .ProseMirror container, not the
-    // card, so a `.closest(".tc-card")` test misses it. Guard on the PM
-    // selection instead. (pinnedLines is also an atom, but its inner pl-body
-    // stays text-editable, so we still want the bubble there.)
+    // Clicking a block's drag grip selects it as a ProseMirror NodeSelection.
+    // The inline-formatting bubble only makes sense for a plain text block, so
+    // hide it for a NodeSelection of anything else (image, table, code block,
+    // divider, cards…). (pinnedLines is an atom too, but its inner pl-body stays
+    // text-editable, so a text-range selection there still gets the bubble.)
     const psel = editor.state.selection;
     if (psel instanceof NodeSelection) {
       const name = psel.node.type.name;
-      if (name === "timelineCard" || name === "compareCard") {
+      if (name !== "paragraph" && name !== "heading") {
         setAnchor(null);
         setColorOpen(null);
         return;
@@ -743,14 +762,14 @@ function FloatingBubble({ editor }: { editor: Editor }) {
       <div className="nb-bpalette-wrap">
         <button
           className="nb-bbtn"
-          title="文字顏色"
+          title="Text color"
           onClick={() => setColorOpen((o) => (o === "text" ? null : "text"))}
         >
           <Type size={12} />
         </button>
         {colorOpen === "text" && (
           <div className="nb-bpalette">
-            <p className="nb-palette-label">文字顏色</p>
+            <p className="nb-palette-label">Text color</p>
             <div className="nb-palette-grid">
               {TEXT_PALETTE.map(({ label, value }) => (
                 <button
@@ -772,14 +791,14 @@ function FloatingBubble({ editor }: { editor: Editor }) {
       <div className="nb-bpalette-wrap">
         <button
           className="nb-bbtn"
-          title="背景顏色"
+          title="Background color"
           onClick={() => setColorOpen((o) => (o === "bg" ? null : "bg"))}
         >
           <Highlighter size={12} />
         </button>
         {colorOpen === "bg" && (
           <div className="nb-bpalette">
-            <p className="nb-palette-label">背景顏色</p>
+            <p className="nb-palette-label">Background color</p>
             <div className="nb-palette-grid">
               {BG_PALETTE.map(({ label, value }) => (
                 <button
@@ -797,7 +816,7 @@ function FloatingBubble({ editor }: { editor: Editor }) {
       <div className="nb-bsep" />
       <button
         className="nb-bbtn"
-        title="移除 Styling"
+        title="Clear formatting"
         onClick={() => {
           if (isPLRef.current && savedRange.current) {
             restoreRange(savedRange.current);
@@ -831,6 +850,37 @@ function useBlockDrag(editor: Editor) {
     [],
   );
 
+  // A click (no drag) on the grip selects the whole block as a NodeSelection
+  // (the blue rect) AND focuses the editor, so native Ctrl+C copies it through
+  // ProseMirror's own clipboard serializer (perfect paste round-trip).
+  const selectBlock = useCallback(
+    (pos: number) => {
+      const view = editor.view;
+      const node = view.state.doc.nodeAt(pos);
+      if (!node) return;
+      try {
+        view.dispatch(
+          view.state.tr.setSelection(NodeSelection.create(view.state.doc, pos)),
+        );
+      } catch {
+        return; // pos no longer selectable (doc changed) — skip
+      }
+      view.focus();
+    },
+    [editor],
+  );
+
+  // Delete the block under the drag handle (the gutter X button).
+  const deleteHovered = useCallback(() => {
+    const src = hovered.current;
+    if (!src) return;
+    const view = editor.view;
+    const node = view.state.doc.nodeAt(src.pos);
+    if (node)
+      view.dispatch(view.state.tr.delete(src.pos, src.pos + node.nodeSize));
+    view.focus();
+  }, [editor]);
+
   const startDrag = useCallback(
     (e: React.PointerEvent) => {
       const src = hovered.current;
@@ -853,7 +903,13 @@ function useBlockDrag(editor: Editor) {
         if (!moved && Math.abs(ev.clientY - startY) < 4) return; // click, not drag
         moved = true;
         document.body.classList.add("nb-block-dragging");
-        const hit = view.posAtCoords({ left: ev.clientX, top: ev.clientY });
+        // Probe the CONTENT column, not the pointer's X: the grip sits in the
+        // left margin where posAtCoords finds nothing, so a straight up/down
+        // drag along the handle should still resolve a drop row. Only clientY
+        // (vertical) tracks the pointer.
+        const pmRect = view.dom.getBoundingClientRect();
+        const probeX = pmRect.left + pmRect.width / 2;
+        const hit = view.posAtCoords({ left: probeX, top: ev.clientY });
         if (!hit) {
           target = null;
           clearIndicator();
@@ -890,7 +946,12 @@ function useBlockDrag(editor: Editor) {
         window.removeEventListener("pointerup", onUp);
         document.body.classList.remove("nb-block-dragging");
         clearIndicator();
-        if (!moved || !target) return;
+        if (!moved) {
+          // No drag: treat as a click — select the block (enables Ctrl+C).
+          selectBlock(src.pos);
+          return;
+        }
+        if (!target) return;
         const state = view.state;
         const node = state.doc.nodeAt(src.pos);
         const targetNode = state.doc.nodeAt(target.pos);
@@ -910,10 +971,147 @@ function useBlockDrag(editor: Editor) {
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [editor],
+    [editor, selectBlock],
   );
 
-  return { onNodeChange, startDrag };
+  return { onNodeChange, startDrag, deleteHovered };
+}
+
+// ── table toolbar (add / remove rows & columns) ──────────────────────────────
+// A floating bar pinned above the table the caret is in. prosemirror-tables
+// gives us the commands (addRowAfter etc.); this surfaces them since there is
+// no other affordance to grow a table.
+
+function findTableRect(editor: Editor): DOMRect | null {
+  if (!editor.isActive("table")) return null;
+  const { $from } = editor.state.selection;
+  for (let d = $from.depth; d > 0; d--) {
+    if ($from.node(d).type.name === "table") {
+      const dom = editor.view.nodeDOM($from.before(d));
+      const el =
+        dom instanceof HTMLElement
+          ? (dom.closest(".tableWrapper") ?? dom)
+          : null;
+      return el ? el.getBoundingClientRect() : null;
+    }
+  }
+  return null;
+}
+
+// Delete-row glyph = the svgrepo "Edit / Delete_Row" path (an open rounded rect
+// = a row, + a minus at bottom-right). Delete-column is the same path transposed
+// (x↔y) into a portrait column with the minus on its right. currentColor →
+// they redden on hover.
+function DeleteRowIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M14 16H20M21 10V9C21 7.89543 20.1046 7 19 7H5C3.89543 7 3 7.89543 3 9V11C3 12.1046 3.89543 13 5 13H11" />
+    </svg>
+  );
+}
+function DeleteColumnIcon({ size = 15 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <path d="M16 14V20M10 21H9C7.89543 21 7 20.1046 7 19V5C7 3.89543 7.89543 3 9 3H11C12.1046 3 13 3.89543 13 5V11" />
+    </svg>
+  );
+}
+
+function TableToolbar({ editor }: { editor: Editor }) {
+  const [rect, setRect] = useState<DOMRect | null>(null);
+
+  useEffect(() => {
+    const sync = () => setRect(findTableRect(editor));
+    editor.on("selectionUpdate", sync);
+    editor.on("transaction", sync);
+    window.addEventListener("scroll", sync, true);
+    window.addEventListener("resize", sync);
+    return () => {
+      editor.off("selectionUpdate", sync);
+      editor.off("transaction", sync);
+      window.removeEventListener("scroll", sync, true);
+      window.removeEventListener("resize", sync);
+    };
+  }, [editor]);
+
+  if (!rect) return null;
+
+  const run = (fn: (e: Editor) => void) => (ev: React.MouseEvent) => {
+    ev.preventDefault();
+    fn(editor);
+  };
+
+  return createPortal(
+    <div
+      className="nb-table-toolbar"
+      style={{ top: rect.top - 38, left: rect.left }}
+      onMouseDown={(e) => e.preventDefault()} // keep the table selection
+    >
+      <button
+        className="nb-ttbtn"
+        title="Insert column left"
+        onClick={run((e) => e.chain().focus().addColumnBefore().run())}
+      >
+        <ArrowLeftToLine size={15} />
+      </button>
+      <button
+        className="nb-ttbtn"
+        title="Insert column right"
+        onClick={run((e) => e.chain().focus().addColumnAfter().run())}
+      >
+        <ArrowRightToLine size={15} />
+      </button>
+      <span className="nb-ttsep" />
+      <button
+        className="nb-ttbtn"
+        title="Insert row above"
+        onClick={run((e) => e.chain().focus().addRowBefore().run())}
+      >
+        <ArrowUpToLine size={15} />
+      </button>
+      <button
+        className="nb-ttbtn"
+        title="Insert row below"
+        onClick={run((e) => e.chain().focus().addRowAfter().run())}
+      >
+        <ArrowDownToLine size={15} />
+      </button>
+      <span className="nb-ttsep" />
+      <button
+        className="nb-ttbtn is-danger"
+        title="Delete row"
+        onClick={run((e) => e.chain().focus().deleteRow().run())}
+      >
+        <DeleteRowIcon size={15} />
+      </button>
+      <button
+        className="nb-ttbtn is-danger"
+        title="Delete column"
+        onClick={run((e) => e.chain().focus().deleteColumn().run())}
+      >
+        <DeleteColumnIcon size={15} />
+      </button>
+    </div>,
+    document.body,
+  );
 }
 
 // ── page title (Notion-style) ────────────────────────────────────────────────
@@ -970,7 +1168,7 @@ function NoteEditorInner({
   editor: Editor;
   onGetTitle: () => string;
 }) {
-  const { onNodeChange, startDrag } = useBlockDrag(editor);
+  const { onNodeChange, startDrag, deleteHovered } = useBlockDrag(editor);
 
   return (
     <div className="nb-editor-wrap">
@@ -978,12 +1176,21 @@ function NoteEditorInner({
       <div className="nb-content">
         <NotebookTitle editor={editor} />
         <EditorContent editor={editor} className="nb-prosemirror" />
-        {/* Notion-style block grip: hover a block's left edge to grab it. */}
+        {/* Gutter controls: an X to delete the block + a grip to drag it (click
+            the grip to select the block, which enables Ctrl+C copy). */}
         <DragHandle
           editor={editor}
           className="nb-drag-handle"
           onNodeChange={onNodeChange}
         >
+          <button
+            className="nb-drag-del"
+            title="Delete block"
+            onPointerDown={(ev) => ev.preventDefault()} // don't blur/steal focus
+            onClick={deleteHovered}
+          >
+            <X size={14} />
+          </button>
           <div
             className="nb-drag-grip"
             onPointerDown={startDrag}
@@ -998,6 +1205,7 @@ function NoteEditorInner({
           </div>
         </DragHandle>
       </div>
+      <TableToolbar editor={editor} />
       <FloatingBubble editor={editor} />
     </div>
   );
