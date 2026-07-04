@@ -942,13 +942,38 @@ function useBlockDrag(editor: Editor) {
         const rect = dom.getBoundingClientRect();
         const before = ev.clientY < rect.top + rect.height / 2;
         target = { pos: blockPos, before };
+        // "Insert after A" and "insert before B" are the SAME slot (their doc
+        // positions are equal). Draw one line centred in the inter-block gap so
+        // both sides of the midline resolve to the identical y — no duplicate
+        // top/bottom lines flickering across the boundary. Falls back to the
+        // block edge at the doc's very start / end (no neighbour to average).
+        const $b = view.state.doc.resolve(blockPos);
+        let lineY: number;
+        if (before) {
+          const prev = $b.nodeBefore;
+          const prevDom = prev
+            ? (view.nodeDOM(blockPos - prev.nodeSize) as HTMLElement | null)
+            : null;
+          const prevBottom = prevDom?.getBoundingClientRect().bottom;
+          lineY =
+            prevBottom !== undefined ? (prevBottom + rect.top) / 2 : rect.top;
+        } else {
+          const nextPos = blockPos + node.nodeSize;
+          const nextNode = view.state.doc.nodeAt(nextPos);
+          const nextDom = nextNode
+            ? (view.nodeDOM(nextPos) as HTMLElement | null)
+            : null;
+          const nextTop = nextDom?.getBoundingClientRect().top;
+          lineY =
+            nextTop !== undefined ? (rect.bottom + nextTop) / 2 : rect.bottom;
+        }
         if (!indicator) {
           indicator = document.createElement("div");
           indicator.className = "nb-drop-indicator";
           container.appendChild(indicator);
         }
         const cRect = container.getBoundingClientRect();
-        indicator.style.top = `${(before ? rect.top : rect.bottom) - cRect.top + container.scrollTop - 1}px`;
+        indicator.style.top = `${lineY - cRect.top + container.scrollTop - 1}px`;
         indicator.style.left = `${rect.left - cRect.left}px`;
         indicator.style.width = `${rect.width}px`;
       };
