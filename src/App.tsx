@@ -71,6 +71,8 @@ export function App() {
   }, []);
   const editing = useStore((s) => s.editing);
   const setEditing = useStore((s) => s.setEditing);
+  // Store-driven loading overlay for reading a filter/pack file from disk.
+  const loadingLabel = useStore((s) => s.loadingLabel);
   // A request to scroll+flash a filter row (e.g. clicking a Compare group header).
   // The bumping nonce re-triggers the flash even when the same id is re-requested.
   const [filterFlash, setFilterFlash] = useState<{
@@ -684,6 +686,7 @@ export function App() {
 
         <Overlays
           busy={busy}
+          loadingLabel={loadingLabel}
           isSwitchingFile={isSwitchingFile}
           dragOver={dragOver}
         />

@@ -1406,6 +1406,9 @@ export function FilterPanel({
   const onSavePackFromSelection = useStore((s) => s.savePackFromSelection);
   const onSavePackFromSet = useStore((s) => s.savePackFromSet);
   const onAddFiltersToPack = useStore((s) => s.addFiltersToPack);
+  const onOverwritePackFromSelection = useStore(
+    (s) => s.overwritePackFromSelection,
+  );
   const packs = useStore((s) => s.doc.filterPacks ?? NO_PACKS);
   const flashFilterIds = useStore((s) => s.flashFilterIds);
   const onDuplicateFilter = useStore((s) => s.duplicateFilter);
@@ -1502,6 +1505,9 @@ export function FilterPanel({
   // When the dock is narrow, wheel events over the toolbar / tabs have no scrollable
   // ancestor — forward them to the filter list so the list still scrolls.
   const panelRef = useRef<HTMLDivElement>(null);
+  // Whether the pointer is over the panel — scopes the Ctrl/Cmd+A "select all
+  // filters" shortcut (see below) to the filter panel without stealing focus.
+  const hoverRef = useRef(false);
   useEffect(() => {
     const panel = panelRef.current;
     if (!panel) return;
@@ -1593,6 +1599,37 @@ export function FilterPanel({
   const filters = set.filters;
   const groups = set.groups;
   const searching = !!q;
+
+  // Ctrl/Cmd+A selects every filter in the set — but only when the panel is the
+  // user's context (pointer over it, or focus inside it), so it doesn't hijack
+  // select-all elsewhere. Typing in a field keeps the native text select-all.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const hit =
+        (e.ctrlKey || e.metaKey) &&
+        !e.shiftKey &&
+        !e.altKey &&
+        (e.key === "a" || e.key === "A");
+      if (!hit) return;
+      const ae = document.activeElement as HTMLElement | null;
+      const focusWithin = !!ae && !!panelRef.current?.contains(ae);
+      if (!hoverRef.current && !focusWithin) return;
+      if (
+        ae &&
+        (ae.tagName === "INPUT" ||
+          ae.tagName === "TEXTAREA" ||
+          ae.isContentEditable)
+      )
+        return; // let the field's own select-all run
+      if (filters.length === 0) return;
+      e.preventDefault();
+      setSelectMode(true);
+      setSelected(new Set(filters.map((f) => f.id)));
+      lastClickedRef.current = null;
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [filters]);
   // Match the pattern OR the description, so filters named only by their
   // description are still findable.
   const filtered = q
@@ -2030,7 +2067,13 @@ export function FilterPanel({
   }
 
   return (
-    <div className="filter-panel" style={style} ref={panelRef}>
+    <div
+      className="filter-panel"
+      style={style}
+      ref={panelRef}
+      onPointerEnter={() => (hoverRef.current = true)}
+      onPointerLeave={() => (hoverRef.current = false)}
+    >
       {/* group tabs */}
       <DndContext
         sensors={sensors}
@@ -2272,10 +2315,19 @@ export function FilterPanel({
           <AddToPackCombobox
             packs={packs}
             disabled={selectedCount === 0}
-            onPick={(packId) => {
+            onAppend={(packId) => {
               onAddFiltersToPack(packId, [...selected]);
               exitSelect();
               setPacksOpen(true); // surface the pack the filters just landed in
+            }}
+            onOverwrite={(packId) => {
+              // Snapshot the selection — the confirm dialog is async.
+              const ids = [...selected];
+              void onOverwritePackFromSelection(packId, ids).then((ok) => {
+                if (!ok) return; // user cancelled the confirm — stay in select mode
+                exitSelect();
+                setPacksOpen(true); // surface the overwritten pack
+              });
             }}
             onCreateNew={() => setSavePackOpen(true)}
           />

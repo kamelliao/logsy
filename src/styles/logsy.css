@@ -4642,6 +4642,43 @@ button {
   color: var(--accent);
   display: inline-flex;
 }
+/* Per-row Append/Overwrite actions, revealed on hover or keyboard highlight so
+   the row stays clean at rest. `margin-left: auto` pins them to the trailing
+   edge; the row's default click/Enter already appends, so these are the explicit
+   restatement plus the destructive alternative. */
+.grpc-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.08s ease;
+}
+.grpc-item:hover .grpc-actions,
+.grpc-item[data-highlighted] .grpc-actions {
+  opacity: 1;
+}
+.grpc-act {
+  padding: 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--app-bg);
+  color: var(--text-2);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.6;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.grpc-act:hover {
+  background: var(--row-hover);
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.grpc-act-danger:hover {
+  background: color-mix(in srgb, var(--destructive) 14%, transparent);
+  color: var(--destructive);
+  border-color: color-mix(in srgb, var(--destructive) 45%, transparent);
+}
 
 .color-preview {
   margin-top: 14px;

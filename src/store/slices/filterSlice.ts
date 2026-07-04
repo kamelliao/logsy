@@ -3,6 +3,7 @@ import { save, open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
 import type { Filter, FilterSet, FilterLayout } from "@/types";
 import { uid, makeFilter, normalizeState } from "@/lib/defaults";
+import { baseName } from "@/lib/path";
 import { tokenize, buildPattern } from "@/lib/generalize";
 import {
   buildGroupFromImport,
@@ -468,6 +469,9 @@ export function createFilterActions(
       let text: string;
       // read_text_file returns { text, encoding } — pull the text out (passing the
       // whole object to JSON.parse below would silently fail the load).
+      // Show the loading overlay: the read can be slow (a large filter file, or
+      // one on a network share), matching the log-file open feedback.
+      get().setLoadingLabel(baseName(path));
       try {
         text = (
           await invoke<{ text: string; encoding: string }>("read_text_file", {
@@ -477,6 +481,8 @@ export function createFilterActions(
       } catch (e) {
         toast.error("Could not read file: " + String(e));
         return;
+      } finally {
+        get().setLoadingLabel(null);
       }
       let built: ReturnType<typeof buildGroupFromImport> = null;
       let foreign = false; // a TAT import isn't a Logsy file, so don't make it the save target
