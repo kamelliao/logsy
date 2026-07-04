@@ -6968,7 +6968,7 @@ body.nb-img-resizing * {
   display: flex;
   align-items: center;
   gap: 1px;
-  margin-left: -31px;
+  margin-left: -25px;
 }
 /* one-click delete — muted until hovered, then red (destructive; undo is the
    safety net). Only visible while the handle is (i.e. on block hover). */
