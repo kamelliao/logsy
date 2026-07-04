@@ -6495,6 +6495,30 @@ button {
   height: 100%;
   overflow: hidden;
 }
+/* Align every scrollbar inside the notebook (content column, table wrappers,
+   code blocks, compare cards, …) — and the slash menu, which is portaled to
+   <body> — with the app-wide `.scroll` style instead of the browser default. */
+.nb-editor-wrap ::-webkit-scrollbar,
+.nb-slash-menu::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+.nb-editor-wrap ::-webkit-scrollbar-thumb,
+.nb-slash-menu::-webkit-scrollbar-thumb {
+  background: #cdd1d6;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 8px;
+}
+.nb-editor-wrap ::-webkit-scrollbar-thumb:hover,
+.nb-slash-menu::-webkit-scrollbar-thumb:hover {
+  background: #b4b9c0;
+  background-clip: padding-box;
+}
+.nb-editor-wrap ::-webkit-scrollbar-track,
+.nb-slash-menu::-webkit-scrollbar-track {
+  background: transparent;
+}
 .nb-content {
   flex: 1;
   overflow-y: auto;
@@ -6600,10 +6624,27 @@ button {
   margin: 0.15em 0;
 }
 .nb-prosemirror .ProseMirror blockquote {
-  border-left: 3px solid var(--border-strong);
+  position: relative;
   margin: 0.9em 0;
   padding: 0.1em 1em;
   color: var(--text-2);
+}
+/* Gray bar as a square ::before rather than a border-left: when the block is
+   node-selected the parent gets border-radius (the blue highlight rect), which
+   would otherwise round the border's top/bottom ends. A child box ignores the
+   parent's border-radius, so the bar stays square. */
+.nb-prosemirror .ProseMirror blockquote::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--border-strong);
+}
+/* bold: heavier than the browser default (700) so it reads clearly bolder */
+.nb-prosemirror .ProseMirror strong {
+  font-weight: 800;
 }
 
 /* ── tables (prosemirror-tables, Notion-style) ─────────────────────────────── */
@@ -6711,6 +6752,53 @@ button {
   margin: 3px 2px;
   background: var(--border);
 }
+/* cell-background color picker (popover of swatches) */
+.nb-ttcolor {
+  position: relative;
+  display: inline-flex;
+}
+.nb-ttswatches {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  padding: 6px;
+  background: var(--app-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop);
+  z-index: 201;
+}
+.nb-ttswatch {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.nb-ttswatch:hover {
+  outline: 2px solid var(--accent-bg);
+  outline-offset: 1px;
+}
+.nb-ttswatch.is-none {
+  position: relative;
+  background: var(--app-bg);
+}
+.nb-ttswatch.is-none::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 1px),
+    #d44c47,
+    transparent calc(50% + 1px)
+  );
+}
 
 /* ── pasted / dropped images (stored inline as base64, resizable) ──────────── */
 .nb-prosemirror .ProseMirror .nb-image-wrap {
@@ -6813,6 +6901,25 @@ body.nb-img-resizing * {
   border: 1px solid var(--border);
   border-radius: 8px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.14);
+  /* pop-in on open. The menu is anchored by its bottom edge and grows upward,
+     so start a few px lower + slightly small and settle up from the caret. */
+  transform-origin: bottom left;
+  animation: nb-slash-pop 0.13s ease-out;
+}
+@keyframes nb-slash-pop {
+  from {
+    opacity: 0;
+    transform: translateY(5px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .nb-slash-menu {
+    animation: none;
+  }
 }
 .nb-slash-item {
   display: flex;
@@ -6872,7 +6979,7 @@ body.nb-img-resizing * {
   display: flex;
   align-items: center;
   gap: 1px;
-  margin-left: -25px;
+  margin-left: -15px;
 }
 /* one-click delete — muted until hovered, then red (destructive; undo is the
    safety net). Only visible while the handle is (i.e. on block hover). */

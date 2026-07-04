@@ -9,12 +9,58 @@ import {
   type ReactNode,
 } from "react";
 import { useEditor, type Editor } from "@tiptap/react";
+import { Extension } from "@tiptap/core";
 import StarterKit from "@tiptap/starter-kit";
 import Placeholder from "@tiptap/extension-placeholder";
 import { TextStyle } from "@tiptap/extension-text-style";
 import { Color } from "@tiptap/extension-color";
 import { Highlight } from "@tiptap/extension-highlight";
-import { TableKit } from "@tiptap/extension-table";
+import { TableKit, TableCell, TableHeader } from "@tiptap/extension-table";
+
+// Add a `backgroundColor` attribute to table cells/headers so a cell can be
+// tinted (prosemirror-tables' `setCellAttribute` writes it; it renders as an
+// inline style). TableKit's bundled cell/header are disabled below in favour of
+// these extended nodes.
+const cellBackground = {
+  backgroundColor: {
+    default: null as string | null,
+    parseHTML: (el: HTMLElement) =>
+      el.style.backgroundColor || el.getAttribute("data-cell-bg") || null,
+    renderHTML: (attrs: Record<string, unknown>) => {
+      const bg = attrs.backgroundColor as string | null;
+      return bg ? { style: `background-color:${bg}`, "data-cell-bg": bg } : {};
+    },
+  },
+};
+
+const TableCellBg = TableCell.extend({
+  addAttributes() {
+    return { ...this.parent?.(), ...cellBackground };
+  },
+});
+
+const TableHeaderBg = TableHeader.extend({
+  addAttributes() {
+    return { ...this.parent?.(), ...cellBackground };
+  },
+});
+
+// In a blockquote, Enter exits the quote and starts a fresh block below (split
+// the paragraph at the cursor, then lift the new part out of the quote).
+// Shift+Enter is left to the default hard break — a new line still inside the
+// quote. High priority so this runs before the core's default Enter handler.
+const BlockquoteExit = Extension.create({
+  name: "blockquoteExit",
+  priority: 1000,
+  addKeyboardShortcuts() {
+    return {
+      Enter: () => {
+        if (!this.editor.isActive("blockquote")) return false;
+        return this.editor.chain().splitBlock().lift("paragraph").run();
+      },
+    };
+  },
+});
 import { PinnedLinesNode } from "@/components/notebook/PinnedLinesNode";
 import { ResizableImageNode } from "@/components/notebook/ResizableImageNode";
 import { ImagePaste } from "@/components/notebook/ImagePaste";
@@ -119,7 +165,12 @@ function NotebookEditorManager({ notebookId, onEditor }: ManagerProps) {
       Highlight.configure({ multicolor: true }),
       TableKit.configure({
         table: { resizable: true, HTMLAttributes: { class: "nb-table" } },
+        tableCell: false,
+        tableHeader: false,
       }),
+      TableCellBg,
+      TableHeaderBg,
+      BlockquoteExit,
       ResizableImageNode.configure({
         allowBase64: true,
         HTMLAttributes: { class: "nb-image" },
