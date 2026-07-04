@@ -1,5 +1,6 @@
+import { useState } from "react";
 import { Combobox } from "@base-ui/react/combobox";
-import { Check, PackagePlus, Search } from "lucide-react";
+import { PackagePlus, Search } from "lucide-react";
 import type { FilterPack } from "@/types";
 import { Button } from "@/components/ui/button";
 
@@ -11,32 +12,47 @@ const NEW = "__new__";
 /**
  * Select-bar "Add to pack" control: a searchable picker over the pack library
  * (so choosing a target stays quick even with many packs), with "Save as new
- * pack…" pinned at the top. Carries no retained value — the trigger always reads
- * "Add to pack"; `onPick` fires for an existing pack, `onCreateNew` for the
- * sentinel.
+ * pack…" pinned at the top.
+ *
+ * Each existing pack row reveals two labeled actions on hover / keyboard focus:
+ * `Append` (also the row's default click / Enter) merges the selection in, while
+ * `Overwrite` replaces the pack's whole contents (the caller confirms first,
+ * since it's destructive). Labeled buttons — rather than a bare icon or a nested
+ * flyout — keep the choice legible without a second popup layer.
  */
 export function AddToPackCombobox({
   packs,
   disabled,
-  onPick,
+  onAppend,
+  onOverwrite,
   onCreateNew,
 }: {
   packs: FilterPack[];
   disabled: boolean;
-  onPick: (packId: string) => void;
+  onAppend: (packId: string) => void;
+  onOverwrite: (packId: string) => void;
   onCreateNew: () => void;
 }) {
+  // Controlled open so the per-row buttons (which don't "select" an item) can
+  // close the popup after firing.
+  const [open, setOpen] = useState(false);
   const labelOf = (id: string) =>
     id === NEW
       ? "Save as new pack…"
       : (packs.find((p) => p.id === id)?.name ?? id);
+  // A row's default activation (click on the name / Enter while highlighted).
+  const activate = (id: string) => {
+    setOpen(false);
+    if (id === NEW) onCreateNew();
+    else onAppend(id);
+  };
   return (
     <Combobox.Root
+      open={open}
+      onOpenChange={setOpen}
       items={[NEW, ...packs.map((p) => p.id)]}
       onValueChange={(v) => {
-        if (typeof v !== "string") return;
-        if (v === NEW) onCreateNew();
-        else onPick(v);
+        if (typeof v === "string") activate(v);
       }}
       itemToStringLabel={labelOf}
     >
@@ -46,7 +62,7 @@ export function AddToPackCombobox({
             size="xs"
             variant="outline"
             disabled={disabled}
-            title="Save the selection as a pack, or add it to an existing one"
+            title="Save the selection as a pack, or append/overwrite an existing one"
           />
         }
       >
@@ -84,11 +100,42 @@ export function AddToPackCombobox({
                       {labelOf(id)}
                     </span>
                   ) : (
-                    <span className="grpc-name">{labelOf(id)}</span>
+                    <>
+                      <span className="grpc-name">{labelOf(id)}</span>
+                      {/* Hover/keyboard-revealed actions. stopPropagation keeps a
+                          button click from also firing the row's default append. */}
+                      <span className="grpc-actions">
+                        <button
+                          type="button"
+                          className="grpc-act"
+                          title={`Append the selection to "${labelOf(id)}"`}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setOpen(false);
+                            onAppend(id);
+                          }}
+                        >
+                          Append
+                        </button>
+                        <button
+                          type="button"
+                          className="grpc-act grpc-act-danger"
+                          title={`Overwrite "${labelOf(id)}" with the selection`}
+                          onPointerDown={(e) => e.stopPropagation()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            setOpen(false);
+                            onOverwrite(id);
+                          }}
+                        >
+                          Overwrite
+                        </button>
+                      </span>
+                    </>
                   )}
-                  <Combobox.ItemIndicator className="grpc-check">
-                    <Check size={14} />
-                  </Combobox.ItemIndicator>
                 </Combobox.Item>
               )}
             </Combobox.List>

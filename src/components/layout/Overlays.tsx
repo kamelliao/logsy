@@ -4,6 +4,8 @@ import type { ReactNode } from "react";
 interface Props {
   // The file currently being read from disk, or null.
   busy: { name: string } | null;
+  // A filter/pack file being read from disk (store-driven), or null.
+  loadingLabel: string | null;
   // True while React computes the view for a freshly selected large file.
   isSwitchingFile: boolean;
   // True while a file is dragged over the window.
@@ -17,6 +19,7 @@ interface Props {
  */
 export function Overlays({
   busy,
+  loadingLabel,
   isSwitchingFile,
   dragOver,
 }: Props): ReactNode {
@@ -32,8 +35,18 @@ export function Overlays({
         </div>
       )}
 
+      {/* loading overlay — shown while a filter/pack file is read from disk */}
+      {loadingLabel && !busy && (
+        <div className="busy-overlay">
+          <div className="busy-card">
+            <div className="busy-spinner" />
+            <div className="busy-text">Loading {loadingLabel}…</div>
+          </div>
+        </div>
+      )}
+
       {/* file-switch overlay — shown while React computes the view for a large file */}
-      {isSwitchingFile && !busy && (
+      {isSwitchingFile && !busy && !loadingLabel && (
         <div className="busy-overlay">
           <div className="busy-card">
             <div className="busy-spinner" />

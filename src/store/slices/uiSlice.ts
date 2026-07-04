@@ -22,6 +22,11 @@ export interface UiSlice {
   packsOpen: boolean;
   setPacksOpen: (v: boolean) => void;
   togglePacks: () => void;
+  /** Label for a store-driven loading overlay (reading a filter/pack file from
+   *  disk), or null when idle. Mirrors useLogFiles' `busy` for the file-open
+   *  overlay, but for actions that live in the store rather than that hook. */
+  loadingLabel: string | null;
+  setLoadingLabel: (v: string | null) => void;
 }
 
 export function createUiSlice(set: StoreSet): UiSlice {
@@ -42,5 +47,7 @@ export function createUiSlice(set: StoreSet): UiSlice {
     packsOpen: false,
     setPacksOpen: (v) => set({ packsOpen: v }),
     togglePacks: () => set((s) => ({ packsOpen: !s.packsOpen })),
+    loadingLabel: null,
+    setLoadingLabel: (v) => set({ loadingLabel: v }),
   };
 }

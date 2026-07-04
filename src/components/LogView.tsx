@@ -239,6 +239,11 @@ export function LogView({
   const scrollRef = useRef<HTMLDivElement>(null);
   const mapCanvasRef = useRef<HTMLCanvasElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
+  // The log-view root + whether the pointer is over it — scopes Ctrl/Cmd+A
+  // "select all lines" to this pane so it doesn't also fire when the user hits
+  // Ctrl+A over another panel (e.g. the filter panel's own select-all).
+  const rootRef = useRef<HTMLDivElement>(null);
+  const hoverRef = useRef(false);
   const [query, setQuery] = useState("");
   // Find options: `.*` treats the query as a regex, `Aa` makes it case-sensitive.
   const [findRegex, setFindRegex] = useState(false);
@@ -1042,7 +1047,13 @@ export function LogView({
       const tag = (e.target as HTMLElement)?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA") return;
       if ((e.ctrlKey || e.metaKey) && (e.key === "a" || e.key === "A")) {
-        // Select every currently-visible line.
+        // Select every currently-visible line — but only when this pane is the
+        // user's context (pointer over it, or focus inside it), so Ctrl+A over
+        // another panel doesn't also sweep the log lines.
+        const ae = document.activeElement as HTMLElement | null;
+        const inPane =
+          hoverRef.current || (!!ae && !!rootRef.current?.contains(ae));
+        if (!inPane) return;
         e.preventDefault();
         setSelectedLines(new Set(visible.map((r) => r.n)));
       } else if ((e.ctrlKey || e.metaKey) && (e.key === "c" || e.key === "C")) {
@@ -1191,6 +1202,9 @@ export function LogView({
   return (
     <div
       className="logview"
+      ref={rootRef}
+      onPointerEnter={() => (hoverRef.current = true)}
+      onPointerLeave={() => (hoverRef.current = false)}
       style={{ ...style, "--log-gut-w": `${gutterW}px` } as CSSProperties}
     >
       {/* header */}
