@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback } from "react";
+import { useRef, useState, useEffect, useCallback, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { EditorContent, useEditorState } from "@tiptap/react";
 import { DragHandle } from "@tiptap/extension-drag-handle-react";
@@ -23,7 +23,8 @@ import {
   Highlighter,
   Eraser,
   GripVertical,
-  X,
+  Plus,
+  Trash2,
   PaintBucket,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -31,6 +32,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { NodeSelection } from "@tiptap/pm/state";
 import { useStore } from "@/store";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+} from "@/components/ui/dropdown-menu";
 import { useNotebookEditor } from "@/context/NotebookContext";
 import { triggerPLSave } from "@/components/notebook/PinnedLinesNode";
 import { lowlight } from "@/components/notebook/lowlight";
@@ -852,8 +858,13 @@ function FloatingBubble({ editor }: { editor: Editor }) {
 // implements the move itself with pointer events: track the hovered block via
 // onNodeChange, and on drag compute the drop slot with posAtCoords.
 
-function useBlockDrag(editor: Editor) {
+function useBlockDrag(editor: Editor, onGripClick: (pos: number) => void) {
   const hovered = useRef<{ pos: number } | null>(null);
+  // The paragraph "+" just added, whose sole content is the optimistic "/" that
+  // opened the slash menu. Remembered so that if the menu is dismissed without
+  // picking a block type (caret moves to another block / editor blurs), we strip
+  // the stray "/" instead of leaving it as literal text.
+  const pendingSlash = useRef<{ paraPos: number } | null>(null);
 
   const onNodeChange = useCallback(
     ({ node, pos }: { node: unknown; pos: number }) => {
@@ -861,6 +872,63 @@ function useBlockDrag(editor: Editor) {
     },
     [],
   );
+
+  // The gutter "+" (Notion-style): drop a fresh empty paragraph right below the
+  // hovered block, scroll it into view, and type a "/" into it so the slash menu
+  // opens immediately — one click to add-and-choose a block.
+  const addBelow = useCallback(() => {
+    const src = hovered.current;
+    if (!src) return;
+    const view = editor.view;
+    const node = view.state.doc.nodeAt(src.pos);
+    if (!node) return;
+    const after = src.pos + node.nodeSize;
+    editor
+      .chain()
+      .insertContentAt(after, { type: "paragraph" })
+      .setTextSelection(after + 1)
+      .insertContent("/")
+      .scrollIntoView()
+      .focus()
+      .run();
+    pendingSlash.current = { paraPos: after };
+  }, [editor]);
+
+  // Strip the optimistic "/" if the slash menu was abandoned. Runs when the
+  // selection moves or the editor blurs: while the menu is live the caret stays
+  // inside that paragraph, so we only clean up once it has left (or on blur).
+  useEffect(() => {
+    const strip = (blurred: boolean) => {
+      const pending = pendingSlash.current;
+      if (!pending) return;
+      const { state } = editor;
+      const node = state.doc.nodeAt(pending.paraPos);
+      // Anything but a lone "/" means a block type was chosen (the slash range
+      // was replaced) or the user typed a query — nothing to undo.
+      if (!node || node.textContent !== "/") {
+        pendingSlash.current = null;
+        return;
+      }
+      const start = pending.paraPos + 1;
+      const end = pending.paraPos + node.nodeSize - 1;
+      const caretInside =
+        state.selection.from >= start && state.selection.to <= end;
+      if (!blurred && caretInside) return; // menu still live — keep waiting
+      pendingSlash.current = null;
+      editor
+        .chain()
+        .deleteRange({ from: start, to: start + 1 })
+        .run();
+    };
+    const onSel = () => strip(false);
+    const onBlur = () => strip(true);
+    editor.on("selectionUpdate", onSel);
+    editor.on("blur", onBlur);
+    return () => {
+      editor.off("selectionUpdate", onSel);
+      editor.off("blur", onBlur);
+    };
+  }, [editor]);
 
   // A click (no drag) on the grip selects the whole block as a NodeSelection
   // (the blue rect) AND focuses the editor, so native Ctrl+C copies it through
@@ -882,16 +950,18 @@ function useBlockDrag(editor: Editor) {
     [editor],
   );
 
-  // Delete the block under the drag handle (the gutter X button).
-  const deleteHovered = useCallback(() => {
-    const src = hovered.current;
-    if (!src) return;
-    const view = editor.view;
-    const node = view.state.doc.nodeAt(src.pos);
-    if (node)
-      view.dispatch(view.state.tr.delete(src.pos, src.pos + node.nodeSize));
-    view.focus();
-  }, [editor]);
+  // Delete the block at a specific pos (the "Delete" item in the grip menu). The
+  // menu snapshots its target pos on open, so it can't drift to another block if
+  // the pointer moves onto a different row before the item is clicked.
+  const deleteAt = useCallback(
+    (pos: number) => {
+      const view = editor.view;
+      const node = view.state.doc.nodeAt(pos);
+      if (node) view.dispatch(view.state.tr.delete(pos, pos + node.nodeSize));
+      view.focus();
+    },
+    [editor],
+  );
 
   const startDrag = useCallback(
     (e: React.PointerEvent) => {
@@ -984,8 +1054,10 @@ function useBlockDrag(editor: Editor) {
         document.body.classList.remove("nb-block-dragging");
         clearIndicator();
         if (!moved) {
-          // No drag: treat as a click — select the block (enables Ctrl+C).
+          // No drag: treat as a click — select the block (enables Ctrl+C) and
+          // open the block's action menu (Delete…) anchored to the grip.
           selectBlock(src.pos);
+          onGripClick(src.pos);
           return;
         }
         if (!target) return;
@@ -1008,10 +1080,10 @@ function useBlockDrag(editor: Editor) {
       window.addEventListener("pointermove", onMove);
       window.addEventListener("pointerup", onUp);
     },
-    [editor, selectBlock],
+    [editor, selectBlock, onGripClick],
   );
 
-  return { onNodeChange, startDrag, deleteHovered };
+  return { onNodeChange, startDrag, addBelow, deleteAt };
 }
 
 // ── table toolbar (add / remove rows & columns) ──────────────────────────────
@@ -1349,7 +1421,30 @@ function NoteEditorInner({
   editor: Editor;
   onGetTitle: () => string;
 }) {
-  const { onNodeChange, startDrag, deleteHovered } = useBlockDrag(editor);
+  // Grip-click opens a small action menu (Delete…). The DragHandle repositions /
+  // hides itself on hover, so anchor the menu to a snapshot of the grip's rect
+  // taken at open time (a virtual element) rather than the live, moving node.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const gripRef = useRef<HTMLDivElement>(null);
+  const menuPosRef = useRef(-1);
+  const anchorRectRef = useRef<DOMRect | null>(null);
+  const menuAnchor = useMemo(
+    () => ({
+      getBoundingClientRect: () => anchorRectRef.current ?? new DOMRect(),
+    }),
+    [],
+  );
+
+  const onGripClick = useCallback((pos: number) => {
+    menuPosRef.current = pos;
+    anchorRectRef.current = gripRef.current?.getBoundingClientRect() ?? null;
+    setMenuOpen(true);
+  }, []);
+
+  const { onNodeChange, startDrag, addBelow, deleteAt } = useBlockDrag(
+    editor,
+    onGripClick,
+  );
 
   return (
     <div className="nb-editor-wrap">
@@ -1357,22 +1452,23 @@ function NoteEditorInner({
       <div className="nb-content">
         <NotebookTitle editor={editor} />
         <EditorContent editor={editor} className="nb-prosemirror" />
-        {/* Gutter controls: an X to delete the block + a grip to drag it (click
-            the grip to select the block, which enables Ctrl+C copy). */}
+        {/* Gutter controls: a "+" to add a block below (opens the slash menu) +
+            a grip to drag the block (click it to select + open the Delete menu). */}
         <DragHandle
           editor={editor}
           className="nb-drag-handle"
           onNodeChange={onNodeChange}
         >
           <button
-            className="nb-drag-del"
-            title="Delete block"
+            className="nb-drag-add"
+            title="Add block below"
             onPointerDown={(ev) => ev.preventDefault()} // don't blur/steal focus
-            onClick={deleteHovered}
+            onClick={addBelow}
           >
-            <X size={14} />
+            <Plus size={14} />
           </button>
           <div
+            ref={gripRef}
             className="nb-drag-grip"
             onPointerDown={startDrag}
             // Kill the plugin's native HTML5 drag: pointer drag is the only
@@ -1385,6 +1481,25 @@ function NoteEditorInner({
             <GripVertical size={15} />
           </div>
         </DragHandle>
+        <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
+          <DropdownMenuContent
+            anchor={menuAnchor}
+            side="left"
+            align="start"
+            sideOffset={4}
+          >
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={() => {
+                if (menuPosRef.current >= 0) deleteAt(menuPosRef.current);
+                setMenuOpen(false);
+              }}
+            >
+              <Trash2 size={14} />
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
       <TableToolbar editor={editor} />
       <FloatingBubble editor={editor} />

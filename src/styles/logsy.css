@@ -6971,19 +6971,19 @@ body.nb-img-resizing * {
 
 /* ── block gutter controls (delete X + drag grip, in the left margin) ──────── */
 .nb-drag-handle {
-  /* holds the X + grip side by side. The RIGHTMOST button (grip) must overlap
+  /* holds the "+" + grip side by side. The RIGHTMOST button (grip) must overlap
      the block's left edge — like the old single grip did — so moving the pointer
      from the block onto the handle never crosses a dead gap that hides it.
-     cluster = 20 (del) + 1 (gap) + 20 (grip) = 41px; grip's right lands ~+10
+     cluster = 20 (add) + 1 (gap) + 20 (grip) = 41px; grip's right lands ~+10
      into the block at margin-left: -31px. */
   display: flex;
   align-items: center;
   gap: 1px;
   margin-left: -15px;
 }
-/* one-click delete — muted until hovered, then red (destructive; undo is the
-   safety net). Only visible while the handle is (i.e. on block hover). */
-.nb-drag-del {
+/* "+" adds a fresh block below and opens the slash menu. Muted until hovered.
+   Only visible while the handle is (i.e. on block hover). */
+.nb-drag-add {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6995,9 +6995,9 @@ body.nb-img-resizing * {
   color: var(--text-3);
   cursor: pointer;
 }
-.nb-drag-del:hover {
-  background: rgba(212, 76, 71, 0.12);
-  color: #d44c47;
+.nb-drag-add:hover {
+  background: var(--row-hover);
+  color: var(--text-2);
 }
 .nb-drag-grip {
   display: flex;
