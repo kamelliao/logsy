@@ -440,6 +440,9 @@ button {
 .sidebar.collapsed .file-lines,
 .sidebar.collapsed .file-x,
 .sidebar.collapsed .new-tab span,
+.sidebar.collapsed .fg-name,
+.sidebar.collapsed .fg-count,
+.sidebar.collapsed .fg-kebab,
 .sidebar.collapsed .settings-row span:not(.gear) {
   display: none;
 }
@@ -447,6 +450,143 @@ button {
 .sidebar.collapsed .new-tab,
 .sidebar.collapsed .settings-row {
   justify-content: center;
+}
+.sidebar.collapsed .fg-header {
+  justify-content: center;
+  padding: 0;
+}
+
+/* ---- File groups (collapsible sidebar sections) ---- */
+.file-group {
+  margin-top: 4px;
+}
+.fg-header {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 4px 0 2px;
+  border-radius: 6px;
+  color: var(--text-3);
+  user-select: none;
+}
+.fg-header:hover {
+  background: #e9ebee;
+}
+.fg-chevron {
+  flex: 0 0 auto;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.fg-chevron:hover {
+  color: var(--text);
+}
+.fg-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.fg-name-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--accent-bg, #2c6ce6);
+  border-radius: 4px;
+  padding: 1px 4px;
+  background: #fff;
+  color: var(--text);
+  outline: none;
+}
+.fg-count {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-3);
+  min-width: 14px;
+  text-align: center;
+}
+.fg-kebab {
+  flex: 0 0 auto;
+  opacity: 0;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: none;
+  background: transparent;
+  color: var(--text-3);
+  border-radius: 4px;
+  cursor: pointer;
+}
+.fg-header:hover .fg-kebab {
+  opacity: 1;
+}
+.fg-kebab:hover {
+  background: #d8dbdf;
+  color: var(--text);
+}
+.fg-menu {
+  position: absolute;
+  top: 24px;
+  right: 2px;
+  z-index: 200;
+}
+.menu-item.on {
+  font-weight: 600;
+}
+/* Drop zones grow a little so an empty group / empty ungrouped area is still a
+   reachable drop target; the highlight shows where a dragged file will land.
+   The body carries a left rail (like the filter group's `.fsection-body`) that
+   descends from under the header chevron to show which files belong together. */
+.fg-body {
+  margin-left: 11px;
+  padding-left: 12px;
+  border-left: 1px solid var(--border);
+  border-radius: 0 6px 6px 0;
+  min-height: 6px;
+}
+.fg-ungrouped {
+  min-height: 4px;
+  margin-top: 4px;
+}
+.fg-body.drop-over,
+.fg-ungrouped.drop-over {
+  background: color-mix(in srgb, var(--accent-bg, #2c6ce6) 12%, transparent);
+  outline: 1px dashed
+    color-mix(in srgb, var(--accent-bg, #2c6ce6) 45%, transparent);
+  outline-offset: -1px;
+}
+/* Icon-only rail: drop the indent so file glyphs stay centered. */
+.sidebar.collapsed .fg-body {
+  margin-left: 0;
+  padding-left: 0;
+  border-left: none;
+}
+.file-item.drag-ghost {
+  background: #fff;
+  box-shadow: var(--shadow-pop);
+  border: 1px solid var(--border-strong);
+  width: 220px;
+}
+.sidebar-actions {
+  margin-top: 2px;
 }
 /* no scrollbar in the narrow collapsed rail (still scrolls via wheel) */
 .sidebar.collapsed .file-list {

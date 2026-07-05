@@ -25,6 +25,18 @@ export interface FilterGroup {
 }
 
 /**
+ * A named, collapsible sidebar section that partitions the open log files. Purely
+ * organizational — grouping a file never touches its filters/markers. Mirrors
+ * FilterGroup: files reference one via `LogFile.groupId`, order lives on
+ * `AppState.fileGroups`.
+ */
+export interface FileGroup {
+  id: string;
+  name: string;
+  collapsed: boolean;
+}
+
+/**
  * A whole-set layout snapshot used by the filter drag-and-drop while a drag is
  * in flight (kept local to FilterPanel) and to commit the final arrangement in a
  * single undoable step. `top` is the interleaved top-level order (group ids and
@@ -115,6 +127,9 @@ export interface LogFile {
   encodingOverride?: string;
   /** User-chosen sidebar glyph; undefined = default document icon. */
   icon?: FileIcon;
+  /** File group this log belongs to; null/undefined = ungrouped (renders above
+   *  groups, like an ungrouped filter). References `AppState.fileGroups`. */
+  groupId?: string | null;
   sets: FilterSet[];
   activeSetId: string | null;
   /** User bookmarks pinned to line numbers (persisted with the file). */
@@ -149,6 +164,9 @@ export interface Notebook {
 export interface AppState {
   files: LogFile[];
   activeFileId: string | null;
+  /** Named, collapsible sidebar sections partitioning the open files. Ordered;
+   *  a file joins one via `LogFile.groupId`. Undefined when no groups exist. */
+  fileGroups?: FileGroup[];
   /** Most-recently-opened log file paths (newest first), for File ▸ Recent Files. */
   recentFiles: string[];
   /** Most-recently-used filter file paths (newest first), for Recent Filter Files. */
