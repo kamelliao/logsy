@@ -63,34 +63,49 @@ struct ReadResult {
 // the whole window's event loop. Off-thread, a stalled read leaves the UI
 // responsive and still surfaces as a rejected promise on the JS side.
 #[tauri::command]
-async fn read_text_file(path: String) -> Result<ReadResult, String> {
-  tauri::async_runtime::spawn_blocking(move || read_text_file_blocking(&path))
-    .await
-    .map_err(|e| e.to_string())?
+async fn read_text_file(path: String, encoding: Option<String>) -> Result<ReadResult, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    read_text_file_blocking(&path, encoding.as_deref())
+  })
+  .await
+  .map_err(|e| e.to_string())?
 }
 
-fn read_text_file_blocking(path: &str) -> Result<ReadResult, String> {
+// `forced` is a user-chosen encoding label (from the sidebar) that overrides
+// auto-detection — the escape hatch for the files sniffing gets wrong. An
+// unknown label falls back to auto-detection rather than failing the open.
+fn read_text_file_blocking(path: &str, forced: Option<&str>) -> Result<ReadResult, String> {
   let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
+  Ok(decode_bytes(&bytes, forced))
+}
 
-  // Pick an encoding. An explicit BOM wins. Otherwise sniff BOM-less UTF-16
-  // ourselves before falling back to chardetng: chardetng never guesses UTF-16
-  // (the Encoding Standard only recognizes it via a BOM), so without this a
-  // BOM-less UTF-16 log decodes as a single-byte encoding — the NUL high bytes
-  // survive and the stray CR/LF low bytes split lines apart, producing the
-  // broken / blank-line output. Finally fall back to chardetng for the legacy
-  // single-byte and multi-byte encodings it does handle.
-  let encoding = match encoding_rs::Encoding::for_bom(&bytes) {
-    Some((enc, _bom_len)) => enc,
-    None => sniff_bomless_utf16(&bytes).unwrap_or_else(|| {
-      let mut detector = chardetng::EncodingDetector::new();
-      detector.feed(&bytes, true);
-      detector.guess(None, true)
-    }),
-  };
+// Decode raw file bytes to text, reporting the encoding actually used. Split out
+// from the disk read so it can be unit-tested. A user override wins outright;
+// an unknown override label falls back to auto-detection rather than failing.
+fn decode_bytes(bytes: &[u8], forced: Option<&str>) -> ReadResult {
+  // Pick an encoding. A user override wins outright. Otherwise an explicit BOM
+  // wins; failing that, sniff BOM-less UTF-16 ourselves before falling back to
+  // chardetng: chardetng never guesses UTF-16 (the Encoding Standard only
+  // recognizes it via a BOM), so without this a BOM-less UTF-16 log decodes as
+  // a single-byte encoding — the NUL high bytes survive and the stray CR/LF low
+  // bytes split lines apart, producing the broken / blank-line output. Finally
+  // fall back to chardetng for the legacy single-byte and multi-byte encodings
+  // it does handle.
+  let forced_enc = forced.and_then(|label| encoding_rs::Encoding::for_label(label.as_bytes()));
+  let encoding = forced_enc.unwrap_or_else(|| {
+    match encoding_rs::Encoding::for_bom(bytes) {
+      Some((enc, _bom_len)) => enc,
+      None => sniff_bomless_utf16(bytes).unwrap_or_else(|| {
+        let mut detector = chardetng::EncodingDetector::new();
+        detector.feed(bytes, true);
+        detector.guess(None, true)
+      }),
+    }
+  });
 
   // `decode` re-sniffs any BOM and reports the encoding actually used.
-  let (text, used, _had_errors) = encoding.decode(&bytes);
-  Ok(ReadResult { text: text.into_owned(), encoding: used.name().to_string() })
+  let (text, used, _had_errors) = encoding.decode(bytes);
+  ReadResult { text: text.into_owned(), encoding: used.name().to_string() }
 }
 
 /// Detect BOM-less UTF-16 from its tell-tale NUL pattern. Mostly-ASCII text
@@ -128,7 +143,7 @@ fn sniff_bomless_utf16(bytes: &[u8]) -> Option<&'static encoding_rs::Encoding> {
 
 #[cfg(test)]
 mod tests {
-  use super::sniff_bomless_utf16;
+  use super::{decode_bytes, sniff_bomless_utf16};
 
   fn utf16le(s: &str) -> Vec<u8> {
     s.encode_utf16().flat_map(|u| u.to_le_bytes()).collect()
@@ -158,6 +173,29 @@ mod tests {
   #[test]
   fn ignores_short_input() {
     assert_eq!(sniff_bomless_utf16(&utf16le("hi")), None);
+  }
+
+  // The traditional-Chinese "測試" in Big5 (0xB4 0xFA 0xB8 0xD5). Auto-detection
+  // reads it as some single-byte encoding (mojibake); a forced Big5 label fixes it.
+  const BIG5_TEST: &[u8] = &[0xB4, 0xFA, 0xB8, 0xD5];
+
+  #[test]
+  fn forced_encoding_overrides_detection() {
+    let auto = decode_bytes(BIG5_TEST, None);
+    assert_ne!(auto.text, "測試", "auto-detect should not land on Big5 here");
+    let forced = decode_bytes(BIG5_TEST, Some("big5"));
+    assert_eq!(forced.text, "測試");
+    assert_eq!(forced.encoding, "Big5");
+  }
+
+  #[test]
+  fn unknown_forced_label_falls_back_to_detection() {
+    // A bogus label must not blow up — it falls through to auto-detection,
+    // yielding the same result as passing no override at all.
+    let bogus = decode_bytes(&utf16le(KLOG), Some("not-a-real-encoding"));
+    let auto = decode_bytes(&utf16le(KLOG), None);
+    assert_eq!(bogus.text, auto.text);
+    assert_eq!(bogus.encoding, "UTF-16LE");
   }
 }
 

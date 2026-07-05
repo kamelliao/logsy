@@ -581,6 +581,25 @@ button {
   cursor: default;
   font-variant-numeric: tabular-nums;
 }
+/* Interactive variant: the pill is a combobox trigger for overriding the
+   encoding, so it gets a pointer cursor and a hover/open affordance. The text
+   keeps the plain badge color; a user override (`forced`) is marked only by the
+   brand-accent border, so the label stays as legible as the auto-detected one. */
+.enc-badge-btn {
+  font-family: inherit;
+  cursor: pointer;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
+}
+.enc-badge-btn:hover,
+.enc-badge-btn[data-popup-open] {
+  background: var(--row-hover);
+  border-color: var(--accent-bg, #2c6ce6);
+}
+.enc-badge-btn.forced {
+  border-color: var(--accent-bg, #2c6ce6);
+}
 
 /* "View this filter only" pill in the log header. */
 .lv-solo {
@@ -4543,6 +4562,32 @@ button {
   margin-left: auto;
   color: var(--accent);
   display: inline-flex;
+}
+/* Encoding combobox rows: a friendly name plus its canonical code in small grey,
+   packed tighter vertically than the color picker's rows. The name grows to fill
+   the row so every code lines up as a right-hand column (before the check),
+   regardless of name length — including the short UTF-8 / UTF-16 labels. */
+.enc-item {
+  padding-top: 3px;
+  padding-bottom: 3px;
+  gap: 8px;
+}
+.enc-item .cc-item-name {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.enc-item .cc-item-hex {
+  flex: 0 0 auto;
+}
+.enc-item .enc-check {
+  flex: 0 0 auto;
+  width: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  /* Brand blue written out: --accent is a near-white surface token (an invisible
+     check on the white popup), matching how .mi-check sets it explicitly. */
+  color: #2c6ce6;
 }
 
 /* group combobox popup — its own clean styling (the color picker's cc-* chrome
