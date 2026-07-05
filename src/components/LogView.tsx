@@ -1048,9 +1048,7 @@ export function LogView({
     if (!selectedLines.size) return false;
     const out = visible
       .filter((r) => selectedLines.has(r.n))
-      .map((r) =>
-        showLineNumbers ? `${String(r.n).padStart(8)}  ${r.text}` : r.text,
-      )
+      .map((r) => (showLineNumbers ? `${r.n}  ${r.text}` : r.text))
       .join("\n");
     navigator.clipboard.writeText(out).catch(() => {});
     toast.success(
@@ -1192,9 +1190,7 @@ export function LogView({
   }, [selectedLines, visible, showLineNumbers, markerMap, rowH]);
 
   function exportView() {
-    const text = visible
-      .map((r) => String(r.n).padStart(8) + "  " + r.text)
-      .join("\n");
+    const text = visible.map((r) => r.n + "  " + r.text).join("\n");
     const base = file.name.replace(/\.log$/i, "");
     onExportView?.(base + ".filtered.log", text);
   }
