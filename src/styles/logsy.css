@@ -2263,7 +2263,7 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 8px;
+  padding: 3px 8px;
 }
 .findbar input {
   border: none;
@@ -2317,6 +2317,20 @@ button {
 }
 .findbar .find-opt:hover {
   background: rgba(0, 0, 0, 0.07);
+  color: var(--text);
+}
+/* The selection-scope toggle carries an icon rather than a mono glyph, so it
+   should read as the darker foreground (matching the nav arrows / close X)
+   when off, while still lighting up brand-blue via .active when on. It also
+   sizes to the ghost icon-sm buttons beside it (28×28, matching radius) so the
+   find bar's right cluster lines up. */
+.findbar .find-opt.find-opt-sel {
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
+  border-radius: min(var(--radius-md), 12px);
+}
+.findbar .find-opt.find-opt-sel:not(.active) {
   color: var(--text);
 }
 .findbar .find-opt.active {

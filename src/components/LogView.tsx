@@ -41,6 +41,7 @@ import {
   MarkerGlyph,
   markerColor,
 } from "@/components/widgets/markers";
+import { SelectionLinesIcon } from "@/components/widgets/icons";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -255,6 +256,8 @@ export function LogView({
   // Find options: `.*` treats the query as a regex, `Aa` makes it case-sensitive.
   const [findRegex, setFindRegex] = useState(false);
   const [findCase, setFindCase] = useState(false);
+  // `In selection` restricts find hits/highlights to the currently selected lines.
+  const [findInSelection, setFindInSelection] = useState(false);
   const [current, setCurrent] = useState(0);
   const [selMenu, setSelMenu] = useState<{
     x: number;
@@ -405,10 +408,14 @@ export function LogView({
   const findInvalid =
     findOpen && findRegex && query.length > 0 && findRe === null;
 
+  // When "in selection" is on with a non-empty selection, only selected lines
+  // count as searchable (both for hits/count and the per-row highlighting below).
+  const scopeToSelection = findInSelection && selectedLines.size > 0;
   const hits = useMemo(() => {
     if (!findRe) return [];
     const list: { ri: number; index: number; key: string }[] = [];
     for (let i = 0; i < visible.length; i++) {
+      if (scopeToSelection && !selectedLines.has(visible[i].n)) continue;
       findRe.lastIndex = 0;
       let m: RegExpExecArray | null;
       let guard = 0;
@@ -419,7 +426,7 @@ export function LogView({
       }
     }
     return list;
-  }, [findRe, visible]);
+  }, [findRe, visible, scopeToSelection, selectedLines]);
 
   useEffect(() => {
     rowVirtualizer.measure();
@@ -427,7 +434,7 @@ export function LogView({
 
   useEffect(() => {
     setCurrent(0);
-  }, [query]);
+  }, [query, scopeToSelection]);
   useEffect(() => {
     if (findOpen) findInputRef.current?.focus();
   }, [findOpen]);
@@ -1371,7 +1378,9 @@ export function LogView({
           <Search size={14} style={{ color: "var(--text-3)" }} />
           <input
             ref={findInputRef}
-            placeholder="Find in view…"
+            placeholder={
+              scopeToSelection ? "Find in selection…" : "Find in view…"
+            }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
@@ -1452,6 +1461,23 @@ export function LogView({
               <TooltipContent>Next (Enter)</TooltipContent>
             </Tooltip>
           </div>
+          <div className="find-divider" />
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <button
+                  className={
+                    "find-opt find-opt-sel" + (findInSelection ? " active" : "")
+                  }
+                  aria-pressed={findInSelection}
+                  onClick={() => setFindInSelection((v) => !v)}
+                />
+              }
+            >
+              <SelectionLinesIcon size={15} />
+            </TooltipTrigger>
+            <TooltipContent>Find in selection</TooltipContent>
+          </Tooltip>
           <Tooltip>
             <TooltipTrigger
               render={
@@ -1671,7 +1697,14 @@ export function LogView({
                         )}
                       </span>
                       <span className="log-txt">
-                        {renderLine(r.text, findRe, currentKey, vItem.index)}
+                        {renderLine(
+                          r.text,
+                          scopeToSelection && !selectedLines.has(r.n)
+                            ? null
+                            : findRe,
+                          currentKey,
+                          vItem.index,
+                        )}
                       </span>
                     </div>
                     {expFields && (
