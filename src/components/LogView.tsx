@@ -47,6 +47,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { EncodingCombobox } from "@/components/ui/encoding-combobox";
 
 const _charWCache = new Map<number, number>();
 function charWidth(fontSize: number): number {
@@ -196,6 +197,8 @@ interface LogViewProps {
   timelineLines: Set<number>;
   onAddToTimeline: (ns: number[]) => void;
   onRemoveFromTimeline: (ns: number[]) => void;
+  /** Re-decode the file with a forced encoding label (null = auto-detect). */
+  onSetEncoding?: (label: string | null) => void;
 }
 
 export function LogView({
@@ -230,6 +233,7 @@ export function LogView({
   timelineLines,
   onAddToTimeline,
   onRemoveFromTimeline,
+  onSetEncoding,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
   // Filter id → 1-based position in the set, so a matched row's tooltip can name
@@ -1257,14 +1261,21 @@ export function LogView({
         <div className="lv-title">
           <FileText size={15} style={{ color: "#4f8cff" }} />
           {file.name}
-          {file.encoding && (
-            <Tooltip>
-              <TooltipTrigger render={<span className="enc-badge" />}>
-                {file.encoding}
-              </TooltipTrigger>
-              <TooltipContent>Detected text encoding</TooltipContent>
-            </Tooltip>
-          )}
+          {file.encoding &&
+            (onSetEncoding ? (
+              <EncodingCombobox
+                value={file.encodingOverride}
+                detected={file.encoding}
+                onChange={onSetEncoding}
+              />
+            ) : (
+              <Tooltip>
+                <TooltipTrigger render={<span className="enc-badge" />}>
+                  {file.encoding}
+                </TooltipTrigger>
+                <TooltipContent>Detected text encoding</TooltipContent>
+              </Tooltip>
+            ))}
         </div>
         {soloPattern != null && (
           <div

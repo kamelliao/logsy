@@ -175,6 +175,7 @@ export function App() {
     deleteFile,
     openFiles,
     loadPaths,
+    setFileEncoding,
   } = useLogFiles({ file });
 
   const compiled = useMemo(
@@ -465,6 +466,7 @@ export function App() {
         markerJump={markerJump}
         onSetMarker={setMarker}
         onRemoveMarker={removeMarker}
+        onSetEncoding={(label) => setFileEncoding(file!.id, label)}
       />
     );
 

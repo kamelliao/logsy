@@ -43,6 +43,8 @@ export interface LogFilesApi {
   deleteFile: (fid: string) => Promise<void>;
   openFiles: () => Promise<void>;
   loadPaths: (paths: string[], inheritFilters?: boolean) => Promise<void>;
+  /** Re-decode a file with a forced encoding label (null = back to auto-detect). */
+  setFileEncoding: (fid: string, label: string | null) => Promise<void>;
 }
 
 /**
@@ -263,11 +265,58 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
     [loadPaths, patchState, pushRecent, setState],
   );
 
+  // Re-decode a file with a user-forced encoding (the escape hatch for files
+  // auto-detection gets wrong). The override is persisted on the file so a
+  // reopen re-decodes the same way. Re-splitting changes line contents/numbers,
+  // so the file's compare selection is dropped (like replaceActiveFile).
+  const setFileEncoding = useCallback(
+    async (fid: string, label: string | null) => {
+      const f = getDoc().files.find((x) => x.id === fid);
+      if (!f || !f.path) return;
+      const { path, name } = f;
+      setBusy({ name });
+      await nextPaint();
+      let res: { text: string; encoding: string };
+      try {
+        res = await invoke<{ text: string; encoding: string }>(
+          "read_text_file",
+          { path, encoding: label ?? undefined },
+        );
+      } catch (e) {
+        setBusy(null);
+        toast.error(`Could not re-decode ${name}: ${String(e)}`);
+        return;
+      }
+      const lns = splitLines(res.text);
+      linesStore[fid] = lns;
+      patchState(
+        (s) => {
+          const ff = s.files.find((x) => x.id === fid);
+          if (!ff) return;
+          ff.encodingOverride = label ?? undefined;
+          ff.encoding = res.encoding;
+          ff.lineCount = lns.length;
+        },
+        { undoable: false },
+      );
+      setState((s) => ({
+        ...s,
+        compareLinesByFile: {
+          ...(s.compareLinesByFile ?? {}),
+          [fid]: [],
+        },
+      }));
+      setLinesVersion((v) => v + 1);
+      setBusy(null);
+    },
+    [patchState, setState],
+  );
+
   // On restart the persisted file list has paths but no cached lines; reload the
   // active file's contents from disk when they're missing.
   useEffect(() => {
     if (!file || !file.path || linesStore[file.id]) return;
-    const { id, path, name } = file;
+    const { id, path, name, encodingOverride } = file;
     let cancelled = false;
     // Show the loading overlay: the read can be slow (a large file, or one on a
     // network share), and without feedback the blank workspace looks stuck.
@@ -276,7 +325,7 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
       try {
         const res = await invoke<{ text: string; encoding: string }>(
           "read_text_file",
-          { path },
+          { path, encoding: encodingOverride },
         );
         if (cancelled) return;
         linesStore[id] = splitLines(res.text);
@@ -381,5 +430,6 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
     deleteFile,
     openFiles,
     loadPaths,
+    setFileEncoding,
   };
 }

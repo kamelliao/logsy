@@ -108,6 +108,11 @@ export interface LogFile {
   lineCount: number;
   /** Character encoding the file was decoded with (e.g. "UTF-8", "Big5"). */
   encoding?: string;
+  /**
+   * User-forced encoding label that overrides auto-detection (undefined = auto).
+   * Persisted, so a reopened file re-decodes with the same forced encoding.
+   */
+  encodingOverride?: string;
   /** User-chosen sidebar glyph; undefined = default document icon. */
   icon?: FileIcon;
   sets: FilterSet[];
