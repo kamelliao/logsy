@@ -106,6 +106,9 @@ export function App() {
   // filter panel's search box from a keyboard shortcut.
   const [appConfirm, confirmNode] = useConfirm();
   const [focusSearchNonce, setFocusSearchNonce] = useState(0);
+  // Bumped to (re)focus the log find bar's input — lets Ctrl+F refocus the box
+  // even when the bar is already open (see focusFind).
+  const [findFocusNonce, setFindFocusNonce] = useState(0);
 
   useEffect(() => {
     getVersion()
@@ -356,6 +359,13 @@ export function App() {
       },
       { undoable: false },
     );
+  // Ctrl+F: open the find bar and focus its input. The nonce bump tells LogView
+  // to focus even when the bar was already open (so a second Ctrl+F re-focuses
+  // and selects the existing query instead of doing nothing).
+  const focusFind = () => {
+    setFindOpen(true);
+    setFindFocusNonce((n) => n + 1);
+  };
   const toggleSidebar = () =>
     setState((s) => ({ ...s, sidebarCollapsed: !s.sidebarCollapsed }));
   const toggleLineNumbers = () =>
@@ -398,6 +408,7 @@ export function App() {
     toggleFilterCollapsed,
     openGoto,
     focusFilterSearch,
+    focusFind,
   });
 
   const menuDefs = useMenuDefs({
@@ -435,6 +446,7 @@ export function App() {
         onToggleFind={() => setFindOpen((v) => !v)}
         findOpen={findOpen}
         onCloseFind={() => setFindOpen(false)}
+        findFocusNonce={findFocusNonce}
         onBuildFilter={openFilterFromPattern}
         mapColorMode={state.mapColorMode ?? "bg"}
         mapWidth={state.mapWidth ?? 14}

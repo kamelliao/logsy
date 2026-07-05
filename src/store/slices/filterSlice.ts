@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import type { Filter, FilterSet, FilterLayout } from "@/types";
 import { uid, makeFilter, normalizeState } from "@/lib/defaults";
 import { baseName } from "@/lib/path";
+import { nextPaint } from "@/lib/paint";
 import { tokenize, buildPattern } from "@/lib/generalize";
 import {
   buildGroupFromImport,
@@ -466,79 +467,92 @@ export function createFilterActions(
         });
         if (!ok) return;
       }
-      let text: string;
-      // read_text_file returns { text, encoding } — pull the text out (passing the
-      // whole object to JSON.parse below would silently fail the load).
-      // Show the loading overlay: the read can be slow (a large filter file, or
-      // one on a network share), matching the log-file open feedback.
+      // Show the loading overlay across the whole load — the slow part isn't just
+      // the disk read (a large filter file, or one on a network share) but also
+      // applying the import, which recomputes the view over every log line. Keep
+      // it up until the applied view has painted, matching the log-file feedback.
       get().setLoadingLabel(baseName(path));
       try {
-        text = (
-          await invoke<{ text: string; encoding: string }>("read_text_file", {
-            path,
-          })
-        ).text;
-      } catch (e) {
-        toast.error("Could not read file: " + String(e));
-        return;
-      } finally {
-        get().setLoadingLabel(null);
-      }
-      let built: ReturnType<typeof buildGroupFromImport> = null;
-      let foreign = false; // a TAT import isn't a Logsy file, so don't make it the save target
-      try {
-        built = buildGroupFromImport(JSON.parse(text));
-      } catch {
-        /* not JSON — try TAT below */
-      }
-      if (!built) {
-        built = parseTatFilters(text);
-        foreign = !!built;
-      } // TextAnalysisTool.NET (.tat)
-      if (!built) {
-        toast.error("That file isn't Logsy or TextAnalysisTool.NET filters.");
-        return;
-      }
+        await nextPaint(); // let the overlay paint before the read/apply blocks
+        let text: string;
+        // read_text_file returns { text, encoding } — pull the text out (passing
+        // the whole object to JSON.parse below would silently fail the load).
+        try {
+          text = (
+            await invoke<{ text: string; encoding: string }>("read_text_file", {
+              path,
+            })
+          ).text;
+        } catch (e) {
+          toast.error("Could not read file: " + String(e));
+          return;
+        }
+        let built: ReturnType<typeof buildGroupFromImport> = null;
+        let foreign = false; // a TAT import isn't a Logsy file, so don't make it the save target
+        try {
+          built = buildGroupFromImport(JSON.parse(text));
+        } catch {
+          /* not JSON — try TAT below */
+        }
+        if (!built) {
+          built = parseTatFilters(text);
+          foreign = !!built;
+        } // TextAnalysisTool.NET (.tat)
+        if (!built) {
+          toast.error("That file isn't Logsy or TextAnalysisTool.NET filters.");
+          return;
+        }
 
-      if (mode === "append") {
-        // Fresh ids so the merged-in filters/groups/tracks never collide with what
-        // the set already holds. Leave filePath/savedSnapshot untouched: appending
-        // dirties the set (Save Filter re-enables) without retargeting the save.
-        const add = remapImportIds(built);
+        // Yield again so the overlay is on screen before the synchronous apply +
+        // view recompute freezes the main thread.
+        await nextPaint();
+
+        if (mode === "append") {
+          // Fresh ids so the merged-in filters/groups/tracks never collide with
+          // what the set already holds. Leave filePath/savedSnapshot untouched:
+          // appending dirties the set (Save Filter re-enables) without retargeting
+          // the save.
+          const add = remapImportIds(built);
+          patch((s) => {
+            const g = activeSet(s);
+            if (!g) return;
+            appendImportToSet(g, add);
+            normalizeState(s);
+          });
+          if (!foreign) get().pushRecent("recentFilterFiles", path);
+          toast.success("Filters appended");
+          return;
+        }
+
         patch((s) => {
           const g = activeSet(s);
-          if (!g) return;
-          appendImportToSet(g, add);
-          normalizeState(s);
+          if (!g || !built) return;
+          g.filters = built.filters;
+          g.groups = built.groups;
+          g.order = built.order;
+          g.sources = built.sources;
+          if (foreign) {
+            // Imported from a foreign format: the filters now live as Logsy
+            // filters, not tied to the source file. "Save Filter" stays enabled
+            // and opens Save As rather than writing back to the .tat.
+            g.filePath = undefined;
+            g.savedSnapshot = undefined;
+            normalizeState(s);
+          } else {
+            // A native Logsy file becomes the save target and the clean baseline.
+            g.filePath = path;
+            normalizeState(s);
+            g.savedSnapshot = exportPayload(g);
+          }
         });
         if (!foreign) get().pushRecent("recentFilterFiles", path);
-        toast.success("Filters appended");
-        return;
+        toast.success(foreign ? "Filters imported" : "Filters loaded");
+      } finally {
+        // Clear after one more paint so the applied view renders under the
+        // overlay instead of flashing the old view for a frame.
+        await nextPaint();
+        get().setLoadingLabel(null);
       }
-
-      patch((s) => {
-        const g = activeSet(s);
-        if (!g || !built) return;
-        g.filters = built.filters;
-        g.groups = built.groups;
-        g.order = built.order;
-        g.sources = built.sources;
-        if (foreign) {
-          // Imported from a foreign format: the filters now live as Logsy filters,
-          // not tied to the source file. "Save Filter" stays enabled and opens
-          // Save As rather than writing back to the .tat.
-          g.filePath = undefined;
-          g.savedSnapshot = undefined;
-          normalizeState(s);
-        } else {
-          // A native Logsy file becomes the save target and the clean baseline.
-          g.filePath = path;
-          normalizeState(s);
-          g.savedSnapshot = exportPayload(g);
-        }
-      });
-      if (!foreign) get().pushRecent("recentFilterFiles", path);
-      toast.success(foreign ? "Filters imported" : "Filters loaded");
     },
     // "Load filters": pick a file, then load it into the current set.
     importFilters: async () => {

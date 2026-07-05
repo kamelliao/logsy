@@ -187,6 +187,8 @@ interface LogViewProps {
   onToggleViewMode: (m: "all" | "matches") => void;
   onToggleFind: () => void;
   onCloseFind: () => void;
+  /** Bumped by Ctrl+F to (re)focus + select the find input, even when open. */
+  findFocusNonce?: number;
   /** "exact" adds the text verbatim; "pattern" generalizes it into a regex. */
   onBuildFilter: (pattern: string, mode?: "exact" | "pattern") => void;
   onAddToCompare: (ns: number[]) => void;
@@ -221,6 +223,7 @@ export function LogView({
   onToggleViewMode,
   onToggleFind,
   onCloseFind,
+  findFocusNonce,
   onBuildFilter,
   onAddToCompare,
   onRemoveFromCompare,
@@ -424,12 +427,54 @@ export function LogView({
   useEffect(() => {
     if (findOpen) findInputRef.current?.focus();
   }, [findOpen]);
+  // Ctrl+F while the bar is already open: refocus and select the query so it can
+  // be retyped straight away (the open-driven effect above only fires on open).
+  useEffect(() => {
+    if (!findFocusNonce) return;
+    const el = findInputRef.current;
+    if (!el) return;
+    el.focus();
+    el.select();
+  }, [findFocusNonce]);
 
+  // Horizontally scroll the current find hit into view when it sits outside the
+  // visible column range. Only nudges when the hit is off-screen so it never
+  // yanks the user's horizontal position for a match that's already visible. The
+  // sticky left rail (.log-left) overlays the text, so the visible content starts
+  // past its width, not at the scroll box's left edge.
+  const revealCurrentHitX = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const hit = el.querySelector<HTMLElement>(".find-hit.current");
+    if (!hit) return;
+    const railW =
+      el.querySelector<HTMLElement>(".log-left")?.getBoundingClientRect()
+        .width ?? 0;
+    const box = el.getBoundingClientRect();
+    const hr = hit.getBoundingClientRect();
+    const pad = 48; // keep a little context to the left/right of the match
+    const leftEdge = box.left + railW + pad;
+    const rightEdge = box.right - pad;
+    if (hr.left < leftEdge) el.scrollLeft += hr.left - leftEdge;
+    else if (hr.right > rightEdge) el.scrollLeft += hr.right - rightEdge;
+  };
+
+  // Bring the current hit into view: scroll its row to center vertically, then —
+  // once it has rendered — nudge the horizontal scroll so a match sitting past
+  // the right edge is actually visible instead of needing a manual h-scroll.
   useEffect(() => {
     if (!hits.length) return;
     const h = hits[Math.min(current, hits.length - 1)];
     if (!h) return;
     rowVirtualizer.scrollToIndex(h.ri, { align: "center" });
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(revealCurrentHitX);
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
   }, [current, hits]);
 
   // Remembers, while the view mode is stable, the "keep" line — the selected line

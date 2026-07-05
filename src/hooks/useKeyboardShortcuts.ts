@@ -21,6 +21,8 @@ interface Deps {
   fileViewMode: "all" | "matches";
   setViewMode: (m: "all" | "matches") => void;
   setFindOpen: (v: boolean) => void;
+  // Ctrl+F: open the find bar *and* focus its input (re-focuses when already open).
+  focusFind: () => void;
 
   // Escape stack (innermost overlay first).
   findOpen: boolean;
@@ -53,6 +55,7 @@ export function useKeyboardShortcuts(deps: Deps): void {
     fileViewMode,
     setViewMode,
     setFindOpen,
+    focusFind,
     findOpen,
     openScreen,
     filesCount,
@@ -114,11 +117,11 @@ export function useKeyboardShortcuts(deps: Deps): void {
       },
       "$mod+f": (e) => {
         e.preventDefault();
-        setFindOpen(true);
+        focusFind();
       },
       "$mod+F": (e) => {
         e.preventDefault();
-        setFindOpen(true);
+        focusFind();
       },
       "$mod+h": (e) => {
         e.preventDefault();
@@ -165,6 +168,7 @@ export function useKeyboardShortcuts(deps: Deps): void {
     aboutOpen,
     openFiles,
     setFindOpen,
+    focusFind,
     setViewMode,
     setOpenScreen,
     setShortcutsOpen,

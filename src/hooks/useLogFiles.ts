@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import type { LogFile, FilterSet } from "@/types";
 import { uid } from "@/lib/defaults";
 import { baseName } from "@/lib/path";
+import { nextPaint } from "@/lib/paint";
 import { useStore } from "@/store";
 
 // In-memory log contents, keyed by file id. Log bodies are *not* persisted to
@@ -21,14 +22,6 @@ function splitLines(text: string): string[] {
   const arr = text.split(/\r\n|\n|\r/);
   if (arr.length > 0 && arr[arr.length - 1] === "") arr.pop();
   return arr;
-}
-
-// Yield a paint so a just-set loading overlay actually renders before a heavy
-// synchronous step (splitting a large file into lines) blocks the main thread.
-function nextPaint(): Promise<void> {
-  return new Promise((r) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => r())),
-  );
 }
 
 interface Deps {
