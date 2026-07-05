@@ -45,6 +45,10 @@ import {
   type NotebookActions,
   type NotebookState,
 } from "@/store/slices/notebookSlice";
+import {
+  createFileGroupActions,
+  type FileGroupActions,
+} from "@/store/slices/fileGroupSlice";
 
 export type { EditingState } from "@/store/slices/filterSlice";
 export { selectActiveMarkers } from "@/store/slices/bookmarkSlice";
@@ -72,7 +76,8 @@ export interface Store
     LinesActions,
     PacksActions,
     NotebookState,
-    NotebookActions {
+    NotebookActions,
+    FileGroupActions {
   /** The persisted, undoable workspace document (everything that used to be AppState). */
   doc: AppState;
   /** Menu-enablement flags, mirrored into store state so selectors re-render on change. */
@@ -230,6 +235,7 @@ export const useStore = create<Store>()(
       ...createLinesActions(set),
       ...createPacksActions(get),
       ...createNotebookActions(set, get),
+      ...createFileGroupActions(get),
 
       // ---- undo engine ----
       patchState: (fn, opts) => {

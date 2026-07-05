@@ -191,6 +191,32 @@ export function normalizeState(state: AppState): AppState {
   ) {
     state.activeFileId = state.files[0]?.id ?? null;
   }
+  // File groups: keep only well-formed entries; drop a file's groupId when it
+  // points at a group that no longer exists (mirrors the filter-group backfill
+  // above). Older states have neither field → every file is ungrouped, i.e.
+  // identical to before the feature.
+  if (Array.isArray(state.fileGroups)) {
+    state.fileGroups = state.fileGroups.filter(
+      (g) =>
+        g &&
+        typeof g.id === "string" &&
+        typeof g.name === "string" &&
+        typeof g.collapsed === "boolean",
+    );
+    const groupIds = new Set(state.fileGroups.map((g) => g.id));
+    for (const f of state.files) {
+      if (
+        f.groupId !== undefined &&
+        f.groupId !== null &&
+        !groupIds.has(f.groupId)
+      )
+        f.groupId = null;
+    }
+    if (state.fileGroups.length === 0) delete state.fileGroups;
+  } else {
+    if (state.fileGroups !== undefined) delete state.fileGroups;
+    for (const f of state.files) if (f.groupId != null) f.groupId = null;
+  }
   if (!Array.isArray(state.recentFiles)) state.recentFiles = [];
   if (!Array.isArray(state.recentFilterFiles)) state.recentFilterFiles = [];
   if (!state.mapColorMode) state.mapColorMode = "bg";
