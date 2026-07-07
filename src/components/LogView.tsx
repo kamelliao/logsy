@@ -84,6 +84,14 @@ function buildFindRe(
   }
 }
 
+// Each file's find-bar contents/options survive switching away and back: App
+// remounts this component per file (key={file.id}), so plain state would
+// reset. Keyed by file id — per-file, not shared across files.
+const persistedFindByFile = new Map<
+  string,
+  { query: string; regex: boolean; caseSensitive: boolean }
+>();
+
 // Highlights find hits only. Filter matches used to get their matched text
 // wrapped in .log-hit spans here, but that re-ran every winner's regex on every
 // visible row each scroll frame — dropped for scroll smoothness, the row's
@@ -191,6 +199,9 @@ interface LogViewProps {
   onCloseFind: () => void;
   /** Bumped by Ctrl+F to (re)focus + select the find input, even when open. */
   findFocusNonce?: number;
+  /** Text highlighted when Ctrl+F was pressed (captured by App before the
+   *  input steals focus) — seeds the query. */
+  findSeed?: string;
   /** "exact" adds the text verbatim; "pattern" generalizes it into a regex. */
   onBuildFilter: (pattern: string, mode?: "exact" | "pattern") => void;
   onAddToCompare: (ns: number[]) => void;
@@ -229,6 +240,7 @@ export function LogView({
   onToggleFind,
   onCloseFind,
   findFocusNonce,
+  findSeed,
   onBuildFilter,
   onAddToCompare,
   onRemoveFromCompare,
@@ -254,10 +266,37 @@ export function LogView({
   // Ctrl+A over another panel (e.g. the filter panel's own select-all).
   const rootRef = useRef<HTMLDivElement>(null);
   const hoverRef = useRef(false);
-  const [query, setQuery] = useState("");
+  const persistedFind = persistedFindByFile.get(file.id);
+  const [query, setQueryState] = useState(persistedFind?.query ?? "");
   // Find options: `.*` treats the query as a regex, `Aa` makes it case-sensitive.
-  const [findRegex, setFindRegex] = useState(false);
-  const [findCase, setFindCase] = useState(false);
+  const [findRegex, setFindRegexState] = useState(
+    persistedFind?.regex ?? false,
+  );
+  const [findCase, setFindCaseState] = useState(
+    persistedFind?.caseSensitive ?? false,
+  );
+  const persistFind = (
+    patch: Partial<{ query: string; regex: boolean; caseSensitive: boolean }>,
+  ) => {
+    persistedFindByFile.set(file.id, {
+      query,
+      regex: findRegex,
+      caseSensitive: findCase,
+      ...patch,
+    });
+  };
+  const setQuery = (v: string) => {
+    persistFind({ query: v });
+    setQueryState(v);
+  };
+  const toggleFindRegex = () => {
+    persistFind({ regex: !findRegex });
+    setFindRegexState(!findRegex);
+  };
+  const toggleFindCase = () => {
+    persistFind({ caseSensitive: !findCase });
+    setFindCaseState(!findCase);
+  };
   // `In selection` restricts find hits/highlights to the currently selected lines.
   const [findInSelection, setFindInSelection] = useState(false);
   const [current, setCurrent] = useState(0);
@@ -437,17 +476,48 @@ export function LogView({
   useEffect(() => {
     setCurrent(0);
   }, [query, scopeToSelection]);
+  // Explicit "center the current hit" requests only: bumped by nav() and by
+  // (re)triggering the search — the query/options changing or the bar opening
+  // (a new `findRe`). Anything else that changes `hits`' identity (clicking a
+  // line updates `selectedLines`, filter edits update `visible`, …) must NOT
+  // yank the scroll position back to the match.
+  const [findJump, setFindJump] = useState(0);
+  const findReSeen = useRef(false);
+  // Set when the query is seeded from highlighted log text (Ctrl+F over a
+  // selection): the text is already on screen, so that one re-trigger of the
+  // search must not re-center the view.
+  const suppressJumpRef = useRef(false);
+  useEffect(() => {
+    // Skip the mount pass: with the query persisted across file switches, the
+    // remount after a switch already has a live findRe and would auto-jump.
+    if (!findReSeen.current) {
+      findReSeen.current = true;
+      return;
+    }
+    const suppress = suppressJumpRef.current;
+    suppressJumpRef.current = false;
+    if (findRe && !suppress) setFindJump((j) => j + 1);
+  }, [findRe]);
   useEffect(() => {
     if (findOpen) findInputRef.current?.focus();
   }, [findOpen]);
-  // Ctrl+F while the bar is already open: refocus and select the query so it can
-  // be retyped straight away (the open-driven effect above only fires on open).
+  // Ctrl+F: seed the query from highlighted log text (single-line selections
+  // only), then focus + select the input so it can be retyped straight away.
+  // The nonce bumps on every Ctrl+F, whether the bar was open or not.
   useEffect(() => {
     if (!findFocusNonce) return;
-    const el = findInputRef.current;
-    if (!el) return;
-    el.focus();
-    el.select();
+    const sel = findSeed ?? "";
+    if (sel && !sel.includes("\n") && sel !== query) {
+      suppressJumpRef.current = true;
+      setQuery(sel);
+    }
+    // Focus on a frame delay so a seeded query has rendered before select().
+    const raf = requestAnimationFrame(() => {
+      findInputRef.current?.focus();
+      findInputRef.current?.select();
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [findFocusNonce]);
 
   // Horizontally scroll the current find hit into view when it sits outside the
@@ -476,7 +546,7 @@ export function LogView({
   // once it has rendered — nudge the horizontal scroll so a match sitting past
   // the right edge is actually visible instead of needing a manual h-scroll.
   useEffect(() => {
-    if (!hits.length) return;
+    if (!findJump || !hits.length) return;
     const h = hits[Math.min(current, hits.length - 1)];
     if (!h) return;
     rowVirtualizer.scrollToIndex(h.ri, { align: "center" });
@@ -488,7 +558,8 @@ export function LogView({
       cancelAnimationFrame(raf1);
       if (raf2) cancelAnimationFrame(raf2);
     };
-  }, [current, hits]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [findJump]);
 
   // Remembers, while the view mode is stable, the "keep" line — the selected line
   // on screen, else the viewport-center line — together with its pixel offset
@@ -802,9 +873,39 @@ export function LogView({
     }
   }, [visible, viewH, scrollTop, rowH, mapColorMode, mapWidth, markerMap]);
 
+  // Step through the find hits. When the user has (re)selected a line since the
+  // last step, restart from it: next goes to the first hit strictly after the
+  // selected line, prev to the last one strictly before it (wrapping when that
+  // side is empty). Repeat presses without touching the selection advance from
+  // the current hit as before. Cost: one scan of the precomputed `hits` per
+  // button press — negligible.
+  const navSelRef = useRef<Set<number> | null>(null);
   function nav(dir: number) {
     if (!hits.length) return;
+    const selMoved =
+      anchorRi !== null &&
+      selectedLines.size > 0 &&
+      selectedLines !== navSelRef.current;
+    navSelRef.current = selectedLines;
+    if (selMoved) {
+      let idx = -1;
+      if (dir > 0) {
+        idx = hits.findIndex((h) => h.ri > anchorRi);
+        if (idx < 0) idx = 0; // nothing below — wrap to the first hit
+      } else {
+        for (let i = hits.length - 1; i >= 0; i--)
+          if (hits[i].ri < anchorRi) {
+            idx = i;
+            break;
+          }
+        if (idx < 0) idx = hits.length - 1; // nothing above — wrap to the last
+      }
+      setCurrent(idx);
+      setFindJump((j) => j + 1);
+      return;
+    }
     setCurrent((c) => (c + dir + hits.length) % hits.length);
+    setFindJump((j) => j + 1);
   }
   const currentKey = hits.length
     ? hits[Math.min(current, hits.length - 1)].key
@@ -1273,6 +1374,10 @@ export function LogView({
               <EncodingCombobox
                 value={file.encodingOverride}
                 detected={file.encoding}
+                autoDetected={
+                  file.detectedEncoding ??
+                  (file.encodingOverride ? undefined : file.encoding)
+                }
                 onChange={onSetEncoding}
               />
             ) : (
@@ -1402,7 +1507,7 @@ export function LogView({
                   <button
                     className={"find-opt" + (findCase ? " active" : "")}
                     aria-pressed={findCase}
-                    onClick={() => setFindCase((v) => !v)}
+                    onClick={toggleFindCase}
                   />
                 }
               >
@@ -1416,7 +1521,7 @@ export function LogView({
                   <button
                     className={"find-opt" + (findRegex ? " active" : "")}
                     aria-pressed={findRegex}
-                    onClick={() => setFindRegex((v) => !v)}
+                    onClick={toggleFindRegex}
                   />
                 }
               >

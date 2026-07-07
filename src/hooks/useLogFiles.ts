@@ -73,8 +73,15 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
     [file?.id, linesVersion],
   );
 
+  // Bumped on every explicit sidebar file selection. Reads (which the passive
+  // busy overlay no longer blocks) snapshot it before their await: if it moved
+  // by the time the file lands, the user navigated mid-read — comparing
+  // activeFileId alone can't see a re-click of the already-active file.
+  const selectNonceRef = useRef(0);
+
   const selectFile = (fid: string) => {
     setOpenScreen(false);
+    selectNonceRef.current++;
     // The heavy re-render this triggers (computeView over the switched-to file)
     // is deferred in render via App's deferred active-file id (isSwitchingFile),
     // not here — a transition can't defer this Zustand (useSyncExternalStore)
@@ -147,6 +154,9 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
           let text: string;
           let encoding: string;
           setBusy({ name: baseName(path) });
+          // The busy overlay is non-blocking, so the user may switch files while
+          // this one reads — snapshot the selection nonce to detect it.
+          const selectAtStart = selectNonceRef.current;
           await nextPaint(); // let the overlay paint before the read/split blocks
           try {
             const res = await invoke<{ text: string; encoding: string }>(
@@ -177,12 +187,16 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
                 path,
                 lineCount: lns.length,
                 encoding,
+                detectedEncoding: encoding,
                 sets: makeSets(),
                 activeSetId: null,
               };
               f.activeSetId = f.sets[0].id;
               s.files.push(f);
-              s.activeFileId = f.id;
+              // Auto-activate the freshly opened file — unless the user selected
+              // a file mid-read, in which case don't yank them away.
+              if (selectNonceRef.current === selectAtStart)
+                s.activeFileId = f.id;
             },
             { undoable: false },
           );
@@ -220,6 +234,8 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
       let text: string;
       let encoding: string;
       setBusy({ name: baseName(path) });
+      // Like loadPaths: the user may switch files while the overlay is up.
+      const selectAtStart = selectNonceRef.current;
       await nextPaint(); // let the overlay paint before the read/split blocks
       try {
         const res = await invoke<{ text: string; encoding: string }>(
@@ -245,7 +261,11 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
           f.name = baseName(path);
           f.lineCount = lns.length;
           f.encoding = encoding;
-          s.activeFileId = f.id;
+          f.detectedEncoding = encoding;
+          // The read above auto-detected — a leftover override from the slot's
+          // previous contents no longer describes how this text was decoded.
+          f.encodingOverride = undefined;
+          if (selectNonceRef.current === selectAtStart) s.activeFileId = f.id;
         },
         { undoable: false },
       );
@@ -295,6 +315,9 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
           if (!ff) return;
           ff.encodingOverride = label ?? undefined;
           ff.encoding = res.encoding;
+          // Only an un-forced decode re-ran detection; a forced one must not
+          // overwrite what the Auto-detect row reports.
+          if (!label) ff.detectedEncoding = res.encoding;
           ff.lineCount = lns.length;
         },
         { undoable: false },
@@ -327,12 +350,18 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
           "read_text_file",
           { path, encoding: encodingOverride },
         );
-        if (cancelled) return;
+        // Even when the user has switched away mid-read (`cancelled`), keep the
+        // result: the cache is keyed by file id, and caching it makes switching
+        // back instant instead of triggering a second read.
         linesStore[id] = splitLines(res.text);
         patchState(
           (s) => {
             const f = s.files.find((x) => x.id === id);
-            if (f) f.encoding = res.encoding;
+            if (!f) return;
+            f.encoding = res.encoding;
+            // Without an override this read auto-detected; record the result
+            // (also backfills files persisted before detectedEncoding existed).
+            if (!encodingOverride) f.detectedEncoding = res.encoding;
           },
           { undoable: false },
         );

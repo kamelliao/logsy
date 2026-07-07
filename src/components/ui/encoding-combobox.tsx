@@ -27,8 +27,11 @@ const AUTO = "__auto__";
 interface EncodingComboboxProps {
   /** Forced encoding label, or undefined when auto-detecting. */
   value?: string;
-  /** Encoding actually used to decode (shown on the trigger + beside Auto-detect). */
+  /** Encoding actually used to decode (shown on the trigger). */
   detected?: string;
+  /** What auto-detection chose — shown beside the Auto-detect row even while a
+   *  manual override is active (when `detected` names the forced encoding). */
+  autoDetected?: string;
   /** null = back to auto-detect. */
   onChange: (label: string | null) => void;
 }
@@ -36,6 +39,7 @@ interface EncodingComboboxProps {
 export function EncodingCombobox({
   value,
   detected,
+  autoDetected,
   onChange,
 }: EncodingComboboxProps) {
   const items = [AUTO, ...ENCODINGS.map((e) => e.value)];
@@ -100,7 +104,7 @@ export function EncodingCombobox({
                     {nameOf(item)}
                   </span>
                   <span className="cc-item-hex">
-                    {item === AUTO ? detected?.toLowerCase() : item}
+                    {item === AUTO ? autoDetected?.toLowerCase() : item}
                   </span>
                   {/* Fixed-width slot reserved on every row (selected or not) so the
                       code column's right edge stays put — the check no longer shoves
