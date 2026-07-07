@@ -25,9 +25,11 @@ export function Overlays({
 }: Props): ReactNode {
   return (
     <>
-      {/* loading overlay — shown while a log file is read from disk */}
+      {/* loading indicator — shown while a log file is read from disk. Passive
+          (click-through) so the app stays usable: the user can keep working in,
+          or switch to, another open file while a slow read is in flight. */}
       {busy && (
-        <div className="busy-overlay">
+        <div className="busy-overlay passive">
           <div className="busy-card">
             <div className="busy-spinner" />
             <div className="busy-text">Opening {busy.name}…</div>

@@ -115,8 +115,10 @@ export function App() {
   const [appConfirm, confirmNode] = useConfirm();
   const [focusSearchNonce, setFocusSearchNonce] = useState(0);
   // Bumped to (re)focus the log find bar's input — lets Ctrl+F refocus the box
-  // even when the bar is already open (see focusFind).
+  // even when the bar is already open (see focusFind). `findSeed` carries the
+  // text highlighted at the moment Ctrl+F was pressed, for seeding the query.
   const [findFocusNonce, setFindFocusNonce] = useState(0);
+  const [findSeed, setFindSeed] = useState("");
 
   useEffect(() => {
     getVersion()
@@ -401,6 +403,9 @@ export function App() {
   // to focus even when the bar was already open (so a second Ctrl+F re-focuses
   // and selects the existing query instead of doing nothing).
   const focusFind = () => {
+    // Capture any highlighted text NOW: opening the bar focuses its input,
+    // which clears the document selection before LogView's effects run.
+    setFindSeed(window.getSelection()?.toString() ?? "");
     setFindOpen(true);
     setFindFocusNonce((n) => n + 1);
   };
@@ -485,6 +490,7 @@ export function App() {
         findOpen={findOpen}
         onCloseFind={() => setFindOpen(false)}
         findFocusNonce={findFocusNonce}
+        findSeed={findSeed}
         onBuildFilter={openFilterFromPattern}
         mapColorMode={state.mapColorMode ?? "bg"}
         mapWidth={state.mapWidth ?? 14}

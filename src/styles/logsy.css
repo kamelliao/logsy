@@ -5316,6 +5316,27 @@ button {
   backdrop-filter: blur(1.5px);
   animation: fade 0.12s ease;
 }
+/* Passive variant: a click-through status card (no input trap, no dimming),
+   parked bottom-center so it doesn't sit over the text being read. Used for
+   the log-file read, which must not lock the user out of the app. */
+.busy-overlay.passive {
+  pointer-events: none;
+  background: transparent;
+  backdrop-filter: none;
+  place-items: end center;
+  padding-bottom: 26px;
+}
+.busy-overlay.passive .busy-card {
+  flex-direction: row;
+  gap: 12px;
+  padding: 12px 20px;
+  border: 1px solid var(--border-strong);
+}
+.busy-overlay.passive .busy-spinner {
+  width: 18px;
+  height: 18px;
+  border-width: 2px;
+}
 .busy-card {
   display: flex;
   flex-direction: column;

@@ -125,6 +125,12 @@ export interface LogFile {
    * Persisted, so a reopened file re-decodes with the same forced encoding.
    */
   encodingOverride?: string;
+  /**
+   * What auto-detection last chose for this file. Kept while an override is
+   * active (unlike `encoding`, which tracks the decode actually used), so the
+   * encoding pill's Auto-detect row keeps naming the detected encoding.
+   */
+  detectedEncoding?: string;
   /** User-chosen sidebar glyph; undefined = default document icon. */
   icon?: FileIcon;
   /** File group this log belongs to; null/undefined = ungrouped (renders above
