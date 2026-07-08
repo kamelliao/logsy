@@ -90,17 +90,19 @@ const TEXT_PALETTE = [
   { label: "Red", value: "#d44c47" },
 ];
 
+// Deeper than Notion's near-white highlights so the mark actually reads as a
+// highlight. Still pastel enough that dark body text stays legible on top.
 const BG_PALETTE = [
   { label: "Default", value: null },
-  { label: "Gray", value: "#f1f1ef" },
-  { label: "Brown", value: "#f4eeee" },
-  { label: "Orange", value: "#fbecdd" },
-  { label: "Yellow", value: "#fbf3db" },
-  { label: "Green", value: "#edf3ec" },
-  { label: "Blue", value: "#e7f3f8" },
-  { label: "Purple", value: "#f6f3f9" },
-  { label: "Pink", value: "#faf1f5" },
-  { label: "Red", value: "#fdebec" },
+  { label: "Gray", value: "#dedcd6" },
+  { label: "Brown", value: "#e6d3c6" },
+  { label: "Orange", value: "#f8d3ac" },
+  { label: "Yellow", value: "#f6e6a2" },
+  { label: "Green", value: "#cbe7c6" },
+  { label: "Blue", value: "#c4e2f0" },
+  { label: "Purple", value: "#e4d5f1" },
+  { label: "Pink", value: "#f4cfe1" },
+  { label: "Red", value: "#f9cccd" },
 ];
 
 function TextColorBtn({ editor }: { editor: Editor }) {
@@ -410,6 +412,77 @@ function ToolbarBtn({
   );
 }
 
+// Notion/Docs-style table size picker: hovering the grid highlights an r×c
+// block; clicking a cell inserts a table that big (with a header row).
+const TABLE_MAX_ROWS = 8;
+const TABLE_MAX_COLS = 10;
+
+function TableInsertBtn({ editor }: { editor: Editor }) {
+  const [open, setOpen] = useState(false);
+  const [hover, setHover] = useState<{ r: number; c: number }>({ r: 0, c: 0 });
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  const insert = (rows: number, cols: number) => {
+    editor
+      .chain()
+      .focus()
+      .insertTable({ rows, cols, withHeaderRow: true })
+      .run();
+    setOpen(false);
+    setHover({ r: 0, c: 0 });
+  };
+
+  return (
+    <div ref={wrapRef} className="nb-palette-wrap">
+      <button
+        className="nb-tbtn"
+        title="Insert table"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          if (selectionInPL()) return;
+          setOpen((o) => !o);
+        }}
+      >
+        <TableIcon size={14} />
+      </button>
+      {open && (
+        <div className="nb-palette-panel nb-tablegrid-panel">
+          <div
+            className="nb-tablegrid"
+            onMouseLeave={() => setHover({ r: 0, c: 0 })}
+          >
+            {Array.from({ length: TABLE_MAX_ROWS }, (_, r) =>
+              Array.from({ length: TABLE_MAX_COLS }, (_, c) => (
+                <button
+                  key={`${r}-${c}`}
+                  className={
+                    "nb-tablecell" + (r < hover.r && c < hover.c ? " on" : "")
+                  }
+                  onMouseEnter={() => setHover({ r: r + 1, c: c + 1 })}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => insert(r + 1, c + 1)}
+                />
+              )),
+            )}
+          </div>
+          <p className="nb-tablegrid-label">
+            {hover.r > 0 ? `${hover.r} × ${hover.c}` : "Insert table"}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Toolbar({
   editor,
   onGetTitle,
@@ -542,19 +615,7 @@ function Toolbar({
       >
         <CodeXml size={14} />
       </ToolbarBtn>
-      <ToolbarBtn
-        title="Insert table"
-        onClick={() => {
-          if (selectionInPL()) return;
-          editor
-            .chain()
-            .focus()
-            .insertTable({ rows: 3, cols: 3, withHeaderRow: true })
-            .run();
-        }}
-      >
-        <TableIcon size={14} />
-      </ToolbarBtn>
+      <TableInsertBtn editor={editor} />
       <div className="nb-tsep" />
       <ToolbarBtn
         title="Undo (Ctrl+Z)"
@@ -1361,6 +1422,14 @@ function TableToolbar({ editor }: { editor: Editor }) {
         onClick={run((e) => e.chain().focus().deleteColumn().run())}
       >
         <DeleteColumnIcon size={15} />
+      </button>
+      <span className="nb-ttsep" />
+      <button
+        className="nb-ttbtn is-danger"
+        title="Delete table"
+        onClick={run((e) => e.chain().focus().deleteTable().run())}
+      >
+        <Trash2 size={15} />
       </button>
     </div>,
     document.body,
