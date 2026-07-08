@@ -1,15 +1,145 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { Plus, Pencil, Trash2, NotebookPen, Check } from "lucide-react";
-import { useShallow } from "zustand/react/shallow";
-import { NoteEditor } from "./NoteEditor";
 import {
-  Select,
-  SelectTrigger,
-  SelectValue,
-  SelectContent,
-  SelectItem,
-} from "@/components/ui/select";
+  Plus,
+  Pencil,
+  Trash2,
+  NotebookPen,
+  Check,
+  Search,
+  ChevronDown,
+} from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
+import { Combobox } from "@base-ui/react/combobox";
+import { NoteEditor } from "./NoteEditor";
+import type { Notebook } from "@/types";
 import { useStore } from "@/store";
+
+// Relative "2h ago" / "3d ago", falling back to a short date past a week — keeps
+// the combobox rows scannable while the full timestamps live in the row title.
+const fmtWhen = (ms: number): string => {
+  if (!ms) return "";
+  const diff = Date.now() - ms;
+  const m = 60_000,
+    h = 3_600_000,
+    d = 86_400_000;
+  if (diff < m) return "just now";
+  if (diff < h) return `${Math.floor(diff / m)}m ago`;
+  if (diff < d) return `${Math.floor(diff / h)}h ago`;
+  if (diff < 7 * d) return `${Math.floor(diff / d)}d ago`;
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+    }).format(ms);
+  } catch {
+    return "";
+  }
+};
+
+const fmtFull = (ms: number): string => {
+  if (!ms) return "—";
+  try {
+    return new Intl.DateTimeFormat(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    }).format(ms);
+  } catch {
+    return "";
+  }
+};
+
+/** Searchable notebook switcher. Each row shows the name plus when it was last
+ *  edited and created; the full timestamps sit in the row's hover title. */
+function NotebookCombobox({
+  notebooks,
+  activeId,
+  onSelect,
+}: {
+  notebooks: Notebook[];
+  activeId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const ids = useMemo(() => notebooks.map((n) => n.id), [notebooks]);
+  const byId = useMemo(
+    () => new Map(notebooks.map((n) => [n.id, n])),
+    [notebooks],
+  );
+  const nameOf = (id: string) => byId.get(id)?.name ?? "Untitled";
+
+  return (
+    <Combobox.Root
+      items={ids}
+      value={activeId}
+      onValueChange={(v) => {
+        if (typeof v === "string") onSelect(v);
+      }}
+      itemToStringLabel={nameOf}
+    >
+      <Combobox.Trigger className="nb-combo-trigger" title="Switch notebook">
+        <span className="nb-combo-triggertext">
+          {activeId ? nameOf(activeId) : "Select notebook"}
+        </span>
+        <ChevronDown size={14} className="nb-combo-chevron" />
+      </Combobox.Trigger>
+      <Combobox.Portal>
+        <Combobox.Positioner
+          side="bottom"
+          align="start"
+          sideOffset={4}
+          style={{ zIndex: 1000 }}
+        >
+          <Combobox.Popup className="menu-pop cc-popup nb-combo-popup">
+            <div className="cc-search">
+              <Search size={14} />
+              <Combobox.Input
+                placeholder="Search notebooks…"
+                className="cc-input"
+              />
+            </div>
+            <Combobox.Empty className="cc-empty">
+              No notebooks found
+            </Combobox.Empty>
+            <Combobox.List className="cc-list scroll">
+              {(id: string) => {
+                const n = byId.get(id);
+                return (
+                  <Combobox.Item
+                    key={id}
+                    value={id}
+                    className="cc-item nb-combo-item"
+                  >
+                    <span className="nb-combo-item-main">
+                      <span
+                        className="cc-item-name"
+                        style={{ textTransform: "none" }}
+                      >
+                        {nameOf(id)}
+                      </span>
+                      {n && (
+                        <span
+                          className="nb-combo-meta"
+                          title={`Created ${fmtFull(n.createdAt)}\nEdited ${fmtFull(n.updatedAt)}`}
+                        >
+                          Edited {fmtWhen(n.updatedAt)} · Created{" "}
+                          {fmtWhen(n.createdAt)}
+                        </span>
+                      )}
+                    </span>
+                    <span className="enc-check">
+                      <Combobox.ItemIndicator>
+                        <Check size={13} />
+                      </Combobox.ItemIndicator>
+                    </span>
+                  </Combobox.Item>
+                );
+              }}
+            </Combobox.List>
+          </Combobox.Popup>
+        </Combobox.Positioner>
+      </Combobox.Portal>
+    </Combobox.Root>
+  );
+}
 
 /** Header bar: switch between notebooks, create, rename inline, delete. */
 function NotebookBar() {
@@ -31,11 +161,6 @@ function NotebookBar() {
     })),
   );
   const active = notebooks.find((n) => n.id === activeId) ?? null;
-  // Lets SelectValue render the active notebook's NAME (the value is its id).
-  const items = useMemo(
-    () => notebooks.map((n) => ({ value: n.id, label: n.name })),
-    [notebooks],
-  );
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState("");
@@ -81,26 +206,11 @@ function NotebookBar() {
           onBlur={commitRename}
         />
       ) : (
-        <Select
-          items={items}
-          value={activeId}
-          onValueChange={(v) => v && setActiveNotebook(v)}
-        >
-          <SelectTrigger
-            size="sm"
-            className="min-w-0 flex-1 font-semibold"
-            title="Switch notebook"
-          >
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            {notebooks.map((n) => (
-              <SelectItem key={n.id} value={n.id}>
-                {n.name}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <NotebookCombobox
+          notebooks={notebooks}
+          activeId={activeId}
+          onSelect={setActiveNotebook}
+        />
       )}
       <div className="nb-bar-actions">
         {editing ? (

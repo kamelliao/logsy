@@ -6513,6 +6513,65 @@ button {
   background: var(--panel-bg);
   flex-shrink: 0;
 }
+/* notebook switcher (searchable combobox) — trigger sized to match .nb-bar-rename */
+.nb-combo-trigger {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--app-bg);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+  transition:
+    background 0.1s,
+    border-color 0.1s;
+}
+.nb-combo-trigger:hover {
+  background: var(--row-hover);
+}
+.nb-combo-trigger[data-popup-open] {
+  border-color: var(--accent-bg);
+}
+.nb-combo-triggertext {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: left;
+}
+.nb-combo-chevron {
+  flex-shrink: 0;
+  color: var(--text-3);
+}
+/* two-line row: name on top, a small grey "Edited … · Created …" meta line */
+.nb-combo-item {
+  align-items: center;
+}
+.nb-combo-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  flex: 1;
+}
+.nb-combo-meta {
+  font-size: 10.5px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .nb-bar-rename {
   flex: 1;
   min-width: 0;
@@ -6745,6 +6804,40 @@ button {
   transform: rotate(45deg);
 }
 
+/* ── table size picker (hover grid) ──────────────────────────────────────── */
+.nb-tablegrid-panel {
+  width: auto;
+}
+.nb-tablegrid {
+  display: grid;
+  grid-template-columns: repeat(10, 16px);
+  gap: 3px;
+}
+.nb-tablecell {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: var(--panel-bg-2, var(--panel-bg));
+  cursor: pointer;
+  transition:
+    background 0.08s,
+    border-color 0.08s;
+}
+.nb-tablecell.on {
+  background: var(--accent-bg-strong, rgba(44, 108, 230, 0.16));
+  border-color: #2c6ce6;
+}
+.nb-tablegrid-label {
+  margin: 6px 0 0;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-2);
+  font-variant-numeric: tabular-nums;
+}
+
 /* editor area */
 .nb-editor-wrap {
   display: flex;
@@ -6899,9 +6992,20 @@ button {
   width: 3px;
   background: var(--border-strong);
 }
-/* bold: heavier than the browser default (700) so it reads clearly bolder */
+/* bold: use the heaviest face (Segoe UI Black on Windows) so it reads clearly
+   bolder — 800 has no dedicated face and snaps back down to 700. */
 .nb-prosemirror .ProseMirror strong {
-  font-weight: 800;
+  font-weight: 900;
+}
+/* highlight mark: the bg hues are pastel and assume dark text, so pin the text
+   dark even in the dark theme (where body text is light) — otherwise light text
+   on a pale highlight is unreadable. Small padding/rounding reads as a pen swipe. */
+.nb-prosemirror .ProseMirror mark {
+  color: #1c1f23;
+  padding: 0.05em 0.15em;
+  border-radius: 0.2em;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 /* ── tables (prosemirror-tables, Notion-style) ─────────────────────────────── */
