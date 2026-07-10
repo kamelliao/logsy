@@ -78,6 +78,7 @@ import type {
   FilterPack,
 } from "@/types";
 import { trackFieldsOf } from "@/lib/engine";
+import { exportPayload } from "@/lib/filterFile";
 import { useStore } from "@/store";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -427,6 +428,8 @@ interface SetTabProps {
   set: FilterSet;
   active: boolean;
   canDelete: boolean;
+  /** File-backed set whose filters diverged from the last saved/loaded state. */
+  dirty: boolean;
   onSelect: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
@@ -438,6 +441,7 @@ function SetTab({
   set,
   active,
   canDelete,
+  dirty,
   onSelect,
   onRename,
   onDelete,
@@ -508,6 +512,12 @@ function SetTab({
           />
         ) : (
           <span className="gtab-name">{set.name}</span>
+        )}
+        {dirty && !editing && (
+          <span
+            className="gtab-dirty"
+            title="Unsaved changes since last save to file"
+          />
         )}
         <span className="gtab-count">{set.filters.length}</span>
         {canDelete && (
@@ -2098,6 +2108,7 @@ export function FilterPanel({
                 set={g}
                 active={g.id === file.activeSetId}
                 canDelete={file.sets.length > 1}
+                dirty={!!g.filePath && g.savedSnapshot !== exportPayload(g)}
                 onSelect={() => onSwitchSet(g.id)}
                 onRename={(name) => onRenameSet(g.id, name)}
                 onDelete={() => onDeleteSet(g.id)}

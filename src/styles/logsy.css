@@ -316,6 +316,16 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* Dim parent-dir suffix that disambiguates same-named files (VS Code style). */
+.file-item .file-dir {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-3);
+}
 .file-item .file-name-input {
   flex: 1 1 auto;
   min-width: 0;
@@ -437,6 +447,7 @@ button {
 
 .sidebar.collapsed .sidebar-section-label,
 .sidebar.collapsed .file-name,
+.sidebar.collapsed .file-dir,
 .sidebar.collapsed .file-lines,
 .sidebar.collapsed .file-x,
 .sidebar.collapsed .new-tab span,
@@ -2719,6 +2730,14 @@ button {
   line-height: 16px;
   font-variant-numeric: tabular-nums;
   flex: 0 0 auto;
+}
+/* Dirty dot: the set is file-backed and has unsaved edits since the last save. */
+.gtab .gtab-dirty {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #d98a2b;
 }
 .gtab-add {
   width: 28px;
