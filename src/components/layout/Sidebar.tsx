@@ -37,6 +37,7 @@ import type {
   FilterLabelMode,
 } from "@/types";
 import { FILE_ICONS, FileGlyph } from "@/components/widgets/fileIcons";
+import { disambiguationSuffixes } from "@/lib/path";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/store";
 import { UNGROUPED } from "@/store/slices/fileGroupSlice";
@@ -65,6 +66,8 @@ interface FileItemProps {
   file: LogFile;
   active: boolean;
   canDelete: boolean;
+  /** Parent-dir suffix disambiguating same-named files (VS Code style); dim. */
+  suffix?: string;
   groups: FileGroup[];
   onSelect: () => void;
   onDelete: () => void;
@@ -77,6 +80,7 @@ function FileItem({
   file,
   active,
   canDelete,
+  suffix,
   groups,
   onSelect,
   onDelete,
@@ -145,6 +149,11 @@ function FileItem({
             <FileGlyph icon={file.icon} size={16} />
           </span>
           <span className="file-name">{file.name}</span>
+          {suffix && (
+            <span className="file-dir" title={file.path ?? undefined}>
+              {suffix}
+            </span>
+          )}
           {file.encoding && !/^utf-?8$/i.test(file.encoding) && (
             <span
               className="file-enc"
@@ -505,6 +514,8 @@ export function Sidebar({
 
   const groups = state.fileGroups ?? [];
   const fileById = new Map(state.files.map((f) => [f.id, f] as const));
+  // VS Code–style suffixes for files that share a basename (derived, not stored).
+  const dirSuffixes = disambiguationSuffixes(state.files);
 
   // Which group header just got created and should open straight into rename.
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
@@ -597,6 +608,7 @@ export function Sidebar({
         file={f}
         active={!openScreen && f.id === state.activeFileId}
         canDelete={true}
+        suffix={dirSuffixes[f.id]}
         groups={groups}
         onSelect={() => onSelectFile(f.id)}
         onDelete={() => onDeleteFile(f.id)}
