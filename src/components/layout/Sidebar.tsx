@@ -29,23 +29,12 @@ import {
 } from "@dnd-kit/sortable";
 import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
 import { CSS } from "@dnd-kit/utilities";
-import type {
-  AppState,
-  FileGroup,
-  FileIcon,
-  LogFile,
-  FilterLabelMode,
-} from "@/types";
+import type { AppState, FileGroup, FileIcon, LogFile } from "@/types";
 import { FILE_ICONS, FileGlyph } from "@/components/widgets/fileIcons";
 import { disambiguationSuffixes } from "@/lib/path";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/store";
 import { UNGROUPED } from "@/store/slices/fileGroupSlice";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Tooltip,
   TooltipContent,
@@ -479,13 +468,8 @@ interface SidebarProps {
   onOpenFile: () => void;
   onDeleteFile: (id: string) => void;
   onSetFileIcon: (id: string, icon: FileIcon) => void;
-  onSetPanelPos: (pos: "bottom" | "right") => void;
-  onSetMapColorMode: (mode: "bg" | "text") => void;
-  onSetMapWidth: (w: number) => void;
-  onSetFontWeight: (w: number) => void;
-  onSetTimelineIconSize: (sz: "S" | "M" | "L") => void;
-  onSetFilterLabel: (mode: FilterLabelMode) => void;
-  onManagePalette: () => void;
+  /** Opens the Settings dialog (the sidebar row is just its launcher). */
+  onOpenSettings: () => void;
 }
 
 export function Sidebar({
@@ -497,13 +481,7 @@ export function Sidebar({
   onOpenFile,
   onDeleteFile,
   onSetFileIcon,
-  onSetPanelPos,
-  onSetMapColorMode,
-  onSetMapWidth,
-  onSetFontWeight,
-  onSetTimelineIconSize,
-  onSetFilterLabel,
-  onManagePalette,
+  onOpenSettings,
 }: SidebarProps) {
   const createFileGroup = useStore((s) => s.createFileGroup);
   const renameFileGroup = useStore((s) => s.renameFileGroup);
@@ -729,167 +707,20 @@ export function Sidebar({
         </div>
       </div>
       <div className="sidebar-bottom">
-        <Popover>
-          <PopoverTrigger
-            nativeButton={false}
-            render={
-              <div className="settings-row" role="button">
-                <Settings size={16} />
-                <span>Settings</span>
-                {!collapsed && <span className="gear" />}
-              </div>
-            }
-          />
-          <PopoverContent>
-            <div
-              style={{ fontWeight: 600, fontSize: 13, padding: "2px 4px 6px" }}
-            >
-              Settings
-            </div>
-            <div className="sp-row">
-              Filter panel
-              <div className="seg" style={{ marginLeft: 8 }}>
-                <button
-                  className={
-                    (state.panelPos ?? "bottom") === "bottom" ? "on" : ""
-                  }
-                  onClick={() => onSetPanelPos("bottom")}
-                >
-                  Bottom
-                </button>
-                <button
-                  className={
-                    (state.panelPos ?? "bottom") === "right" ? "on" : ""
-                  }
-                  onClick={() => onSetPanelPos("right")}
-                >
-                  Right
-                </button>
-              </div>
-            </div>
-            <div className="sp-row">
-              Theme
-              <span style={{ color: "var(--text-3)" }}>Light</span>
-            </div>
-            <div className="sp-row">
-              Match map color
-              <div className="seg" style={{ marginLeft: 8 }}>
-                <button
-                  className={(state.mapColorMode ?? "bg") === "bg" ? "on" : ""}
-                  onClick={() => onSetMapColorMode("bg")}
-                >
-                  BG
-                </button>
-                <button
-                  className={
-                    (state.mapColorMode ?? "bg") === "text" ? "on" : ""
-                  }
-                  onClick={() => onSetMapColorMode("text")}
-                >
-                  Text
-                </button>
-              </div>
-            </div>
-            <div className="sp-row">
-              Match map width
-              <div className="seg" style={{ marginLeft: 8 }}>
-                {[
-                  { label: "S", value: 12 },
-                  { label: "M", value: 16 },
-                  { label: "L", value: 20 },
-                ].map(({ label, value }) => (
-                  <button
-                    key={label}
-                    className={(state.mapWidth ?? 20) === value ? "on" : ""}
-                    onClick={() => onSetMapWidth(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="sp-row">
-              Log font weight
-              <div className="seg" style={{ marginLeft: 8 }}>
-                {[
-                  { label: "Light", value: 300 },
-                  { label: "Regular", value: 400 },
-                  { label: "Medium", value: 500 },
-                ].map(({ label, value }) => (
-                  <button
-                    key={label}
-                    className={(state.fontWeight ?? 400) === value ? "on" : ""}
-                    onClick={() => onSetFontWeight(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="sp-row">
-              Timeline icon size
-              <div className="seg" style={{ marginLeft: 8 }}>
-                {(["S", "M", "L"] as const).map((sz) => (
-                  <button
-                    key={sz}
-                    className={
-                      (state.timelineIconSize ?? "M") === sz ? "on" : ""
-                    }
-                    onClick={() => onSetTimelineIconSize(sz)}
-                  >
-                    {sz}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div
-              className="sp-row"
-              style={{ flexDirection: "column", alignItems: "stretch", gap: 6 }}
-            >
-              Filter row label
-              <div className="seg" style={{ alignSelf: "stretch" }}>
-                {(
-                  [
-                    { label: "Pattern", value: "pattern" },
-                    { label: "Description", value: "description" },
-                    { label: "Auto", value: "desc-first" },
-                  ] as const
-                ).map(({ label, value }) => (
-                  <button
-                    key={value}
-                    style={{ flex: 1, justifyContent: "center" }}
-                    title={
-                      value === "pattern"
-                        ? "Always show the regex pattern"
-                        : value === "description"
-                          ? "Always show the description"
-                          : "Show the description if set, otherwise the pattern"
-                    }
-                    className={
-                      (state.filterLabel ?? "desc-first") === value ? "on" : ""
-                    }
-                    onClick={() => onSetFilterLabel(value)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div className="sp-sep" />
-            <div
-              className="sp-row sp-row-link"
-              onClick={onManagePalette}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === " ") onManagePalette();
-              }}
-            >
-              Color palette
-              <ChevronRight size={14} style={{ color: "var(--text-3)" }} />
-            </div>
-          </PopoverContent>
-        </Popover>
+        <div
+          className="settings-row"
+          role="button"
+          tabIndex={0}
+          title="Settings"
+          onClick={onOpenSettings}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") onOpenSettings();
+          }}
+        >
+          <Settings size={16} />
+          <span>Settings</span>
+          {!collapsed && <span className="gear" />}
+        </div>
       </div>
     </div>
   );

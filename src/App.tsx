@@ -21,7 +21,6 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { LogView } from "@/components/LogView";
 import { FilterPanel } from "@/components/FilterPanel";
 import { EditModal } from "@/components/dialogs/EditModal";
-import { PaletteModal } from "@/components/dialogs/PaletteModal";
 import { CompareTable } from "@/components/CompareTable";
 import { useCompareCollapse } from "@/hooks/useCompareCollapse";
 import { BookmarksPanel } from "@/components/BookmarksPanel";
@@ -29,6 +28,7 @@ import { TimelinePanel } from "@/components/TimelinePanel";
 import { MenuPopup } from "@/components/layout/MenuPopup";
 import { AboutModal } from "@/components/dialogs/AboutModal";
 import { ShortcutsModal } from "@/components/dialogs/ShortcutsModal";
+import { SettingsDialog } from "@/components/dialogs/SettingsDialog";
 import { useConfirm } from "@/components/dialogs/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
@@ -290,11 +290,11 @@ export function App() {
     );
 
   // ---------- palette ----------
+  // Palette editing now lives in the Settings dialog (store-connected); App only
+  // resolves the effective palette for the filter editor's swatch row.
   const effectivePalette: PaletteEntry[] =
     state.customPalette ?? DEFAULT_PALETTE;
-  const [paletteModalOpen, setPaletteModalOpen] = useState(false);
-  const applyPalette = (palette: PaletteEntry[]) =>
-    setState((s) => ({ ...s, customPalette: palette }));
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // ---------- navigation glue (panel ↔ panel) ----------
   // Jump from a Compare group header to the filter that produced it: reveal the
@@ -677,23 +677,7 @@ export function App() {
                   { undoable: false },
                 )
               }
-              onSetPanelPos={(pos) =>
-                setState((s) => ({ ...s, panelPos: pos }))
-              }
-              onSetMapColorMode={(mode) =>
-                setState((s) => ({ ...s, mapColorMode: mode }))
-              }
-              onSetMapWidth={(w) => setState((s) => ({ ...s, mapWidth: w }))}
-              onSetFontWeight={(w) =>
-                setState((s) => ({ ...s, fontWeight: w }))
-              }
-              onSetTimelineIconSize={(sz) =>
-                setState((s) => ({ ...s, timelineIconSize: sz }))
-              }
-              onSetFilterLabel={(mode) =>
-                setState((s) => ({ ...s, filterLabel: mode }))
-              }
-              onManagePalette={() => setPaletteModalOpen(true)}
+              onOpenSettings={() => setSettingsOpen(true)}
             />
             {file && set && !openScreen ? (
               renderWorkspace()
@@ -747,13 +731,9 @@ export function App() {
             />
           )}
 
-          {/* palette management modal */}
-          {paletteModalOpen && (
-            <PaletteModal
-              palette={effectivePalette}
-              onChange={applyPalette}
-              onClose={() => setPaletteModalOpen(false)}
-            />
+          {/* settings dialog (store-connected; palette editor lives inside it) */}
+          {settingsOpen && (
+            <SettingsDialog onClose={() => setSettingsOpen(false)} />
           )}
 
           <Overlays
