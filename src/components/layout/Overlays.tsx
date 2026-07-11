@@ -1,4 +1,3 @@
-import { Upload } from "lucide-react";
 import type { ReactNode } from "react";
 
 interface Props {
@@ -8,20 +7,18 @@ interface Props {
   loadingLabel: string | null;
   // True while React computes the view for a freshly selected large file.
   isSwitchingFile: boolean;
-  // True while a file is dragged over the window.
-  dragOver: boolean;
 }
 
 /**
- * Full-window status overlays: the disk-read spinner, the file-switch spinner,
- * and the drag-and-drop prompt. Purely presentational — state lives in
- * useLogFiles.
+ * Full-window status overlays: the disk-read spinner and the file-switch spinner.
+ * (The drag-and-drop prompt is now a per-zone indicator over the log view — see
+ * App's dropHint — so there's no full-window drop overlay to fight with it.)
+ * Purely presentational — state lives in useLogFiles.
  */
 export function Overlays({
   busy,
   loadingLabel,
   isSwitchingFile,
-  dragOver,
 }: Props): ReactNode {
   return (
     <>
@@ -53,16 +50,6 @@ export function Overlays({
           <div className="busy-card">
             <div className="busy-spinner" />
             <div className="busy-text">Loading…</div>
-          </div>
-        </div>
-      )}
-
-      {/* drag-and-drop overlay */}
-      {dragOver && (
-        <div className="drop-overlay">
-          <div className="drop-overlay-inner">
-            <Upload size={34} />
-            <div className="do-title">Drop log files to open</div>
           </div>
         </div>
       )}

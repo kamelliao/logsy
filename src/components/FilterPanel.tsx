@@ -24,6 +24,7 @@ import {
   FilePlus,
   FolderPlus,
   GripVertical,
+  Link2,
   ListChecks,
   ListX,
   MoreVertical,
@@ -35,6 +36,7 @@ import {
   Save,
   Search,
   Trash2,
+  Unlink,
   Upload,
   X,
 } from "lucide-react";
@@ -243,15 +245,26 @@ function RowMenuItems({
 }
 
 function SetTabMenuItems({
+  setId,
+  shared,
+  otherFiles,
   onRename,
   onDuplicate,
   onSaveAsPack,
+  onShareWith,
+  onDetach,
   onDelete,
   canDelete,
 }: {
+  setId: string;
+  /** This set is referenced by more than one open file (edits sync). */
+  shared: boolean;
+  otherFiles: { id: string; name: string; refs: string }[];
   onRename: () => void;
   onDuplicate: () => void;
   onSaveAsPack: () => void;
+  onShareWith: (fileId: string) => void;
+  onDetach: () => void;
   onDelete: () => void;
   canDelete: boolean;
 }) {
@@ -276,6 +289,46 @@ function SetTabMenuItems({
         Save set as pack
       </DropdownMenuItem>
       <DropdownMenuSeparator />
+      {/* Share = reference the SAME set from another file (live, edits sync) —
+          distinct from Duplicate/pack, which copy. */}
+      <DropdownMenuSub>
+        <DropdownMenuSubTrigger>
+          <span className="mi-ico">
+            <Link2 size={15} />
+          </span>
+          Share with…
+        </DropdownMenuSubTrigger>
+        <DropdownMenuSubContent>
+          {otherFiles.length === 0 ? (
+            <DropdownMenuItem disabled>No other open files</DropdownMenuItem>
+          ) : (
+            otherFiles.map((f) => {
+              const already = f.refs.split(" ").includes(setId);
+              return (
+                <DropdownMenuItem
+                  key={f.id}
+                  disabled={already}
+                  onClick={() => {
+                    if (!already) onShareWith(f.id);
+                  }}
+                >
+                  {f.name}
+                  {already ? " ✓" : ""}
+                </DropdownMenuItem>
+              );
+            })
+          )}
+        </DropdownMenuSubContent>
+      </DropdownMenuSub>
+      {shared && (
+        <DropdownMenuItem onClick={onDetach}>
+          <span className="mi-ico">
+            <Unlink size={15} />
+          </span>
+          Detach (make private)
+        </DropdownMenuItem>
+      )}
+      <DropdownMenuSeparator />
       <DropdownMenuItem
         variant="destructive"
         disabled={!canDelete}
@@ -286,7 +339,7 @@ function SetTabMenuItems({
         <span className="mi-ico">
           <Trash2 size={15} />
         </span>
-        Delete set
+        {shared ? "Remove from this file" : "Delete set"}
       </DropdownMenuItem>
     </>
   );
@@ -430,11 +483,17 @@ interface SetTabProps {
   canDelete: boolean;
   /** File-backed set whose filters diverged from the last saved/loaded state. */
   dirty: boolean;
+  /** How many open files reference this set (>1 == shared, edits sync). */
+  useCount: number;
+  /** Other open files, for the "Share with…" submenu. */
+  otherFiles: { id: string; name: string; refs: string }[];
   onSelect: () => void;
   onRename: (name: string) => void;
   onDelete: () => void;
   onDuplicate: () => void;
   onSaveAsPack: () => void;
+  onShareWith: (fileId: string) => void;
+  onDetach: () => void;
 }
 
 function SetTab({
@@ -442,12 +501,17 @@ function SetTab({
   active,
   canDelete,
   dirty,
+  useCount,
+  otherFiles,
   onSelect,
   onRename,
   onDelete,
   onDuplicate,
   onSaveAsPack,
+  onShareWith,
+  onDetach,
 }: SetTabProps) {
+  const shared = useCount > 1;
   const [editing, setEditing] = useState(false);
   const [val, setVal] = useState(set.name);
   const {
@@ -519,6 +583,15 @@ function SetTab({
             title="Unsaved changes since last save to file"
           />
         )}
+        {shared && (
+          <span
+            className="gtab-shared"
+            title={`Shared with ${useCount} files — edits sync across them`}
+          >
+            <Link2 size={11} />
+            {useCount}
+          </span>
+        )}
         <span className="gtab-count">{set.filters.length}</span>
         {canDelete && (
           <button
@@ -535,12 +608,17 @@ function SetTab({
       </ContextMenuTrigger>
       <ContextMenuContent>
         <SetTabMenuItems
+          setId={set.id}
+          shared={shared}
+          otherFiles={otherFiles}
           onRename={() => {
             setVal(set.name);
             setEditing(true);
           }}
           onDuplicate={onDuplicate}
           onSaveAsPack={onSaveAsPack}
+          onShareWith={onShareWith}
+          onDetach={onDetach}
           onDelete={onDelete}
           canDelete={canDelete}
         />
@@ -1402,6 +1480,40 @@ export function FilterPanel({
   const onDeleteSet = useStore((s) => s.deleteSet);
   const onDuplicateSet = useStore((s) => s.duplicateSet);
   const onReorderSet = useStore((s) => s.reorderSets);
+  const onShareSetWith = useStore((s) => s.shareSetWith);
+  const onDetachSet = useStore((s) => s.detachSet);
+  // The app-level set pool + the ordered sets this file shows (resolved from it).
+  const filterSetsPool = useStore((s) => s.doc.filterSets);
+  const sets = useMemo(
+    () =>
+      file.setRefs
+        .map((id) => filterSetsPool[id])
+        .filter((g): g is FilterSet => !!g),
+    [file.setRefs, filterSetsPool],
+  );
+  // How many open files reference each of this file's sets (>1 == shared), plus the
+  // list of OTHER open files for the "Share with…" submenu.
+  // The live files array (stable identity until files change), so the two
+  // derivations below can useMemo instead of a store selector. A useShallow
+  // selector mapping files into fresh {id,name,refs} objects would never
+  // stabilize (shallow compares array elements by reference) -> render loop.
+  const files = useStore((s) => s.doc.files);
+  const shareCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    for (const id of file.setRefs)
+      out[id] = files.reduce((n, f) => n + (f.setRefs.includes(id) ? 1 : 0), 0);
+    return out;
+  }, [files, file.setRefs]);
+  // Other open files, for the per-tab "Share with…" submenu. `refs` is the file's
+  // setRefs joined into a primitive string; SetTab checks its own set id against
+  // it to mark files that already share that set.
+  const otherFiles = useMemo(
+    () =>
+      files
+        .filter((f) => f.id !== file.id)
+        .map((f) => ({ id: f.id, name: f.name, refs: f.setRefs.join(" ") })),
+    [files, file.id],
+  );
   const onAddGroup = useStore((s) => s.addGroup);
   const onRenameGroup = useStore((s) => s.renameGroup);
   const onToggleGroup = useStore((s) => s.toggleGroup);
@@ -2071,8 +2183,8 @@ export function FilterPanel({
   function handleSetDragEnd(event: DragEndEvent) {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
-    const from = file.sets.findIndex((g) => g.id === active.id);
-    const to = file.sets.findIndex((g) => g.id === over.id);
+    const from = sets.findIndex((g) => g.id === active.id);
+    const to = sets.findIndex((g) => g.id === over.id);
     if (from >= 0 && to >= 0) onReorderSet(from, to);
   }
 
@@ -2098,22 +2210,26 @@ export function FilterPanel({
         ]}
       >
         <SortableContext
-          items={file.sets.map((g) => g.id)}
+          items={sets.map((g) => g.id)}
           strategy={horizontalListSortingStrategy}
         >
           <ScrollArea orientation="horizontal" className="group-tabs">
-            {file.sets.map((g) => (
+            {sets.map((g) => (
               <SetTab
                 key={g.id}
                 set={g}
                 active={g.id === file.activeSetId}
-                canDelete={file.sets.length > 1}
+                canDelete={sets.length > 1}
                 dirty={!!g.filePath && g.savedSnapshot !== exportPayload(g)}
+                useCount={shareCounts[g.id] ?? 1}
+                otherFiles={otherFiles}
                 onSelect={() => onSwitchSet(g.id)}
                 onRename={(name) => onRenameSet(g.id, name)}
                 onDelete={() => onDeleteSet(g.id)}
                 onDuplicate={() => onDuplicateSet(g.id)}
                 onSaveAsPack={() => onSavePackFromSet(g.id, g.name)}
+                onShareWith={(fileId) => onShareSetWith(g.id, fileId)}
+                onDetach={() => onDetachSet(g.id)}
               />
             ))}
             <div className="gtab-add" title="New filter set" onClick={onAddSet}>
@@ -2343,7 +2459,7 @@ export function FilterPanel({
             onCreateNew={() => setSavePackOpen(true)}
           />
           <CopyToSetCombobox
-            sets={file.sets
+            sets={sets
               .filter((g) => g.id !== set.id)
               .map((g) => ({ id: g.id, name: g.name }))}
             disabled={selectedCount === 0}

@@ -27,11 +27,23 @@ function splitLines(text: string): string[] {
 interface Deps {
   /** The active log file resolved at render time (drives the reload-on-restart effect). */
   file: LogFile | null;
+  /** Optional hook: an OS file drop at (x,y) physical px — return true to claim it
+   *  (e.g. the split view routing it to the pane under the cursor), skipping the
+   *  default "replace the active file" behaviour. */
+  osDropRef?: React.MutableRefObject<
+    ((paths: string[], x: number, y: number) => boolean) | null
+  >;
+  /** Optional hook: a file is being dragged over the window at (x,y) physical px —
+   *  lets the split view highlight the pane under the cursor. */
+  osDragRef?: React.MutableRefObject<((x: number, y: number) => void) | null>;
 }
 
 export interface LogFilesApi {
   /** Lines of the active file (empty array when none / not yet loaded). */
   lines: string[];
+  /** Lines of ANY loaded file by id (for the split view's second pane). Reads the
+   *  same in-memory cache as `lines`; re-derives when `linesVersion` changes. */
+  linesFor: (fileId: string | null | undefined) => string[];
   /** Set while a log file is being read from disk — drives the loading overlay. */
   busy: { name: string } | null;
   /** True while a genuine file drag is over the window. */
@@ -53,7 +65,7 @@ export interface LogFilesApi {
  * Document mutations and the confirm dialog come from the store; only the active
  * `file` (a render-time derivation) is passed in.
  */
-export function useLogFiles({ file }: Deps): LogFilesApi {
+export function useLogFiles({ file, osDropRef, osDragRef }: Deps): LogFilesApi {
   const patchState = useStore((s) => s.patchState);
   const setState = useStore((s) => s.setDoc);
   const pushRecent = useStore((s) => s.pushRecent);
@@ -71,6 +83,15 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
   const lines = useMemo(
     () => (file ? (linesStore[file.id] ?? EMPTY_LINES) : EMPTY_LINES),
     [file?.id, linesVersion],
+  );
+  // Any file's cached lines by id — used by the split view's non-active pane. A
+  // stable identity is fine: it reads the live module-level cache each call, and
+  // App re-renders when `linesVersion` bumps (this hook lives in App), so a
+  // later-loaded file's lines are picked up on the next render.
+  const linesFor = useCallback(
+    (fileId: string | null | undefined) =>
+      fileId ? (linesStore[fileId] ?? EMPTY_LINES) : EMPTY_LINES,
+    [],
   );
 
   // Bumped on every explicit sidebar file selection. Reads (which the passive
@@ -128,31 +149,38 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
           cur.files[0] ??
           null;
         const cg = cf
-          ? (cf.sets.find((g) => g.id === cf.activeSetId) ?? cf.sets[0])
+          ? (cur.filterSets[cf.activeSetId ?? ""] ??
+            cur.filterSets[cf.setRefs[0] ?? ""])
           : null;
         return cg ?? null;
       })();
-      const makeSets = (): FilterSet[] =>
+      // A fresh, private set for a newly opened file. Inheriting (drag-with-filters)
+      // deep-copies the source set with a new id — a copy, never a shared reference.
+      const makeSet = (): FilterSet =>
         inherited
-          ? [
-              {
-                ...(JSON.parse(JSON.stringify(inherited)) as FilterSet),
-                id: uid("g"),
-              },
-            ]
-          : [
-              {
-                id: uid("g"),
-                name: "Filters",
-                filters: [],
-                groups: [],
-                order: [],
-              },
-            ];
+          ? {
+              ...(JSON.parse(JSON.stringify(inherited)) as FilterSet),
+              id: uid("g"),
+            }
+          : {
+              id: uid("g"),
+              name: "Filters",
+              filters: [],
+              groups: [],
+              order: [],
+            };
       try {
         for (const path of paths) {
           let text: string;
           let encoding: string;
+          // VS Code behaviour: never open the same file twice. If it's already
+          // open, just activate it (callers that want it in a specific split pane
+          // reference the existing id by path) — no duplicate entry, no re-read.
+          const already = getDoc().files.find((f) => f.path === path);
+          if (already) {
+            setState((s) => ({ ...s, activeFileId: already.id }));
+            continue;
+          }
           setBusy({ name: baseName(path) });
           // The busy overlay is non-blocking, so the user may switch files while
           // this one reads — snapshot the selection nonce to detect it.
@@ -176,22 +204,18 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
           linesStore[id] = lns;
           patchState(
             (s) => {
-              // Disambiguate repeated opens of the same path: "log" → "log (2)" → …
-              const dupes = s.files.filter((f) => f.path === path).length;
+              const g = makeSet();
+              s.filterSets[g.id] = g;
               const f: LogFile = {
                 id,
-                name:
-                  dupes > 0
-                    ? `${baseName(path)} (${dupes + 1})`
-                    : baseName(path),
+                name: baseName(path),
                 path,
                 lineCount: lns.length,
                 encoding,
                 detectedEncoding: encoding,
-                sets: makeSets(),
-                activeSetId: null,
+                setRefs: [g.id],
+                activeSetId: g.id,
               };
-              f.activeSetId = f.sets[0].id;
               s.files.push(f);
               // Auto-activate the freshly opened file — unless the user selected
               // a file mid-read, in which case don't yank them away.
@@ -384,6 +408,11 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
   loadPathsRef.current = loadPaths;
   const replaceActiveFileRef = useRef(replaceActiveFile);
   replaceActiveFileRef.current = replaceActiveFile;
+  // True while a genuine file drag is in flight. Tauri's `over` events carry a
+  // position but NOT `paths` (only `enter`/`drop` do), so we latch "this is a file
+  // drag" on enter and keep updating the pane highlight on every over — without
+  // this, the highlight stuck to wherever the cursor first entered.
+  const fileDragActive = useRef(false);
   useEffect(() => {
     let unlisten: (() => void) | undefined;
     let disposed = false;
@@ -391,17 +420,34 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
       getCurrentWebview()
         .onDragDropEvent((event) => {
           const p = event.payload;
-          // Only show the drop overlay for genuine file drags (which carry
-          // `paths`). In-webview drags — e.g. dragging to select log text — also
-          // emit enter/over events but with no paths, and must be ignored.
           const hasFiles =
             "paths" in p && Array.isArray(p.paths) && p.paths.length > 0;
-          if (p.type === "enter" || p.type === "over") {
-            if (hasFiles) setDragOver(true);
+          const pos = "position" in p ? p.position : null;
+          if (p.type === "enter") {
+            // Only a real file drag carries paths; in-webview drags (e.g. selecting
+            // log text) also emit enter/over but with none, and must be ignored.
+            if (hasFiles) {
+              fileDragActive.current = true;
+              setDragOver(true);
+              if (osDragRef?.current && pos) osDragRef.current(pos.x, pos.y);
+            }
+          } else if (p.type === "over") {
+            // `over` has no paths — keep going if we already latched a file drag.
+            if (fileDragActive.current && osDragRef?.current && pos)
+              osDragRef.current(pos.x, pos.y);
           } else if (p.type === "drop") {
+            fileDragActive.current = false;
             setDragOver(false);
             if (!p.paths.length) return;
             const paths = p.paths;
+            // Let App route the drop to a specific split pane (position is physical
+            // px). If it claims the drop, skip the default replace-active handling.
+            if (
+              osDropRef?.current &&
+              pos &&
+              osDropRef.current(paths, pos.x, pos.y)
+            )
+              return;
             void (async () => {
               // Dropped onto the "open a file" screen: always open as new files.
               if (openScreenRef.current) {
@@ -430,6 +476,8 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
               }
             })();
           } else {
+            // leave / cancel
+            fileDragActive.current = false;
             setDragOver(false);
           }
         })
@@ -447,10 +495,12 @@ export function useLogFiles({ file }: Deps): LogFilesApi {
       disposed = true;
       unlisten?.();
     };
-  }, []);
+    // Stable refs; listed only to satisfy the exhaustive-deps lint.
+  }, [osDropRef, osDragRef]);
 
   return {
     lines,
+    linesFor,
     busy,
     dragOver,
     openScreen,

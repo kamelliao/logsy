@@ -403,7 +403,8 @@ test("normalizeState de-dupes tracks by (filterId, timeField), not field name al
     activeFileId: "file1",
   } as unknown as AppState;
   const out = normalizeState(state);
-  const kept = out.files[0].sets[0].sources;
+  // Legacy per-file `sets[]` is migrated into the app-level pool keyed by set id.
+  const kept = out.filterSets["g1"].sources;
   expect(kept?.length).toBe(2);
   expect(kept?.map((s) => s.filterId)).toEqual(["f1", "f2"]);
 });

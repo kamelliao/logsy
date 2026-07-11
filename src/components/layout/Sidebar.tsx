@@ -12,11 +12,12 @@ import {
 import {
   DndContext,
   DragOverlay,
-  closestCorners,
+  pointerWithin,
   PointerSensor,
   useDroppable,
   useSensor,
   useSensors,
+  type CollisionDetection,
   type DragEndEvent,
   type DragOverEvent,
   type DragStartEvent,
@@ -27,8 +28,6 @@ import {
   arrayMove,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { restrictToVerticalAxis } from "@dnd-kit/modifiers";
-import { CSS } from "@dnd-kit/utilities";
 import type { AppState, FileGroup, FileIcon, LogFile } from "@/types";
 import { FILE_ICONS, FileGlyph } from "@/components/widgets/fileIcons";
 import { disambiguationSuffixes } from "@/lib/path";
@@ -83,19 +82,13 @@ function FileItem({
   // Drag-to-reorder. The whole row is the drag handle; a small activation
   // distance (set on the sensor) keeps a plain click selecting the file rather
   // than starting a drag.
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: file.id });
-  const sortStyle: CSSProperties = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-    ...(isDragging ? { position: "relative", zIndex: 5, opacity: 0.4 } : {}),
-  };
+  const { attributes, listeners, setNodeRef, isDragging } = useSortable({
+    id: file.id,
+  });
+  // The row stays put while dragging (no transform / live reorder) — a clone in the
+  // DragOverlay follows the cursor and a drop line marks the target, like the pane
+  // tab strips. Just dim the source.
+  const sortStyle: CSSProperties = isDragging ? { opacity: 0.4 } : {};
 
   useEffect(() => {
     if (!menu) return;
@@ -470,6 +463,13 @@ interface SidebarProps {
   onSetFileIcon: (id: string, icon: FileIcon) => void;
   /** Opens the Settings dialog (the sidebar row is just its launcher). */
   onOpenSettings: () => void;
+  /** While a file row is dragged, its live cursor (CSS px) — lets App light up the
+   *  drop indicator (a split pane, or a right/bottom edge that opens a new split).
+   *  null on drag end. */
+  onFileDragOver?: (pt: { x: number; y: number } | null) => void;
+  /** On drop at (x,y) CSS px, let App claim it (open in a pane / edge-split);
+   *  returns true when handled, so the sidebar skips its own reorder. */
+  onFileDropAt?: (fileId: string, x: number, y: number) => boolean;
 }
 
 export function Sidebar({
@@ -482,6 +482,8 @@ export function Sidebar({
   onDeleteFile,
   onSetFileIcon,
   onOpenSettings,
+  onFileDragOver,
+  onFileDropAt,
 }: SidebarProps) {
   const createFileGroup = useStore((s) => s.createFileGroup);
   const renameFileGroup = useStore((s) => s.renameFileGroup);
@@ -498,83 +500,127 @@ export function Sidebar({
   // Which group header just got created and should open straight into rename.
   const [renamingGroupId, setRenamingGroupId] = useState<string | null>(null);
 
-  // Base container map derived from the document; the live drag overlay overrides
-  // it while a file is being dragged so rows shift between groups in real time.
+  // Container map derived from the document (rows never live-reorder during a drag —
+  // a drop line marks the target instead, applied on drop).
   const baseMap: ContainerMap = { [UNGROUPED]: [] };
   for (const g of groups) baseMap[g.id] = [];
   for (const f of state.files) {
     const c = f.groupId && baseMap[f.groupId] ? f.groupId : UNGROUPED;
     baseMap[c].push(f.id);
   }
-  const [overlay, setOverlay] = useState<ContainerMap | null>(null);
   const [dragId, setDragId] = useState<string | null>(null);
-  const map = overlay ?? baseMap;
+  // The drop target for the insertion line: which container + the file id to draw
+  // the line before (null = at the container's end). Set on drag-over, no live
+  // reorder — the rows stay put (like the pane tab strips).
+  const [dropTarget, setDropTarget] = useState<{
+    container: string;
+    beforeId: string | null;
+  } | null>(null);
+  const map = baseMap;
 
   // Click vs. drag: a 4px activation distance lets a plain click still select.
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
   );
-
-  const onDragStart = (e: DragStartEvent) => {
-    setDragId(e.active.id as string);
-    setOverlay(structuredClone(baseMap));
+  // Prefer the file row the pointer is directly over; when it's only over a
+  // container (e.g. the empty area below the last file) return that → drop at end.
+  const collisionDetection: CollisionDetection = (args) => {
+    const hits = pointerWithin(args);
+    const file = hits.find((h) => !String(h.id).startsWith("cont:"));
+    return file ? [file] : hits;
   };
 
-  const onDragOver = (e: DragOverEvent) => {
-    const { active, over } = e;
-    if (!over) return;
-    const activeId = active.id as string;
-    const overId = over.id as string;
-    const cur = overlay ?? baseMap;
-    const from = findContainer(activeId, cur);
-    const to = overId.startsWith("cont:")
-      ? overId.slice(5)
-      : findContainer(overId, cur);
-    if (!from || !to || from === to) return;
-    setOverlay(() => {
-      const next: ContainerMap = {};
-      for (const k of Object.keys(cur)) next[k] = [...cur[k]];
-      const fromItems = next[from];
-      const overItems = next[to];
-      fromItems.splice(fromItems.indexOf(activeId), 1);
-      const overIndex = overId.startsWith("cont:")
-        ? overItems.length
-        : overItems.indexOf(overId);
-      overItems.splice(
-        overIndex < 0 ? overItems.length : overIndex,
-        0,
-        activeId,
-      );
-      return next;
+  // Track the live cursor during a file-row drag so onDragEnd can tell whether the
+  // row was dropped over the log area (a pane / edge-split) vs the sidebar.
+  const lastPointer = useRef<{ x: number; y: number } | null>(null);
+  const overLog = useRef(false);
+  const pointerCleanup = useRef<(() => void) | null>(null);
+  const onDragStart = (e: DragStartEvent) => {
+    setDragId(e.active.id as string);
+    const move = (ev: PointerEvent) => {
+      lastPointer.current = { x: ev.clientX, y: ev.clientY };
+      onFileDragOver?.({ x: ev.clientX, y: ev.clientY });
+      // Over the log area (a pane / edge-split zone) → App shows the drop hint and
+      // the sidebar line is hidden (the drop opens the file there, not a reorder).
+      overLog.current = isOverLog(ev.clientX, ev.clientY);
+      if (overLog.current) setDropTarget(null);
+    };
+    window.addEventListener("pointermove", move);
+    pointerCleanup.current = () =>
+      window.removeEventListener("pointermove", move);
+  };
+
+  // Whether a CSS coord is over the log view area (either single pane or a split
+  // pane) — rect hit-test, robust against the drag clone under the pointer.
+  const isOverLog = (x: number, y: number): boolean => {
+    let over = false;
+    document.querySelectorAll(".logview").forEach((el) => {
+      const r = (el as HTMLElement).getBoundingClientRect();
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom)
+        over = true;
     });
+    return over;
+  };
+
+  // Compute the insertion line target from the hovered droppable (no live reorder).
+  const onDragOver = (e: DragOverEvent) => {
+    const { over } = e;
+    // Over the log area: App's drop hint shows instead of a sidebar line.
+    if (overLog.current) {
+      setDropTarget(null);
+      return;
+    }
+    if (!over) {
+      setDropTarget(null);
+      return;
+    }
+    const overId = over.id as string;
+    if (overId.startsWith("cont:")) {
+      setDropTarget({ container: overId.slice(5), beforeId: null });
+      return;
+    }
+    const container = findContainer(overId, baseMap);
+    if (!container) {
+      setDropTarget(null);
+      return;
+    }
+    // Draw the line before the hovered row.
+    setDropTarget({ container, beforeId: overId });
+  };
+
+  const endDrag = () => {
+    pointerCleanup.current?.();
+    pointerCleanup.current = null;
+    overLog.current = false;
+    onFileDragOver?.(null);
+    setDragId(null);
+    setDropTarget(null);
   };
 
   const onDragEnd = (e: DragEndEvent) => {
-    const { active, over } = e;
-    const cur = overlay ?? baseMap;
-    if (over) {
-      const activeId = active.id as string;
-      const overId = over.id as string;
-      const from = findContainer(activeId, cur);
-      const to = overId.startsWith("cont:")
-        ? overId.slice(5)
-        : findContainer(overId, cur);
-      if (from && to && from === to) {
-        const items = cur[to];
-        const oldIndex = items.indexOf(activeId);
-        const newIndex = overId.startsWith("cont:")
-          ? items.length - 1
-          : items.indexOf(overId);
-        if (oldIndex >= 0 && newIndex >= 0 && oldIndex !== newIndex)
-          cur[to] = arrayMove(items, oldIndex, newIndex);
-      }
-    }
+    const activeId = e.active.id as string;
+    const pt = lastPointer.current;
+    const dt = dropTarget;
+    lastPointer.current = null;
+    endDrag();
+    // Dropped over the log area → let App open it in a pane / edge-split.
+    if (pt && onFileDropAt && onFileDropAt(activeId, pt.x, pt.y)) return;
+    if (!dt || dt.beforeId === activeId) return; // no target / dropped on own slot
+    const from = findContainer(activeId, baseMap);
+    if (!from) return;
+    // Rebuild the layout: pull the file out of its container, insert into the
+    // target container before `beforeId` (or at the end).
+    const next: ContainerMap = {};
+    for (const k of Object.keys(baseMap)) next[k] = [...baseMap[k]];
+    next[from].splice(next[from].indexOf(activeId), 1);
+    const toArr = next[dt.container];
+    let idx = dt.beforeId ? toArr.indexOf(dt.beforeId) : toArr.length;
+    if (idx < 0) idx = toArr.length;
+    toArr.splice(idx, 0, activeId);
     applyFileLayout(
-      cur,
+      next,
       groups.map((g) => g.id),
     );
-    setDragId(null);
-    setOverlay(null);
   };
 
   const renderFile = (fid: string) => {
@@ -600,6 +646,22 @@ export function Sidebar({
     );
   };
 
+  // Render a container's file rows with the drop line inserted at the target slot.
+  const renderFiles = (fileIds: string[], cid: string): React.ReactNode[] => {
+    const line = (key: string) => (
+      <div key={key} className="file-drop-line" aria-hidden />
+    );
+    const out: React.ReactNode[] = [];
+    for (const fid of fileIds) {
+      if (dropTarget?.container === cid && dropTarget.beforeId === fid)
+        out.push(line("dl-" + fid));
+      out.push(renderFile(fid));
+    }
+    if (dropTarget?.container === cid && dropTarget.beforeId === null)
+      out.push(line("dl-end"));
+    return out;
+  };
+
   const dragFile = dragId ? fileById.get(dragId) : null;
 
   return (
@@ -617,15 +679,13 @@ export function Sidebar({
       <div className="file-list scroll">
         <DndContext
           sensors={sensors}
-          collisionDetection={closestCorners}
-          modifiers={[restrictToVerticalAxis]}
+          collisionDetection={collisionDetection}
+          // No axis lock: the drag clone follows the cursor freely so a file can be
+          // dragged out of the sidebar onto either split pane (matches the pane tabs).
           onDragStart={onDragStart}
           onDragOver={onDragOver}
           onDragEnd={onDragEnd}
-          onDragCancel={() => {
-            setDragId(null);
-            setOverlay(null);
-          }}
+          onDragCancel={endDrag}
         >
           {/* Groups first (like a file explorer's folders), then the loose
               ungrouped files below them. */}
@@ -663,7 +723,7 @@ export function Sidebar({
               startRenaming={renamingGroupId === g.id}
               onRenameHandled={() => setRenamingGroupId(null)}
             >
-              {map[g.id].map(renderFile)}
+              {renderFiles(map[g.id], g.id)}
             </GroupSection>
           ))}
 
@@ -672,10 +732,10 @@ export function Sidebar({
             fileIds={map[UNGROUPED]}
             className="fg-ungrouped"
           >
-            {map[UNGROUPED].map(renderFile)}
+            {renderFiles(map[UNGROUPED], UNGROUPED)}
           </FileDropZone>
 
-          <DragOverlay>
+          <DragOverlay dropAnimation={null}>
             {dragFile ? (
               <div className="file-item drag-ghost">
                 <span className="file-ico">

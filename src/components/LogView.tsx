@@ -13,6 +13,7 @@ import {
   ChartGantt,
   ChevronDown,
   ChevronRight,
+  Columns2,
   Columns3,
   Copy,
   Download,
@@ -20,8 +21,10 @@ import {
   FileText,
   Filter,
   Minus,
+  Rows2,
   Search,
   Sparkles,
+  SplitSquareHorizontal,
   Trash2,
   X,
 } from "lucide-react";
@@ -84,9 +87,9 @@ function buildFindRe(
   }
 }
 
-// Each file's find-bar contents/options survive switching away and back: App
-// remounts this component per file (key={file.id}), so plain state would
-// reset. Keyed by file id — per-file, not shared across files.
+// Each file/pane's find-bar contents/options survive switching away and back: App
+// remounts this component per file (key={file.id[:pane]}), so plain state would
+// reset. Keyed by "fileId:paneId" — per-file AND per split pane.
 const persistedFindByFile = new Map<
   string,
   { query: string; regex: boolean; caseSensitive: boolean }
@@ -212,6 +215,23 @@ interface LogViewProps {
   /** Re-decode the file with a forced encoding label (null = auto-detect). */
   onSetEncoding?: (label: string | null) => void;
   onAddToNotebook?: (ns: number[]) => void;
+  // ---- split view (#6) ----
+  /** Which pane this instance is. Two panes on the same file scroll/find/select
+   *  independently; the find bar's persisted contents are keyed per pane. */
+  paneId?: "a" | "b";
+  /** Whether the split is currently on (drives the header controls). */
+  splitOn?: boolean;
+  /** Split orientation: "h" = left/right, "v" = top/bottom. */
+  splitDir?: "h" | "v";
+  /** Toggle the split on/off (bound by App). Also used by pane B's close button. */
+  onToggleSplit?: () => void;
+  /** Change the split orientation. */
+  onSetSplitDir?: (dir: "h" | "v") => void;
+  /** Marks this pane the active one (for Ctrl+F routing) when it's interacted with. */
+  onPaneFocus?: () => void;
+  /** Hide the filename in the header (the split view shows it in the pane tab strip
+   *  instead); the encoding switcher stays. */
+  hideTitle?: boolean;
 }
 
 export function LogView({
@@ -249,8 +269,16 @@ export function LogView({
   onRemoveFromTimeline,
   onSetEncoding,
   onAddToNotebook,
+  paneId = "a",
+  splitOn = false,
+  splitDir = "v",
+  onToggleSplit,
+  onSetSplitDir,
+  onPaneFocus,
+  hideTitle,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
+  const secondary = paneId === "b";
   // Filter id → 1-based position in the set, so a matched row's tooltip can name
   // its winner as "#N" (matching the serials shown in the filter/timeline panels).
   const filterSerial = useMemo(() => {
@@ -266,7 +294,10 @@ export function LogView({
   // Ctrl+A over another panel (e.g. the filter panel's own select-all).
   const rootRef = useRef<HTMLDivElement>(null);
   const hoverRef = useRef(false);
-  const persistedFind = persistedFindByFile.get(file.id);
+  // Per-pane find contents: two panes on one file keep independent queries, so the
+  // map is keyed by file id + pane id (not file id alone).
+  const findKey = file.id + ":" + paneId;
+  const persistedFind = persistedFindByFile.get(findKey);
   const [query, setQueryState] = useState(persistedFind?.query ?? "");
   // Find options: `.*` treats the query as a regex, `Aa` makes it case-sensitive.
   const [findRegex, setFindRegexState] = useState(
@@ -278,7 +309,7 @@ export function LogView({
   const persistFind = (
     patch: Partial<{ query: string; regex: boolean; caseSensitive: boolean }>,
   ) => {
-    persistedFindByFile.set(file.id, {
+    persistedFindByFile.set(findKey, {
       query,
       regex: findRegex,
       caseSensitive: findCase,
@@ -1358,17 +1389,23 @@ export function LogView({
 
   return (
     <div
-      className="logview"
+      className={"logview" + (secondary ? " logview-secondary" : "")}
       ref={rootRef}
       onPointerEnter={() => (hoverRef.current = true)}
       onPointerLeave={() => (hoverRef.current = false)}
+      onPointerDownCapture={onPaneFocus}
+      onFocusCapture={onPaneFocus}
       style={{ ...style, "--log-gut-w": `${gutterW}px` } as CSSProperties}
     >
       {/* header */}
       <div className="logview-bar">
         <div className="lv-title">
-          <FileText size={15} style={{ color: "#4f8cff" }} />
-          {file.name}
+          {!hideTitle && (
+            <>
+              <FileText size={15} style={{ color: "#4f8cff" }} />
+              {file.name}
+            </>
+          )}
           {file.encoding &&
             (onSetEncoding ? (
               <EncodingCombobox
@@ -1478,6 +1515,65 @@ export function LogView({
             </TooltipTrigger>
             <TooltipContent>Export filtered view</TooltipContent>
           </Tooltip>
+          {/* Split-view controls. When split is on, either pane can flip the
+              orientation; the primary pane's button toggles the split (secondary
+              pane shows a close button instead). */}
+          {splitOn && onSetSplitDir && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    className="dock-btn"
+                    aria-label="Split direction"
+                    onClick={() => onSetSplitDir(splitDir === "h" ? "v" : "h")}
+                  />
+                }
+              >
+                {splitDir === "h" ? (
+                  <Rows2 size={14} />
+                ) : (
+                  <Columns2 size={14} />
+                )}
+              </TooltipTrigger>
+              <TooltipContent>
+                {splitDir === "h" ? "Stack top/bottom" : "Place side by side"}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {onToggleSplit &&
+            (secondary ? (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      className="dock-btn"
+                      aria-label="Close split pane"
+                      onClick={onToggleSplit}
+                    />
+                  }
+                >
+                  <X size={14} />
+                </TooltipTrigger>
+                <TooltipContent>Close split pane</TooltipContent>
+              </Tooltip>
+            ) : (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <button
+                      className={
+                        "dock-btn lv-toggle" + (splitOn ? " active" : "")
+                      }
+                      aria-label="Split view"
+                      onClick={onToggleSplit}
+                    />
+                  }
+                >
+                  <SplitSquareHorizontal size={14} />
+                </TooltipTrigger>
+                <TooltipContent>Split view (Ctrl+\)</TooltipContent>
+              </Tooltip>
+            ))}
         </div>
       </div>
 

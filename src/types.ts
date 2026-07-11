@@ -136,7 +136,13 @@ export interface LogFile {
   /** File group this log belongs to; null/undefined = ungrouped (renders above
    *  groups, like an ungrouped filter). References `AppState.fileGroups`. */
   groupId?: string | null;
-  sets: FilterSet[];
+  /**
+   * Ordered ids of the filter sets this file shows (its tab strip order). Each id
+   * resolves to a set in the app-level `AppState.filterSets` pool; two files
+   * listing the same id SHARE that set (edits sync — see the shared-set feature).
+   * Replaces the old per-file `sets: FilterSet[]`; `normalizeState` migrates it.
+   */
+  setRefs: string[];
   activeSetId: string | null;
   /** User bookmarks pinned to line numbers (persisted with the file). */
   markers?: Marker[];
@@ -170,6 +176,13 @@ export interface Notebook {
 export interface AppState {
   files: LogFile[];
   activeFileId: string | null;
+  /**
+   * App-level pool of filter sets (id → set). Files reference sets by id via
+   * `LogFile.setRefs`; several files pointing at the same id share that one set
+   * object, so editing it in one file is instantly visible in the others. A set
+   * with no referencing file is garbage-collected in `normalizeState`.
+   */
+  filterSets: Record<string, FilterSet>;
   /** Named, collapsible sidebar sections partitioning the open files. Ordered;
    *  a file joins one via `LogFile.groupId`. Undefined when no groups exist. */
   fileGroups?: FileGroup[];

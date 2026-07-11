@@ -122,9 +122,12 @@ function initScript() {
     state,
     // Simulate an OS file drag-drop onto the window. `onDragDropEvent` listens on
     // tauri://drag-* and reshapes the payload, so we feed the raw shape it wants.
-    drop(paths: string[]) {
-      dispatch("tauri://drag-enter", { paths, position: { x: 1, y: 1 } });
-      dispatch("tauri://drag-drop", { paths, position: { x: 1, y: 1 } });
+    // `pos` is the (physical-px) cursor position; the split view routes the drop to
+    // the pane under it, so tests can target a specific pane.
+    drop(paths: string[], pos?: { x: number; y: number }) {
+      const position = pos ?? { x: 1, y: 1 };
+      dispatch("tauri://drag-enter", { paths, position });
+      dispatch("tauri://drag-drop", { paths, position });
     },
     // Number of live listeners for an event — lets tests wait for React's
     // (StrictMode, dev-only) double-mount of the drag-drop effect to settle.
@@ -140,7 +143,7 @@ declare global {
   interface Window {
     __TAURI_MOCK__: {
       state: TauriMockState;
-      drop(paths: string[]): void;
+      drop(paths: string[], pos?: { x: number; y: number }): void;
       listenerCount(event: string): number;
     };
   }
@@ -176,14 +179,18 @@ export class TauriMock {
     }, result);
   }
 
-  /** Fire an OS drag-drop of the given paths onto the window. */
-  async drop(paths: string[]) {
+  /** Fire an OS drag-drop of the given paths onto the window, optionally at a
+   *  specific (physical-px) cursor position so the split view can route it. */
+  async drop(paths: string[], pos?: { x: number; y: number }) {
     // Wait for the app's drag-drop listener to be registered first, so the event
     // isn't dropped on the floor when fired right after load.
     await this.page.waitForFunction(
       () => window.__TAURI_MOCK__.listenerCount("tauri://drag-drop") > 0,
     );
-    await this.page.evaluate((p) => window.__TAURI_MOCK__.drop(p), paths);
+    await this.page.evaluate(
+      ({ paths, pos }) => window.__TAURI_MOCK__.drop(paths, pos),
+      { paths, pos },
+    );
   }
 
   /** All commands the app invoked so far (e.g. to assert export payloads). */

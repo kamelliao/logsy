@@ -28,6 +28,7 @@ const SECTIONS: Section[] = [
     title: "View",
     rows: [
       { keys: ["Ctrl", "B"], label: "Toggle filter panel" },
+      { keys: ["Ctrl", "\\"], label: "Split view" },
       { keys: ["Ctrl", "H"], label: "Show only matched lines" },
       { keys: ["Ctrl", "+"], label: "Zoom in" },
       { keys: ["Ctrl", "−"], label: "Zoom out" },
