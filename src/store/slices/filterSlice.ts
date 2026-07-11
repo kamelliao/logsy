@@ -40,6 +40,12 @@ export interface FilterActions {
   deleteSet: (gid: string) => Promise<void>;
   reorderSets: (from: number, to: number) => void;
   duplicateSet: (gid: string) => void;
+  /** Reference an existing (possibly shared) set from another open file, so both
+   *  files edit the same set object. Activates it on the target file. */
+  shareSetWith: (setId: string, targetFileId: string) => void;
+  /** Break the active file's share of a set: replace its reference with a private
+   *  deep copy (fresh ids), so further edits no longer touch the other files. */
+  detachSet: (setId: string) => void;
   /** Copy a select-mode subset into another set — an existing one (by id) or a
    *  brand-new one (`targetSetId === null`). Copy semantics: the source keeps its
    *  filters; switches to the destination and flashes the new rows. */
@@ -68,6 +74,41 @@ export interface FilterActions {
   importFilters: () => Promise<void>;
   appendFilters: () => Promise<void>;
   bulk: (action: string) => void;
+}
+
+/**
+ * Deep-copy a filter set with fresh ids for the set, its groups, its filters, and
+ * its timeline sources (whose `filterId` is remapped to the new filter ids). Drops
+ * the save link (`filePath`/`savedSnapshot`) — a copy is an independent, unsaved
+ * set. Shared by `duplicateSet` (name + " copy") and `detachSet` (keeps the name).
+ */
+function cloneSet(src: FilterSet, name: string): FilterSet {
+  const groupMap = new Map(
+    src.groups.map((grp) => [grp.id, uid("grp")] as const),
+  );
+  const filMap = new Map(src.filters.map((fl) => [fl.id, uid("f")] as const));
+  const sources = (src.sources ?? [])
+    .filter((so) => filMap.has(so.filterId))
+    .map((so) => ({
+      ...so,
+      id: uid("src"),
+      filterId: filMap.get(so.filterId)!,
+    }));
+  return {
+    id: uid("g"),
+    name,
+    groups: src.groups.map((grp) => ({ ...grp, id: groupMap.get(grp.id)! })),
+    filters: src.filters.map((fl) => ({
+      ...fl,
+      id: filMap.get(fl.id)!,
+      groupId: fl.groupId ? (groupMap.get(fl.groupId) ?? null) : null,
+      fields: fl.fields ? fl.fields.map((x) => ({ ...x })) : undefined,
+    })),
+    order: src.order
+      .map((id) => groupMap.get(id) ?? filMap.get(id))
+      .filter((x): x is string => !!x),
+    sources: sources.length ? sources : undefined,
+  };
 }
 
 /**
@@ -111,24 +152,36 @@ export function createFilterActions(
           groups: [],
           order: [],
         };
-        f.sets.push(g);
+        s.filterSets[g.id] = g;
+        f.setRefs.push(g.id);
         f.activeSetId = g.id;
       }),
     renameSet: (gid, name) =>
       patch((s) => {
-        const g = activeFile(s)?.sets.find((x) => x.id === gid);
+        const g = s.filterSets[gid];
         if (g) g.name = name;
       }),
     deleteSet: async (gid) => {
-      const f = activeFile(get().doc);
+      const doc = get().doc;
+      const f = activeFile(doc);
       if (!f) return;
-      const g = f.sets.find((x) => x.id === gid);
-      // Confirm only when the set actually holds filters (empty sets delete freely).
+      const g = doc.filterSets[gid];
+      // Shared sets (referenced by another open file) only detach from this file;
+      // the set object survives for the others. A private set is deleted outright.
+      const shared = doc.files.some(
+        (x) => x.id !== f.id && x.setRefs.includes(gid),
+      );
+      // Confirm only when the set actually holds filters (empty sets go freely).
       if (g && g.filters.length > 0) {
+        const n = g.filters.length;
         const ok = await get().confirm({
-          title: "Delete filter set?",
-          message: `Delete the "${g.name}" filter set and its ${g.filters.length} filter${g.filters.length > 1 ? "s" : ""}?`,
-          okLabel: "Delete",
+          title: shared
+            ? "Remove filter set from this file?"
+            : "Delete filter set?",
+          message: shared
+            ? `"${g.name}" is shared with another file. Remove it from this file? The other file keeps it.`
+            : `Delete the "${g.name}" filter set and its ${n} filter${n > 1 ? "s" : ""}?`,
+          okLabel: shared ? "Remove" : "Delete",
           cancelLabel: "Cancel",
           danger: true,
         });
@@ -137,52 +190,61 @@ export function createFilterActions(
       patch((s) => {
         const ff = activeFile(s);
         if (!ff) return;
-        ff.sets = ff.sets.filter((x) => x.id !== gid);
-        if (ff.activeSetId === gid) ff.activeSetId = ff.sets[0]?.id ?? null;
+        ff.setRefs = ff.setRefs.filter((id) => id !== gid);
+        if (ff.activeSetId === gid) ff.activeSetId = ff.setRefs[0] ?? null;
+        // Garbage-collect the pool entry once no open file references it.
+        if (!s.files.some((x) => x.setRefs.includes(gid)))
+          delete s.filterSets[gid];
       });
     },
     reorderSets: (from, to) =>
       patch((s) => {
         const f = activeFile(s);
         if (!f) return;
-        const [m] = f.sets.splice(from, 1);
-        f.sets.splice(to, 0, m);
+        const [m] = f.setRefs.splice(from, 1);
+        f.setRefs.splice(to, 0, m);
       }),
-    // Duplicate a whole filter set: deep-copy its groups/filters with fresh ids,
-    // remap groupId references and the top-level order, drop the save link, and
-    // insert the copy right after the original (then activate it).
+    // Duplicate a whole filter set: deep-copy (fresh ids via cloneSet), insert the
+    // copy right after the original in this file's tab order, and activate it. The
+    // copy is private to this file (a new pool entry) even if the source is shared.
     duplicateSet: (gid) =>
       patch((s) => {
         const f = activeFile(s);
         if (!f) return;
-        const idx = f.sets.findIndex((x) => x.id === gid);
+        const idx = f.setRefs.indexOf(gid);
         if (idx < 0) return;
-        const src = f.sets[idx];
-        const groupMap = new Map(
-          src.groups.map((grp) => [grp.id, uid("grp")] as const),
-        );
-        const filMap = new Map(
-          src.filters.map((fl) => [fl.id, uid("f")] as const),
-        );
-        const copy: FilterSet = {
-          id: uid("g"),
-          name: src.name + " copy",
-          groups: src.groups.map((grp) => ({
-            ...grp,
-            id: groupMap.get(grp.id)!,
-          })),
-          filters: src.filters.map((fl) => ({
-            ...fl,
-            id: filMap.get(fl.id)!,
-            groupId: fl.groupId ? (groupMap.get(fl.groupId) ?? null) : null,
-            fields: fl.fields ? fl.fields.map((x) => ({ ...x })) : undefined,
-          })),
-          order: src.order
-            .map((id) => groupMap.get(id) ?? filMap.get(id))
-            .filter((x): x is string => !!x),
-        };
-        f.sets.splice(idx + 1, 0, copy);
+        const src = s.filterSets[gid];
+        if (!src) return;
+        const copy = cloneSet(src, src.name + " copy");
+        s.filterSets[copy.id] = copy;
+        f.setRefs.splice(idx + 1, 0, copy.id);
         f.activeSetId = copy.id;
+      }),
+    // Point another open file at an existing set so both files share (and co-edit)
+    // the one set object. No-op if the target already references it; activates it
+    // there regardless so the share is visible when the user switches to that file.
+    shareSetWith: (setId, targetFileId) =>
+      patch((s) => {
+        if (!s.filterSets[setId]) return;
+        const t = s.files.find((x) => x.id === targetFileId);
+        if (!t) return;
+        if (!t.setRefs.includes(setId)) t.setRefs.push(setId);
+        t.activeSetId = setId;
+      }),
+    // Break the active file's share of a set: swap its reference for a private deep
+    // copy so subsequent edits no longer touch the other files. GCs nothing (the
+    // original stays for whoever else references it).
+    detachSet: (setId) =>
+      patch((s) => {
+        const f = activeFile(s);
+        if (!f) return;
+        const idx = f.setRefs.indexOf(setId);
+        const src = s.filterSets[setId];
+        if (idx < 0 || !src) return;
+        const copy = cloneSet(src, src.name);
+        s.filterSets[copy.id] = copy;
+        f.setRefs[idx] = copy.id;
+        if (f.activeSetId === setId) f.activeSetId = copy.id;
       }),
     // Copy the selected filters into another set, reusing the same projection →
     // remap → append plumbing packs use (so the destination gets independent
@@ -213,9 +275,10 @@ export function createFilterActions(
             groups: [],
             order: [],
           };
-          f.sets.push(dest);
+          s.filterSets[dest.id] = dest;
+          f.setRefs.push(dest.id);
         } else {
-          dest = f.sets.find((x) => x.id === targetSetId);
+          dest = s.filterSets[targetSetId];
         }
         if (!dest) return;
         appendImportToSet(dest, add);

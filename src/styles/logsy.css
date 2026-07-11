@@ -278,6 +278,8 @@ button {
   overflow-x: hidden;
   flex: 1 1 auto;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
 }
 .file-item {
   display: flex;
@@ -573,8 +575,11 @@ button {
   border-radius: 0 6px 6px 0;
   min-height: 6px;
 }
+/* Grows to fill the space below the file rows, so a file can be dropped past the
+   last entry (that empty area is still the ungrouped drop zone → insert at end). */
 .fg-ungrouped {
-  min-height: 4px;
+  flex: 1 1 auto;
+  min-height: 40px;
   margin-top: 4px;
 }
 .fg-body.drop-over,
@@ -629,6 +634,202 @@ button {
   min-height: 0;
   background: var(--app-bg);
   position: relative;
+}
+
+/* Split view (#6→#5): a pane = one VS Code-style editor group (its own tab strip
+   above its log view). The focused group gets a subtle accent top border. */
+.pane-group,
+.lv-pane {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  position: relative;
+}
+.pane-tabs {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: stretch;
+  height: 34px;
+  gap: 0;
+  padding: 0;
+  background: var(--app-bg);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+/* File tabs follow the app's tab convention (see .ptab): no fill, muted text,
+   an underline on the active one — NOT a solid accent fill. */
+.pane-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 220px;
+  height: 100%;
+  padding: 0 12px;
+  border: none;
+  border-right: 1px solid var(--border);
+  border-radius: 0;
+  background: none;
+  font-family: var(--ui-font);
+  font-size: 12px;
+  color: var(--text-3);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  box-shadow: inset 0 -2px 0 transparent;
+  transition:
+    color 0.12s,
+    box-shadow 0.12s;
+}
+.pane-tab:hover {
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text) 5%, transparent);
+}
+.pane-tab.active {
+  color: var(--text);
+  box-shadow: inset 0 -2px 0 var(--text);
+}
+.pane-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The tab clone shown in the DragOverlay while dragging (the real one is clipped
+   by the strip's overflow). Detached, so it needs its own surface + shadow. */
+.pane-tab-overlay {
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--app-bg);
+  color: var(--text);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+  cursor: grabbing;
+  box-sizing: border-box;
+}
+.pane-tab-x {
+  flex: 0 0 auto;
+  display: inline-grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  color: inherit;
+  opacity: 0.55;
+}
+.pane-tab-x:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--text) 16%, transparent);
+}
+/* Focused group marker — a thin accent line at the very top of the group. */
+.pane-group.focused .pane-tabs {
+  box-shadow: inset 0 2px 0 0 var(--accent-bg);
+}
+/* Fills the strip after the last tab so the drop caret can sit at the end. */
+.pane-tabs-rest {
+  flex: 1 1 auto;
+  min-width: 0;
+  align-self: stretch;
+}
+/* Consistent drop-zone overlays (file→pane, single-pane edge/center, tab→pane): a
+   tinted fill with a rounded dashed border. The border is a pseudo-element because
+   `outline` can't be rounded. */
+.pane-drop-hint,
+.lv-split-preview,
+.pane-tab-drop {
+  position: absolute;
+  z-index: 30;
+  pointer-events: none;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--accent-bg) 30%, transparent);
+}
+.pane-drop-hint::after,
+.lv-split-preview::after,
+.pane-tab-drop::after {
+  content: "";
+  position: absolute;
+  inset: 6px;
+  border: 2px dashed var(--accent-bg);
+  border-radius: 10px;
+}
+/* Highlight the target pane while a tab is dragged onto it (the `|` caret in its
+   strip shows the exact slot). */
+.pane-tab-drop {
+  inset: 0;
+}
+/* The `|` drop caret marking where a dragged tab will land (no live reorder). */
+.pane-tab-caret {
+  flex: 0 0 auto;
+  align-self: stretch;
+  width: 2px;
+  margin: 4px 0;
+  background: var(--accent-bg);
+  border-radius: 1px;
+}
+/* Sidebar file-drag drop line (the horizontal analogue of the tab caret). */
+.file-drop-line {
+  height: 2px;
+  margin: 1px 8px;
+  border-radius: 1px;
+  background: var(--accent-bg);
+}
+/* Per-pane OS-file drop hint (#3): shown on the pane under the cursor while a file
+   is dragged over the split, replacing the full-window overlay. */
+.pane-drop-hint {
+  inset: 0;
+}
+/* Single-pane wrapper (below an optional main-group tab strip) so a drop preview
+   can overlay the log. Fills the remaining height in the flex-column pane group. */
+.lv-wrap {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+/* The half-pane (or center) preview shown while a file is dragged to the log's
+   edge/center. Shared visual comes from the combined rule above; these set the
+   position. */
+.lv-split-preview.center {
+  inset: 0;
+}
+.lv-split-preview.left {
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 50%;
+}
+.lv-split-preview.right {
+  top: 0;
+  bottom: 0;
+  right: 0;
+  width: 50%;
+}
+.lv-split-preview.top {
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 50%;
+}
+.lv-split-preview.bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 50%;
+}
+/* A white pill — [icon][label] — floated over the tinted pane drop overlay. */
+.pane-drop-card {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: #fff;
+  color: #1a1a1a;
+  font-size: 13px;
+  font-weight: 500;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 }
 .logview-bar {
   height: 34px;
@@ -2917,6 +3118,20 @@ button {
   height: 7px;
   border-radius: 50%;
   background: #d98a2b;
+}
+/* Shared badge: this set is referenced (co-edited) by more than one open file. */
+.gtab .gtab-shared {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  line-height: 16px;
+  padding: 0 5px;
+  border-radius: 9px;
+  color: var(--accent-bg);
+  background: color-mix(in srgb, var(--accent-bg) 14%, transparent);
+  font-variant-numeric: tabular-nums;
 }
 .gtab-add {
   width: 28px;

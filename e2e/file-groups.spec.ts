@@ -38,6 +38,25 @@ async function newGroup(page: Page, name: string) {
 }
 
 test.describe("file groups", () => {
+  test("a file can be dragged to the bottom of the list", async ({
+    page,
+    tauri,
+  }) => {
+    await openTwo(page, tauri);
+    const before = await page
+      .locator(".file-item .file-name")
+      .allTextContents();
+    // Drag the first row into the empty area below the last one.
+    await dragTo(
+      page,
+      page.locator(".file-sortrow").first(),
+      page.locator(".fg-ungrouped"),
+    );
+    const after = await page.locator(".file-item .file-name").allTextContents();
+    expect(after).toHaveLength(2);
+    expect(after[after.length - 1]).toBe(before[0]); // moved to the bottom
+  });
+
   test("group a file via its context menu, collapse, and persist", async ({
     page,
     tauri,

@@ -1,4 +1,4 @@
-import type { AppState, Filter, Notebook } from "@/types";
+import type { AppState, Filter, FilterSet, Notebook } from "@/types";
 import { DEFAULT_TEXT_COLOR, DEFAULT_BG_COLOR, FONT_DEFAULT } from "@/config";
 
 /** A TipTap doc counts as "written in" once it holds more than a lone empty
@@ -92,6 +92,7 @@ export function initialState(): AppState {
     poppedActiveTab: "compare",
     poppedCollapsed: false,
     panelSizes: {},
+    filterSets: {},
   };
 }
 
@@ -103,9 +104,39 @@ export function normalizeState(state: AppState): AppState {
   for (const f of state.files) {
     if (f.viewMode === undefined && legacyViewMode) f.viewMode = legacyViewMode;
   }
+  // Shared-set migration: filter sets used to live per-file on `f.sets`; they now
+  // live in an app-level pool (`state.filterSets`) that files reference by id via
+  // `f.setRefs`. Lift any legacy per-file `sets[]` into the pool once. Ids are
+  // globally unique (uid), so files never collide in the pool.
+  if (!state.filterSets || typeof state.filterSets !== "object") {
+    state.filterSets = {};
+  }
   for (const f of state.files) {
-    if (!Array.isArray(f.sets)) f.sets = [];
-    for (const g of f.sets) {
+    const legacy = (f as Partial<Record<"sets", FilterSet[]>>).sets;
+    if (Array.isArray(legacy)) {
+      for (const g of legacy) {
+        if (g && typeof g.id === "string") state.filterSets[g.id] = g;
+      }
+      f.setRefs = legacy
+        .map((g) => g?.id)
+        .filter((id): id is string => typeof id === "string");
+      delete (f as Partial<Record<"sets", unknown>>).sets;
+    }
+    if (!Array.isArray(f.setRefs)) f.setRefs = [];
+  }
+  // Drop malformed pool entries before normalizing the survivors.
+  for (const [id, g] of Object.entries(state.filterSets)) {
+    if (
+      !g ||
+      typeof g !== "object" ||
+      typeof g.id !== "string" ||
+      !Array.isArray(g.filters)
+    ) {
+      delete state.filterSets[id];
+    }
+  }
+  for (const g of Object.values(state.filterSets)) {
+    {
       if (!Array.isArray(g.groups)) g.groups = [];
       const validIds = new Set(g.groups.map((s) => s.id));
       for (const flt of g.filters) {
@@ -166,8 +197,13 @@ export function normalizeState(state: AppState): AppState {
         delete g.sources;
       }
     }
-    if (!f.activeSetId || !f.sets.find((g) => g.id === f.activeSetId)) {
-      f.activeSetId = f.sets[0]?.id ?? null;
+  }
+  // Per-file: validate refs against the pool, resolve activeSetId, and normalize
+  // bookmarks + per-document view state.
+  for (const f of state.files) {
+    f.setRefs = f.setRefs.filter((id) => !!state.filterSets[id]);
+    if (!f.activeSetId || !f.setRefs.includes(f.activeSetId)) {
+      f.activeSetId = f.setRefs[0] ?? null;
     }
     // Bookmarks: keep only well-formed entries (a numeric line + a string note).
     f.markers = Array.isArray(f.markers)
@@ -184,6 +220,14 @@ export function normalizeState(state: AppState): AppState {
     // Per-document log-view header state (migrated from the old app-level viewMode).
     if (f.viewMode !== "matches") f.viewMode = "all";
     if (typeof f.findOpen !== "boolean") f.findOpen = false;
+  }
+  // Garbage-collect pool sets no open file references.
+  {
+    const referenced = new Set<string>();
+    for (const f of state.files) for (const id of f.setRefs) referenced.add(id);
+    for (const id of Object.keys(state.filterSets)) {
+      if (!referenced.has(id)) delete state.filterSets[id];
+    }
   }
   if (
     !state.activeFileId ||

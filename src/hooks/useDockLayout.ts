@@ -164,7 +164,8 @@ export function useDockLayout() {
   const isPanelPending =
     activePanelTab !== liveActiveTab ||
     (deferredActiveSetId !== liveSetId &&
-      !!af?.sets.some((g) => g.id === deferredActiveSetId));
+      deferredActiveSetId != null &&
+      !!af?.setRefs.includes(deferredActiveSetId));
   // The popped dock docks on the side opposite the main panel.
   const poppedPos: "bottom" | "right" =
     state.panelPos === "bottom" ? "right" : "bottom";
