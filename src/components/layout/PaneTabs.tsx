@@ -1,6 +1,13 @@
-import { Fragment, type CSSProperties, type ReactNode } from "react";
+import {
+  Fragment,
+  useEffect,
+  useRef,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { X } from "lucide-react";
 import { useDraggable } from "@dnd-kit/core";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface Props {
   /** Which split pane (group) this strip belongs to. */
@@ -93,8 +100,35 @@ export function PaneTabs({
 }: Props): ReactNode {
   const nameOf = (id: string) => files.find((f) => f.id === id)?.name ?? id;
   const caret = <span className="pane-tab-caret" aria-hidden />;
+  // Mouse-wheel support: translate a plain vertical wheel into horizontal tab
+  // scrolling. Attached natively (not via React's onWheel, which is passive so
+  // preventDefault would no-op) to the ScrollArea viewport. Only claims the wheel
+  // when the strip actually overflows and the gesture is vertical (a real trackpad
+  // horizontal scroll passes straight through).
+  const vpRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const vp = vpRef.current;
+    if (!vp) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.deltaY === 0 || e.deltaX !== 0) return;
+      if (vp.scrollWidth <= vp.clientWidth) return;
+      e.preventDefault();
+      vp.scrollLeft += e.deltaY;
+    };
+    vp.addEventListener("wheel", onWheel, { passive: false });
+    return () => vp.removeEventListener("wheel", onWheel);
+  }, []);
+  // Base UI ScrollArea (same overlay-scrollbar chrome as the filter panel's group
+  // tabs): the native scrollbar is hidden and replaced by a thin overlay in a
+  // reserved bottom lane, so an overflowing strip never rubber-bands the tabs or
+  // steals height from them. Tabs + carets render inside `.scroll-area-content`.
   return (
-    <div className="pane-tabs" role="tablist" data-strip={pane}>
+    <ScrollArea
+      orientation="horizontal"
+      className="pane-tabs"
+      data-strip={pane}
+      viewportProps={{ ref: vpRef }}
+    >
       {tabs.map((id, i) => (
         <Fragment key={id}>
           {caretIndex === i && caret}
@@ -113,6 +147,6 @@ export function PaneTabs({
       {caretIndex === tabs.length && caret}
       {/* Fills the rest of the strip so the caret can sit after the last tab. */}
       <div className="pane-tabs-rest" />
-    </div>
+    </ScrollArea>
   );
 }

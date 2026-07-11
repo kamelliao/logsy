@@ -154,10 +154,9 @@ export function useDockLayout() {
   const activePanelTab = useDeferredValue(liveActiveTab);
 
   // The active set id, deferred for the same reason — switching sets re-renders
-  // the whole filter list. App's `set` lookup ignores a deferred id that isn't in
-  // the current file's sets (it belongs to a previously-active file).
-  const af = activeFile(state);
-  const liveSetId = af?.activeSetId ?? null;
+  // the whole filter list. The selection is per-document, so read the active file's
+  // `activeSetId` (the set LIST is global).
+  const liveSetId = activeFile(state)?.activeSetId ?? null;
   const deferredActiveSetId = useDeferredValue(liveSetId);
 
   // Dim the panel body while either deferral is still catching up.
@@ -165,7 +164,7 @@ export function useDockLayout() {
     activePanelTab !== liveActiveTab ||
     (deferredActiveSetId !== liveSetId &&
       deferredActiveSetId != null &&
-      !!af?.setRefs.includes(deferredActiveSetId));
+      state.filterSets.some((g) => g.id === deferredActiveSetId));
   // The popped dock docks on the side opposite the main panel.
   const poppedPos: "bottom" | "right" =
     state.panelPos === "bottom" ? "right" : "bottom";

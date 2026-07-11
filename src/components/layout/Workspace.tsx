@@ -44,6 +44,10 @@ interface Props {
   filterCollapsed: boolean;
   poppedCollapsed: boolean;
 
+  // Split view only: the name of the document the dock panels currently act on
+  // (the focused pane's file). null in single-pane mode → no chip, no accent.
+  docChip: string | null;
+
   // Tab badge counts.
   compareCount: number;
   markerCount: number;
@@ -97,6 +101,7 @@ export function Workspace({
   panelPos,
   filterCollapsed,
   poppedCollapsed,
+  docChip,
   compareCount,
   markerCount,
   markCount,
@@ -226,6 +231,15 @@ export function Workspace({
             </button>
           </div>
           <div className="dock-spacer" />
+          {/* Split view: which document these panels act on (focused pane's file). */}
+          {docChip && (
+            <span className="dock-doc" title={`Panels act on ${docChip}`}>
+              <span className="dock-doc-caret" aria-hidden>
+                ▸
+              </span>
+              <span className="dock-doc-name">{docChip}</span>
+            </span>
+          )}
           {activePanelTab === "compare" && (
             <>
               <button

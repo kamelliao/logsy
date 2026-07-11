@@ -647,18 +647,39 @@ button {
   min-width: 0;
   position: relative;
 }
+/* The document-tab strip is a Base UI ScrollArea (same overlay-scrollbar chrome as
+   the filter panel's .group-tabs): the native scrollbar is hidden, replaced by a
+   thin overlay in a reserved bottom lane — so an overflowing strip never
+   rubber-bands the tabs or steals height from them. */
 .pane-tabs {
   flex: 0 0 auto;
-  display: flex;
-  align-items: stretch;
+  position: relative;
   height: 34px;
-  gap: 0;
-  padding: 0;
   background: var(--app-bg);
   border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+.pane-tabs .scroll-area-viewport {
+  height: 100%;
+  width: 100%;
+  /* Reserve a lane at the bottom for the overlay scrollbar so it sits below the
+     active-tab underline instead of overlapping it. */
+  padding-bottom: 4px;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
+  overscroll-behavior-x: contain;
+}
+.pane-tabs .scroll-area-content {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  height: 100%;
+  min-width: max-content;
+}
+/* Thinner horizontal scrollbar so it fits the reserved bottom lane. */
+.pane-tabs .scroll-area-scrollbar[data-orientation="horizontal"] {
+  height: 6px;
+  padding: 1px 2px;
 }
 /* File tabs follow the app's tab convention (see .ptab): no fill, muted text,
    an underline on the active one — NOT a solid accent fill. */
@@ -723,9 +744,21 @@ button {
   opacity: 1;
   background: color-mix(in srgb, var(--text) 16%, transparent);
 }
-/* Focused group marker — a thin accent line at the very top of the group. */
+/* Focused group marker: a soft accent border framing the whole active pane, plus a
+   faint accent tint on its tab strip — so it's obvious which pane (document) is
+   active, and thus which log the dock panels act on. The border is an overlay
+   pseudo-element (sits above the log content but below the z-30 drop hints) so
+   opaque child backgrounds can't paint over it. */
+.pane-group.focused::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border: 1.5px solid color-mix(in srgb, var(--accent-bg) 55%, transparent);
+  z-index: 6;
+}
 .pane-group.focused .pane-tabs {
-  box-shadow: inset 0 2px 0 0 var(--accent-bg);
+  background: color-mix(in srgb, var(--accent-bg) 10%, var(--app-bg));
 }
 /* Fills the strip after the last tab so the drop caret can sit at the end. */
 .pane-tabs-rest {
@@ -1566,6 +1599,37 @@ button {
 }
 .dock-head.tabbed:hover {
   background: var(--panel-bg-2, #f6f7f8);
+}
+
+/* Split view: a neutral filename chip on the right of the dock head naming the
+   document the panels currently act on (the focused pane's file). Which pane is
+   active is shown by the pane's own accent frame, so this stays understated. */
+.dock-doc {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 42%;
+  margin-right: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: color-mix(in srgb, var(--text) 6%, transparent);
+}
+.dock-doc-caret {
+  flex: 0 0 auto;
+  color: var(--text-3);
+  font-size: 10px;
+  line-height: 1;
+}
+.dock-doc-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .panel-tabs {
   display: flex;
@@ -3118,20 +3182,6 @@ button {
   height: 7px;
   border-radius: 50%;
   background: #d98a2b;
-}
-/* Shared badge: this set is referenced (co-edited) by more than one open file. */
-.gtab .gtab-shared {
-  display: inline-flex;
-  align-items: center;
-  gap: 2px;
-  flex: 0 0 auto;
-  font-size: 10.5px;
-  line-height: 16px;
-  padding: 0 5px;
-  border-radius: 9px;
-  color: var(--accent-bg);
-  background: color-mix(in srgb, var(--accent-bg) 14%, transparent);
-  font-variant-numeric: tabular-nums;
 }
 .gtab-add {
   width: 28px;

@@ -141,6 +141,9 @@ export function App() {
   // bookmark panels + write actions follow whichever pane you last touched; only the
   // non-focused pane needs its own computed view. `dir`: "h" = left/right (default).
   // Each pane's find bar is ephemeral while split is on.
+  // A pane is a VS Code editor group: its own ordered file tabs + active tab. The
+  // active filter set is NOT stored here — it's a per-document property
+  // (`LogFile.activeSetId`), so each pane's set follows whichever file it shows.
   type Pane = { tabs: string[]; active: string | null };
   const [split, setSplit] = useState<{ on: boolean; dir: "h" | "v" }>({
     on: false,
@@ -238,23 +241,23 @@ export function App() {
   // file.activeSetId drives the instant tab highlight); a deferred id left over from
   // a previous file isn't in this file's sets, so we fall back to the live set (no
   // file-switch flicker).
-  // Resolve the active set from the app-level pool. The deferred id is only used
-  // when it belongs to THIS file (the pool is global, so a leftover deferred id
-  // from a previous file would otherwise resolve to a foreign set).
-  // Split view uses the LIVE set (like the live file above) so a focus swap between
-  // panes doesn't lag/flash; single-pane keeps the deferred set for switch smoothness.
+  // Resolve the active set from the global list via the active file's per-document
+  // selection. During a SET switch (same file) the deferred id lags, so `set` shows
+  // the old set until the heavy re-render catches up (smooth INP). During a FILE
+  // switch we skip the deferral (`isSwitchingFile`) so a previous file's set never
+  // flashes — the deferred `file` already smooths that transition. Split view uses
+  // the LIVE set so a focus swap between panes doesn't lag/flash.
   const deferredSet =
-    !split.on &&
-    file &&
-    dock.deferredActiveSetId &&
-    file.setRefs.includes(dock.deferredActiveSetId)
-      ? state.filterSets[dock.deferredActiveSetId]
+    !split.on && !isSwitchingFile && dock.deferredActiveSetId
+      ? state.filterSets.find((g) => g.id === dock.deferredActiveSetId)
       : undefined;
-  const set = file
-    ? (deferredSet ??
-      (file.activeSetId ? state.filterSets[file.activeSetId] : undefined) ??
-      state.filterSets[file.setRefs[0] ?? ""])
-    : null;
+  const set =
+    deferredSet ??
+    (file?.activeSetId
+      ? state.filterSets.find((g) => g.id === file.activeSetId)
+      : undefined) ??
+    state.filterSets[0] ??
+    null;
   // Log-view header state is per-document (stored on the active LogFile).
   const findOpen = file?.findOpen ?? false;
   const fileViewMode: "all" | "matches" = file?.viewMode ?? "all";
@@ -360,11 +363,14 @@ export function App() {
     ? (state.files.find((f) => f.id === otherFileId) ?? null)
     : null;
   const otherLines = linesFor(otherFile?.id);
-  const otherSet = otherFile
-    ? ((otherFile.activeSetId
-        ? state.filterSets[otherFile.activeSetId]
-        : undefined) ?? state.filterSets[otherFile.setRefs[0] ?? ""])
-    : null;
+  // The non-focused pane's set is that document's own active selection (per-file),
+  // so two panes showing different files apply different filter sets.
+  const otherSet =
+    (otherFile?.activeSetId
+      ? state.filterSets.find((g) => g.id === otherFile.activeSetId)
+      : undefined) ??
+    state.filterSets[0] ??
+    null;
   const otherCompiled = useMemo(
     () => compileAll(otherSet?.filters ?? []),
     [otherSet?.filters],
@@ -449,45 +455,6 @@ export function App() {
       setDropHint(null);
     }
   }, [dragOver]);
-
-  // Side-by-side panes share one filter set (#6/#3): the two files in the split use
-  // the SAME set object, so filters cross files and edits show in both. We link them
-  // to whichever of their two active sets HAS filters (ties → the focused pane's),
-  // so no one's existing filters vanish. Non-undoable + non-destructive (the loser
-  // keeps its own set in setRefs, just not active) and guarded against re-firing.
-  useEffect(() => {
-    if (!split.on) return;
-    const focusedFid = state.activeFileId;
-    const otherFid = panes[otherPaneId].active;
-    if (!focusedFid || !otherFid || focusedFid === otherFid) return;
-    const ff = state.files.find((f) => f.id === focusedFid);
-    const of = state.files.find((f) => f.id === otherFid);
-    const fSetId = ff?.activeSetId ?? null;
-    const oSetId = of?.activeSetId ?? null;
-    if (!fSetId || !oSetId || fSetId === oSetId) return; // already sharing
-    const fCount = state.filterSets[fSetId]?.filters.length ?? 0;
-    const oCount = state.filterSets[oSetId]?.filters.length ?? 0;
-    // Adopt the non-empty set so filters never disappear; tie keeps the focused one.
-    const shareId = oCount > fCount ? oSetId : fSetId;
-    const targetFid = shareId === fSetId ? otherFid : focusedFid;
-    patchState(
-      (s) => {
-        const t = s.files.find((f) => f.id === targetFid);
-        if (!t) return;
-        if (!t.setRefs.includes(shareId)) t.setRefs.push(shareId);
-        t.activeSetId = shareId;
-      },
-      { undoable: false },
-    );
-  }, [
-    split.on,
-    otherPaneId,
-    panes,
-    state.activeFileId,
-    state.files,
-    state.filterSets,
-    patchState,
-  ]);
 
   // Per-table collapse for the Compare panel — see useCompareCollapse for why it
   // lives here (shared between the dock-head toggle and each table's chevron).
@@ -681,7 +648,9 @@ export function App() {
     });
   };
   const setSplitDir = (dir: "h" | "v") => setSplit((s) => ({ ...s, dir }));
-  // Focus a pane: it becomes active, and its active tab becomes the app's file.
+  // Focus a pane: it becomes active and its active tab becomes the app's file. The
+  // filter panel + highlights then follow that document's own active set (per-file),
+  // so no set syncing is needed here.
   const focusPane = (pane: "a" | "b") => {
     if (pane === activePaneId) return;
     setActivePaneId(pane);
@@ -1373,6 +1342,9 @@ export function App() {
         notebookBody={notebookBody}
         dock={dock}
         compareCollapse={compareCollapse}
+        // Split view only: name the document the dock panels act on (the focused
+        // pane's file), so it's unambiguous which log Filters/Bookmarks/… target.
+        docChip={split.on ? (file?.name ?? null) : null}
         panelPos={state.panelPos}
         filterCollapsed={state.filterCollapsed}
         poppedCollapsed={!!state.poppedCollapsed}
