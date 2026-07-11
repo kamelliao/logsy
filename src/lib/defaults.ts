@@ -92,7 +92,7 @@ export function initialState(): AppState {
     poppedActiveTab: "compare",
     poppedCollapsed: false,
     panelSizes: {},
-    filterSets: {},
+    filterSets: [],
   };
 }
 
@@ -104,38 +104,69 @@ export function normalizeState(state: AppState): AppState {
   for (const f of state.files) {
     if (f.viewMode === undefined && legacyViewMode) f.viewMode = legacyViewMode;
   }
-  // Shared-set migration: filter sets used to live per-file on `f.sets`; they now
-  // live in an app-level pool (`state.filterSets`) that files reference by id via
-  // `f.setRefs`. Lift any legacy per-file `sets[]` into the pool once. Ids are
-  // globally unique (uid), so files never collide in the pool.
-  if (!state.filterSets || typeof state.filterSets !== "object") {
-    state.filterSets = {};
-  }
-  for (const f of state.files) {
-    const legacy = (f as Partial<Record<"sets", FilterSet[]>>).sets;
-    if (Array.isArray(legacy)) {
-      for (const g of legacy) {
-        if (g && typeof g.id === "string") state.filterSets[g.id] = g;
+  // Filter sets are GLOBAL now — one ordered list (`state.filterSets`) shared by
+  // every file. The active SELECTION stays per-document (`LogFile.activeSetId`,
+  // resolved below). Migrate the two older shapes into the global list:
+  //   - app-level pool `Record<id,FilterSet>` + per-file `setRefs` (previous model)
+  //   - per-file `sets: FilterSet[]` (original model)
+  // Malformed entries (no id / no filters array) are dropped here; the survivors
+  // are deep-normalized by the loop below.
+  {
+    const byId = new Map<string, FilterSet>();
+    const order: string[] = [];
+    const pushSet = (g: unknown) => {
+      if (!g || typeof g !== "object") return;
+      const set = g as FilterSet;
+      if (typeof set.id !== "string" || !Array.isArray(set.filters)) return;
+      if (!byId.has(set.id)) {
+        byId.set(set.id, set);
+        order.push(set.id);
       }
-      f.setRefs = legacy
-        .map((g) => g?.id)
-        .filter((id): id is string => typeof id === "string");
+    };
+    // 1. Already-migrated global list.
+    if (Array.isArray(state.filterSets)) state.filterSets.forEach(pushSet);
+    // 2. Previous app-level pool (Record), ordered by how files referenced it —
+    //    the (old) active file's tab order first, then the rest.
+    const pool =
+      !Array.isArray(state.filterSets) &&
+      state.filterSets &&
+      typeof state.filterSets === "object"
+        ? (state.filterSets as unknown as Record<string, FilterSet>)
+        : null;
+    const files = Array.isArray(state.files) ? state.files : [];
+    const orderedFiles = [
+      ...files.filter((f) => f.id === state.activeFileId),
+      ...files.filter((f) => f.id !== state.activeFileId),
+    ];
+    for (const f of orderedFiles) {
+      const legacySets = (f as Partial<Record<"sets", FilterSet[]>>).sets;
+      const refs = (f as Partial<Record<"setRefs", string[]>>).setRefs;
+      if (Array.isArray(legacySets)) legacySets.forEach(pushSet); // original model
+      if (pool && Array.isArray(refs)) for (const id of refs) pushSet(pool[id]);
+    }
+    // 3. Any pool set no file referenced (defensive).
+    if (pool) for (const g of Object.values(pool)) pushSet(g);
+    // Strip the retired per-file collection fields (setRefs / sets); the per-file
+    // `activeSetId` SELECTION is kept and validated in the per-file loop below.
+    for (const f of files) {
       delete (f as Partial<Record<"sets", unknown>>).sets;
+      delete (f as Partial<Record<"setRefs", unknown>>).setRefs;
     }
-    if (!Array.isArray(f.setRefs)) f.setRefs = [];
+    // Drop a stale global `activeSetId` from the interim global-selection model.
+    delete (state as Partial<Record<"activeSetId", unknown>>).activeSetId;
+    state.filterSets = order.map((id) => byId.get(id)!);
   }
-  // Drop malformed pool entries before normalizing the survivors.
-  for (const [id, g] of Object.entries(state.filterSets)) {
-    if (
-      !g ||
-      typeof g !== "object" ||
-      typeof g.id !== "string" ||
-      !Array.isArray(g.filters)
-    ) {
-      delete state.filterSets[id];
-    }
+  // Guarantee at least one set so the filter panel always has one to show.
+  if (state.filterSets.length === 0) {
+    state.filterSets.push({
+      id: uid("g"),
+      name: "Filters",
+      filters: [],
+      groups: [],
+      order: [],
+    });
   }
-  for (const g of Object.values(state.filterSets)) {
+  for (const g of state.filterSets) {
     {
       if (!Array.isArray(g.groups)) g.groups = [];
       const validIds = new Set(g.groups.map((s) => s.id));
@@ -198,13 +229,9 @@ export function normalizeState(state: AppState): AppState {
       }
     }
   }
-  // Per-file: validate refs against the pool, resolve activeSetId, and normalize
-  // bookmarks + per-document view state.
+  // Per-file: normalize bookmarks + per-document view state (filter sets are
+  // global now, so there's nothing per-file to reconcile against them).
   for (const f of state.files) {
-    f.setRefs = f.setRefs.filter((id) => !!state.filterSets[id]);
-    if (!f.activeSetId || !f.setRefs.includes(f.activeSetId)) {
-      f.activeSetId = f.setRefs[0] ?? null;
-    }
     // Bookmarks: keep only well-formed entries (a numeric line + a string note).
     f.markers = Array.isArray(f.markers)
       ? f.markers
@@ -220,14 +247,10 @@ export function normalizeState(state: AppState): AppState {
     // Per-document log-view header state (migrated from the old app-level viewMode).
     if (f.viewMode !== "matches") f.viewMode = "all";
     if (typeof f.findOpen !== "boolean") f.findOpen = false;
-  }
-  // Garbage-collect pool sets no open file references.
-  {
-    const referenced = new Set<string>();
-    for (const f of state.files) for (const id of f.setRefs) referenced.add(id);
-    for (const id of Object.keys(state.filterSets)) {
-      if (!referenced.has(id)) delete state.filterSets[id];
-    }
+    // Resolve this document's active-set selection against the global list; an
+    // invalid / missing id falls back to the first set.
+    if (!f.activeSetId || !state.filterSets.some((g) => g.id === f.activeSetId))
+      f.activeSetId = state.filterSets[0]?.id ?? null;
   }
   if (
     !state.activeFileId ||

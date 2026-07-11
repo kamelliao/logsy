@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { LogFile, FilterSet } from "@/types";
+import type { LogFile } from "@/types";
 import { uid } from "@/lib/defaults";
 import { baseName } from "@/lib/path";
 import { nextPaint } from "@/lib/paint";
@@ -54,7 +54,7 @@ export interface LogFilesApi {
   selectFile: (fid: string) => void;
   deleteFile: (fid: string) => Promise<void>;
   openFiles: () => Promise<void>;
-  loadPaths: (paths: string[], inheritFilters?: boolean) => Promise<void>;
+  loadPaths: (paths: string[]) => Promise<void>;
   /** Re-decode a file with a forced encoding label (null = back to auto-detect). */
   setFileEncoding: (fid: string, label: string | null) => Promise<void>;
 }
@@ -133,42 +133,11 @@ export function useLogFiles({ file, osDropRef, osDragRef }: Deps): LogFilesApi {
 
   // Read each path from disk and add it as a log file. The same path may be
   // opened more than once — each open is a separate entry (duplicates get a
-  // "(n)" suffix so the sidebar stays readable). When `inheritFilters` is set
-  // (e.g. for drag-and-drop) the new file starts with a copy of the current
-  // set's filters instead of an empty one.
+  // "(n)" suffix so the sidebar stays readable). Filter sets are global (shared by
+  // every file), so a new file needs none of its own — it shows the same sets.
   const loadPaths = useCallback(
-    async (paths: string[], inheritFilters = false) => {
+    async (paths: string[]) => {
       let lastErr = "";
-      // Snapshot the active set's filters once, up front, so every dropped file
-      // inherits the same starting point.
-      const inherited = (() => {
-        if (!inheritFilters) return null;
-        const cur = getDoc();
-        const cf =
-          cur.files.find((f) => f.id === cur.activeFileId) ??
-          cur.files[0] ??
-          null;
-        const cg = cf
-          ? (cur.filterSets[cf.activeSetId ?? ""] ??
-            cur.filterSets[cf.setRefs[0] ?? ""])
-          : null;
-        return cg ?? null;
-      })();
-      // A fresh, private set for a newly opened file. Inheriting (drag-with-filters)
-      // deep-copies the source set with a new id — a copy, never a shared reference.
-      const makeSet = (): FilterSet =>
-        inherited
-          ? {
-              ...(JSON.parse(JSON.stringify(inherited)) as FilterSet),
-              id: uid("g"),
-            }
-          : {
-              id: uid("g"),
-              name: "Filters",
-              filters: [],
-              groups: [],
-              order: [],
-            };
       try {
         for (const path of paths) {
           let text: string;
@@ -204,8 +173,9 @@ export function useLogFiles({ file, osDropRef, osDragRef }: Deps): LogFilesApi {
           linesStore[id] = lns;
           patchState(
             (s) => {
-              const g = makeSet();
-              s.filterSets[g.id] = g;
+              // The set LIST is global; a new document adopts the current file's
+              // active set as its starting lens (else the first set).
+              const cur = s.files.find((x) => x.id === s.activeFileId);
               const f: LogFile = {
                 id,
                 name: baseName(path),
@@ -213,8 +183,7 @@ export function useLogFiles({ file, osDropRef, osDragRef }: Deps): LogFilesApi {
                 lineCount: lns.length,
                 encoding,
                 detectedEncoding: encoding,
-                setRefs: [g.id],
-                activeSetId: g.id,
+                activeSetId: cur?.activeSetId ?? s.filterSets[0]?.id ?? null,
               };
               s.files.push(f);
               // Auto-activate the freshly opened file — unless the user selected
@@ -470,7 +439,7 @@ export function useLogFiles({ file, osDropRef, osDragRef }: Deps): LogFilesApi {
                 await replaceActiveFileRef.current(paths[0]);
                 // Any extra dropped files open as additional entries.
                 if (paths.length > 1)
-                  await loadPathsRef.current(paths.slice(1), true);
+                  await loadPathsRef.current(paths.slice(1));
               } else {
                 await loadPathsRef.current(paths);
               }

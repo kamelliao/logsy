@@ -137,13 +137,13 @@ export interface LogFile {
    *  groups, like an ungrouped filter). References `AppState.fileGroups`. */
   groupId?: string | null;
   /**
-   * Ordered ids of the filter sets this file shows (its tab strip order). Each id
-   * resolves to a set in the app-level `AppState.filterSets` pool; two files
-   * listing the same id SHARE that set (edits sync — see the shared-set feature).
-   * Replaces the old per-file `sets: FilterSet[]`; `normalizeState` migrates it.
+   * Which global filter set (id into `AppState.filterSets`) this document currently
+   * has active — its "filter lens". Per-document, so two split panes showing
+   * different files apply different sets; `normalizeState` resolves an invalid /
+   * missing id to the first set. The set LIST is global; only the selection is
+   * per-file.
    */
-  setRefs: string[];
-  activeSetId: string | null;
+  activeSetId?: string | null;
   /** User bookmarks pinned to line numbers (persisted with the file). */
   markers?: Marker[];
   /** Per-document log-view header state: "show only matched lines" toggle. */
@@ -177,12 +177,12 @@ export interface AppState {
   files: LogFile[];
   activeFileId: string | null;
   /**
-   * App-level pool of filter sets (id → set). Files reference sets by id via
-   * `LogFile.setRefs`; several files pointing at the same id share that one set
-   * object, so editing it in one file is instantly visible in the others. A set
-   * with no referencing file is garbage-collected in `normalizeState`.
+   * Global, ordered list of filter sets — shared by every open file (a filter set
+   * is not tied to a document). Its order is the set-tab strip order shown in the
+   * filter panel, identical across files. Replaced the old per-file `sets[]` /
+   * app-level pool + `LogFile.setRefs` model; `normalizeState` migrates both.
    */
-  filterSets: Record<string, FilterSet>;
+  filterSets: FilterSet[];
   /** Named, collapsible sidebar sections partitioning the open files. Ordered;
    *  a file joins one via `LogFile.groupId`. Undefined when no groups exist. */
   fileGroups?: FileGroup[];

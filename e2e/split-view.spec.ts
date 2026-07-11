@@ -72,12 +72,16 @@ test.describe("split view", () => {
     await expect(page.locator(".busy-overlay")).toHaveCount(0);
   });
 
-  test("side-by-side panes share one filter set", async ({ page, tauri }) => {
+  test("side-by-side panes share the global filter set", async ({
+    page,
+    tauri,
+  }) => {
     await openTwo(page, tauri);
     await split(page);
-    // The auto-link makes both panes' files reference the same set, so the set tab
-    // shows the shared badge (used by >1 file).
-    await expect(page.locator(".gtab-shared")).toBeVisible();
+    // Filter sets are global now: both files show the SAME single set (no per-file
+    // sets, no share badge), so a filter added applies across both panes.
+    await expect(page.locator(".gtab")).toHaveCount(1);
+    await expect(page.locator(".gtab-shared")).toHaveCount(0);
   });
 
   test("a filter added while comparing applies to both files", async ({
@@ -93,13 +97,57 @@ test.describe("split view", () => {
 
     await addFilter(page, "ERROR");
     await expect(filterRow(page, "ERROR")).toBeVisible();
-    await expect(page.locator(".gtab-shared")).toBeVisible();
 
-    // Focusing the other pane keeps showing the SAME filter — its file uses the
-    // shared set (the filter genuinely crosses files, not just the focused one).
+    // Focusing the other pane keeps showing the SAME filter — both files use the
+    // global set (the filter genuinely crosses files, not just the focused one).
     await pane(page, "b").locator(".lv-stat").click();
     await expect(pane(page, "b")).toHaveClass(/focused/);
     await expect(filterRow(page, "ERROR")).toBeVisible();
+  });
+
+  // Regression (#3): with the old shared-set model an auto-share effect forced both
+  // panes onto the non-empty set, so a freshly added EMPTY set could never become
+  // active in split view. Global sets have no such effect — the empty set opens.
+  test("a new empty filter set can be opened in split view", async ({
+    page,
+    tauri,
+  }) => {
+    await openTwo(page, tauri);
+    await split(page);
+    await addFilter(page, "ERROR");
+    await expect(filterRow(page, "ERROR")).toBeVisible();
+
+    // Add a new (empty) set — it must become the active tab and show no filters.
+    await page.locator(".gtab-add").click();
+    await expect(page.locator(".gtab.active .gtab-count")).toHaveText("0");
+    await expect(filterRow(page, "ERROR")).toHaveCount(0);
+  });
+
+  // The active filter set is per-DOCUMENT: two panes showing different files apply
+  // different sets (the set LIST is global, but each doc remembers its own choice).
+  test("two panes with different files apply different filter sets", async ({
+    page,
+    tauri,
+  }) => {
+    await openTwo(page, tauri);
+    await split(page);
+
+    // Both files open on the one global set, so this filter shows for both.
+    await addFilter(page, "shared");
+    await expect(filterRow(page, "shared")).toBeVisible();
+
+    // Give the focused pane's file (a.log) its OWN new set + a distinct filter.
+    await page.locator(".gtab-add").click();
+    await addFilter(page, "onlyA");
+    await expect(filterRow(page, "onlyA")).toBeVisible();
+    await expect(filterRow(page, "shared")).toHaveCount(0);
+
+    // Focus the other pane (b.log): it still uses the ORIGINAL set → shows "shared",
+    // not a.log's "onlyA". The two documents apply different sets side by side.
+    await pane(page, "b").locator(".lv-stat").click();
+    await expect(pane(page, "b")).toHaveClass(/focused/);
+    await expect(filterRow(page, "shared")).toBeVisible();
+    await expect(filterRow(page, "onlyA")).toHaveCount(0);
   });
 
   test("an OS file drop opens in the pane under the cursor", async ({
