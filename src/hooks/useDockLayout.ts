@@ -1,19 +1,14 @@
 import { useEffect, useRef, useDeferredValue } from "react";
 import type { PanelImperativeHandle } from "react-resizable-panels";
-import type { AppState } from "@/types";
+import type { AppState, PanelTab } from "@/types";
+import { PANEL_TABS } from "@/types";
 import { useStore } from "@/store";
 import { activeFile } from "@/state/selectors";
 
-export type PanelTab =
-  | "filters"
-  | "compare"
-  | "bookmarks"
-  | "timeline"
-  | "notebook";
-export type PoppedTab = "compare" | "timeline";
+export type { PanelTab };
 
-// Collapsed strip size — shared by both docks so the popped Compare/Timeline
-// dock collapses to the same tab-bar strip as the Filters/Bookmarks dock.
+// Collapsed strip size — shared by both docks so the popped dock collapses to the
+// same tab-bar strip as the main one.
 const MAIN_COLLAPSED = "34px";
 const POP_COLLAPSED = MAIN_COLLAPSED;
 // The popped dock opens larger than the filter dock — its tables/canvas benefit.
@@ -63,25 +58,49 @@ export function useDockLayout() {
   const togglePoppedCollapsed = () =>
     setState((s) => ({ ...s, poppedCollapsed: !s.poppedCollapsed }));
 
-  // Which tab the main dock actually shows, resolved the same way the render does
-  // (a popped-out Compare/Timeline falls back to Filters). Used to skip a no-op
-  // tab switch so we don't start a panel transition (the dim animation) when the
-  // target tab is already the visible one.
-  const resolveActiveTab = (s: AppState): PanelTab =>
-    s.activePanelTab === "bookmarks"
-      ? "bookmarks"
-      : s.activePanelTab === "notebook"
-        ? "notebook"
-        : s.activePanelTab === "timeline" && !s.timelinePopped
-          ? "timeline"
-          : s.activePanelTab === "compare" && !s.comparePopped
-            ? "compare"
-            : "filters";
-  // Select a tab in the main panel (always expands it if it was collapsed). When
-  // that tab is already shown expanded, do nothing — re-running the transition
-  // would needlessly dim the panel body even though no content re-renders.
+  // Which panels are where. ANY panel can be popped out into the shared side dock;
+  // the main dock keeps whatever is left, and always at least one (`canPop` gates
+  // the pop-out button on the last remaining tab).
+  const poppedFor = (s: AppState): PanelTab[] => {
+    const popped = PANEL_TABS.filter((t) => s.poppedPanels?.includes(t));
+    // Defensive: never let the main dock run empty (normalizeState enforces this
+    // too, but a live edit shouldn't be able to break it either).
+    return popped.length >= PANEL_TABS.length ? popped.slice(0, -1) : popped;
+  };
+  const mainFor = (s: AppState): PanelTab[] => {
+    const popped = poppedFor(s);
+    return PANEL_TABS.filter((t) => !popped.includes(t));
+  };
+  const poppedTabs = poppedFor(state);
+  const mainTabs = mainFor(state);
+  const popOpen = poppedTabs.length > 0;
+  const canPop = mainTabs.length > 1;
+
+  // Which tab each dock actually shows, resolved the same way the render does: a
+  // pointer at a panel that now lives on the OTHER dock falls back to that dock's
+  // first tab. `resolveActiveTab` is also used to skip a no-op tab switch, so we
+  // don't start a panel transition (the dim animation) for the already-visible tab.
+  const resolveActiveTab = (s: AppState): PanelTab => {
+    const main = mainFor(s);
+    return main.includes(s.activePanelTab) ? s.activePanelTab : main[0];
+  };
+  // REVEAL a panel — the app's single "show me this panel" entry point (used by
+  // "add to timeline", "add to notebook", jump-to-filter, …). It surfaces the panel
+  // on whichever dock it currently lives on, so popping a panel out doesn't stop
+  // those actions from bringing it into view. Expands the dock if it was collapsed.
+  // When the panel is already the visible tab, do nothing — re-running the
+  // transition would needlessly dim the body even though no content re-renders.
   const selectPanelTab = (tab: PanelTab) => {
     const s = getDoc();
+    if (poppedFor(s).includes(tab)) {
+      if (s.poppedActiveTab === tab && !s.poppedCollapsed) return;
+      setState((st) => ({
+        ...st,
+        poppedActiveTab: tab,
+        poppedCollapsed: false,
+      }));
+      return;
+    }
     if (resolveActiveTab(s) === tab && !s.filterCollapsed) return;
     setState((st) => ({
       ...st,
@@ -89,69 +108,60 @@ export function useDockLayout() {
       filterCollapsed: false,
     }));
   };
+  const selectPoppedTab = (tab: PanelTab) =>
+    setState((s) => ({ ...s, poppedActiveTab: tab, poppedCollapsed: false }));
 
-  // Compare and Timeline, when popped, share ONE dock beside Filters. Popping a
-  // panel out focuses it as the active tab in that shared dock and expands it;
-  // Filters takes over the main tab area if the popped panel was active there.
-  const popCompareOut = () =>
-    setState((s) => ({
-      ...s,
-      comparePopped: true,
-      poppedCollapsed: false,
-      poppedActiveTab: "compare",
-      activePanelTab:
-        s.activePanelTab === "compare" ? "filters" : s.activePanelTab,
-    }));
-  // Merge Compare back into the main panel as a tab, and focus it.
-  const dockCompareBack = () =>
-    setState((s) => ({
-      ...s,
-      comparePopped: false,
-      activePanelTab: "compare",
-      filterCollapsed: false,
-      poppedActiveTab: "timeline",
-    }));
-  const popTimelineOut = () =>
-    setState((s) => ({
-      ...s,
-      timelinePopped: true,
-      poppedCollapsed: false,
-      poppedActiveTab: "timeline",
-      activePanelTab:
-        s.activePanelTab === "timeline" ? "filters" : s.activePanelTab,
-    }));
-  // Merge Timeline back into the main panel as a tab, and focus it.
-  const dockTimelineBack = () =>
-    setState((s) => ({
-      ...s,
-      timelinePopped: false,
-      activePanelTab: "timeline",
-      filterCollapsed: false,
-      poppedActiveTab: "compare",
-    }));
+  // Pop a panel out of the main dock into the shared side dock, where it becomes
+  // the active (and expanded) tab. If it was the main dock's active tab, the first
+  // remaining panel takes over there. Popping the LAST main tab is refused — the
+  // main dock always keeps one.
+  const popOut = (tab: PanelTab) =>
+    setState((s) => {
+      const popped = [...poppedFor(s), tab];
+      const main = PANEL_TABS.filter((t) => !popped.includes(t));
+      if (!main.length) return s;
+      return {
+        ...s,
+        poppedPanels: PANEL_TABS.filter((t) => popped.includes(t)),
+        poppedCollapsed: false,
+        poppedActiveTab: tab,
+        activePanelTab: main.includes(s.activePanelTab)
+          ? s.activePanelTab
+          : main[0],
+      };
+    });
+  // Merge a popped panel back into the main dock as a tab, and focus it there.
+  const dockBack = (tab: PanelTab) =>
+    setState((s) => {
+      const popped = poppedFor(s).filter((t) => t !== tab);
+      return {
+        ...s,
+        poppedPanels: popped.length ? popped : undefined,
+        poppedActiveTab: popped[0],
+        activePanelTab: tab,
+        filterCollapsed: false,
+      };
+    });
 
-  // Compare is a permanent tab (shows an empty-state when it has no rows); it's a
-  // main-panel tab unless popped out into the shared dock.
-  const compareTabAvailable = !state.comparePopped;
-  // Timeline is a tab unless it's popped out into the shared popped dock.
-  const timelineTabAvailable = !state.timelinePopped;
-  // Compare and Timeline share ONE popped dock. Its tab set is whichever are
-  // popped; the active tab is resolved against that set.
-  const poppedTabs: PoppedTab[] = [
-    ...(state.comparePopped ? ["compare" as const] : []),
-    ...(state.timelinePopped ? ["timeline" as const] : []),
-  ];
-  const popOpen = poppedTabs.length > 0;
-  const poppedActiveTab: PoppedTab = poppedTabs.includes(
-    state.poppedActiveTab ?? "compare",
-  )
-    ? (state.poppedActiveTab ?? "compare")
-    : (poppedTabs[0] ?? "compare");
-  // Bookmarks is always a tab. Compare/Timeline fall back to Filters when
-  // unavailable. We render the *deferred* resolution so switching tabs keeps the
-  // (large) body swap off the click's critical path (see the note above).
+  // The popped dock's active tab, resolved against the panels actually on it.
+  const poppedActiveTab: PanelTab =
+    state.poppedActiveTab && poppedTabs.includes(state.poppedActiveTab)
+      ? state.poppedActiveTab
+      : poppedTabs[0];
+  // We render the *deferred* resolution so switching tabs keeps the (large) body
+  // swap off the click's critical path (see the note above).
   const liveActiveTab = resolveActiveTab(state);
-  const activePanelTab = useDeferredValue(liveActiveTab);
+  const deferredTab = useDeferredValue(liveActiveTab);
+  // …but the deferred value lags by a render, and popping a panel out moves it to
+  // the other dock IN THE SAME COMMIT. For that one frame the stale value would name
+  // a panel the popped dock is already showing, so its body would mount TWICE — and
+  // the notebook's TipTap editor registers a *keyed* ProseMirror plugin, so the
+  // second instance throws ("Adding different instances of a keyed plugin
+  // (dragHandle$)") and takes the whole app down. Only defer while the deferred tab
+  // is still one of ours; otherwise snap to the live one.
+  const activePanelTab = mainTabs.includes(deferredTab)
+    ? deferredTab
+    : liveActiveTab;
 
   // The active set id, deferred for the same reason — switching sets re-renders
   // the whole filter list. The selection is per-document, so read the active file's
@@ -241,12 +251,11 @@ export function useDockLayout() {
     toggleFilterCollapsed,
     togglePoppedCollapsed,
     selectPanelTab,
-    popCompareOut,
-    dockCompareBack,
-    popTimelineOut,
-    dockTimelineBack,
-    compareTabAvailable,
-    timelineTabAvailable,
+    selectPoppedTab,
+    popOut,
+    dockBack,
+    canPop,
+    mainTabs,
     poppedTabs,
     popOpen,
     poppedActiveTab,

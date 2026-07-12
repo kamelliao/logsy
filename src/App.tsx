@@ -1133,13 +1133,6 @@ export function App() {
         showCompare={showCompare}
         clearCompare={clearCompare}
         clearTimeline={clearTimeline}
-        onSelectPoppedTab={(t) =>
-          setState((s) => ({
-            ...s,
-            poppedActiveTab: t,
-            poppedCollapsed: false,
-          }))
-        }
       />
     );
   }

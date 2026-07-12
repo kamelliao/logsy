@@ -714,6 +714,15 @@ button {
   color: var(--text);
   box-shadow: inset 0 -2px 0 var(--text);
 }
+/* Which pane is FOCUSED (i.e. which log the dock panels act on) reads off the tab
+   underline, VS Code style: the focused pane's active tab keeps its solid underline;
+   an unfocused pane's active tab goes grey. Comparing the two strips answers "which
+   pane am I in" at a glance — the old accent frame around the pane was too faint to
+   do that job. */
+.pane-group:not(.focused) .pane-tab.active {
+  color: var(--text-2);
+  box-shadow: inset 0 -2px 0 var(--text-3);
+}
 .pane-tab-name {
   flex: 0 1 auto;
   min-width: 0;
@@ -764,22 +773,10 @@ button {
   opacity: 1;
   background: color-mix(in srgb, var(--text) 16%, transparent);
 }
-/* Focused group marker: a soft accent border framing the whole active pane, plus a
-   faint accent tint on its tab strip — so it's obvious which pane (document) is
-   active, and thus which log the dock panels act on. The border is an overlay
-   pseudo-element (sits above the log content but below the z-30 drop hints) so
-   opaque child backgrounds can't paint over it. */
-.pane-group.focused::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  border: 1.5px solid color-mix(in srgb, var(--accent-bg) 55%, transparent);
-  z-index: 6;
-}
-.pane-group.focused .pane-tabs {
-  background: color-mix(in srgb, var(--accent-bg) 10%, var(--app-bg));
-}
+/* The focused pane is marked on its TAB (see `.pane-group:not(.focused) .pane-tab
+   .active` above) — not by framing the pane. An accent border round the whole pane
+   and an accent tint on its strip were both too faint to read, and a full-pane frame
+   competes with the log content for attention. */
 /* Fills the strip after the last tab so the drop caret can sit at the end. */
 .pane-tabs-rest {
   flex: 1 1 auto;
@@ -7155,6 +7152,17 @@ button {
 .nb-empty-btn:hover {
   background: var(--row-hover);
 }
+/* Two calls to action side by side; "Open notebook…" is the secondary one. */
+.nb-empty-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.nb-empty-btn-quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-2);
+}
 
 /* toolbar */
 .nb-toolbar {
@@ -8125,11 +8133,16 @@ body.nb-block-dragging * {
   background: var(--row-hover);
   color: var(--text);
 }
+/* Pinned lines ARE log lines, so they take the log's font size (Ctrl+wheel / Ctrl
+   +/−, `state.fontSize`) rather than a fixed one — the hardcoded 12.5px here was
+   just `--log-font-size`'s own default, unwired. `4ch` and the unitless line-height
+   below scale with it. An EXPORTED notebook keeps a fixed size: it ships its own
+   stylesheet, and a reader shouldn't inherit the author's personal zoom level. */
 .pl-body {
   margin: 0;
   padding: 6px 10px 8px;
   font-family: var(--mono-font);
-  font-size: 12.5px;
+  font-size: var(--log-font-size, 12.5px);
   line-height: 1.55;
   background: transparent;
   overflow-x: auto;
@@ -8156,8 +8169,10 @@ body.nb-block-dragging * {
 .pl-card .pl-num {
   cursor: pointer;
 }
+/* Hover reads as "darker", not "linky" — the accent blue looked like a stray web
+   link inside a mono log block. The underline alone carries the affordance. */
 .pl-card .pl-num:hover {
-  color: var(--accent-bg);
+  color: var(--text);
   text-decoration: underline;
 }
 .pl-text {
@@ -8288,12 +8303,17 @@ body.nb-block-dragging * {
   user-select: text;
   -webkit-user-select: text;
 }
+/* Compare rows are log-derived too, so they follow the log's font size — the same
+   class serves the Compare dock panel and the notebook's compare card. In the dock
+   this also settles an old mismatch: the row HEIGHT already scaled with
+   `state.fontSize` (`rowH = fontSize * 1.5`) while the text stayed pinned at 12px,
+   so zooming in just grew the gaps. */
 .cc-table {
   width: max-content;
   min-width: 100%;
   border-collapse: collapse;
   font-family: var(--mono-font);
-  font-size: 12px;
+  font-size: var(--log-font-size, 12px);
 }
 .cc-table th,
 .cc-table td {
@@ -8307,7 +8327,8 @@ body.nb-block-dragging * {
   top: 0;
   background: var(--panel-bg);
   font-family: var(--ui-font);
-  font-size: 11px;
+  /* The uppercase column header stays a touch smaller than the rows it labels. */
+  font-size: calc(var(--log-font-size, 12px) * 0.9);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.04em;

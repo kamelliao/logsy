@@ -7,12 +7,74 @@ import {
   Check,
   Search,
   ChevronDown,
+  FolderOpen,
 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
 import { Combobox } from "@base-ui/react/combobox";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import { toast } from "sonner";
 import { NoteEditor } from "./NoteEditor";
 import type { Notebook } from "@/types";
+import { baseName } from "@/lib/path";
 import { useStore } from "@/store";
+
+/**
+ * Open a notebook exported with "Export as JSON". That export is the editor's raw
+ * TipTap doc (`editor.getJSON()`), so that's the shape we expect — but a file
+ * holding a whole `Notebook` object (`{ name, doc }`) is accepted too, since that's
+ * the other plausible thing a user could point at.
+ */
+async function openNotebookFile(): Promise<void> {
+  const path = await open({
+    multiple: false,
+    filters: [{ name: "Notebook", extensions: ["json"] }],
+  });
+  if (typeof path !== "string") return;
+
+  let raw: string;
+  try {
+    const res = await invoke<{ text: string }>("read_text_file", {
+      path,
+      encoding: null,
+    });
+    raw = res.text;
+  } catch (e) {
+    toast.error("Could not read that file: " + String(e));
+    return;
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    toast.error("That file isn't valid JSON.");
+    return;
+  }
+
+  const asRecord = (v: unknown): Record<string, unknown> | null =>
+    v && typeof v === "object" && !Array.isArray(v)
+      ? (v as Record<string, unknown>)
+      : null;
+  const isTipTapDoc = (v: Record<string, unknown> | null): boolean =>
+    !!v && v.type === "doc" && Array.isArray(v.content);
+
+  const top = asRecord(parsed);
+  // A bare TipTap doc (what we export), or a Notebook wrapping one.
+  const wrapped = asRecord(top?.doc);
+  const doc = isTipTapDoc(top) ? top : isTipTapDoc(wrapped) ? wrapped : null;
+  if (!doc) {
+    toast.error("That JSON isn't a Logsy notebook.");
+    return;
+  }
+  // Prefer the name the file carries; otherwise the filename without its extension.
+  const embeddedName = typeof top?.name === "string" ? top.name.trim() : "";
+  const name =
+    embeddedName || baseName(path).replace(/\.json$/i, "") || "Untitled";
+
+  useStore.getState().importNotebook(name, doc);
+  toast.success(`Opened notebook “${name}”`);
+}
 
 // Relative "2h ago" / "3d ago", falling back to a short date past a week — keeps
 // the combobox rows scannable while the full timestamps live in the row title.
@@ -228,6 +290,13 @@ function NotebookBar() {
         )}
         <button
           className="nb-bar-btn"
+          title="Open notebook… (.json)"
+          onClick={() => void openNotebookFile()}
+        >
+          <FolderOpen size={14} />
+        </button>
+        <button
+          className="nb-bar-btn"
           title="New notebook"
           onClick={() => createNotebook()}
         >
@@ -264,12 +333,22 @@ export function NotebookPanel() {
         <NotebookPen size={32} className="nb-empty-icon" />
         <p className="nb-empty-title">No notebook yet</p>
         <p className="nb-empty-sub">
-          Create one to collect findings from any of your open logs.
+          Create one to collect findings from any of your open logs — or open a
+          notebook you exported earlier.
         </p>
-        <button className="nb-empty-btn" onClick={() => createNotebook()}>
-          <Plus size={15} />
-          New notebook
-        </button>
+        <div className="nb-empty-actions">
+          <button className="nb-empty-btn" onClick={() => createNotebook()}>
+            <Plus size={15} />
+            New notebook
+          </button>
+          <button
+            className="nb-empty-btn nb-empty-btn-quiet"
+            onClick={() => void openNotebookFile()}
+          >
+            <FolderOpen size={14} />
+            Open notebook…
+          </button>
+        </div>
       </div>
     );
   }

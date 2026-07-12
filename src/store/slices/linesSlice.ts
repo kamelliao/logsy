@@ -37,9 +37,10 @@ export function createLinesActions(set: StoreSet): LinesActions {
       mutateLines(set, "compareLinesByFile", (c) =>
         ns.forEach((n) => c.add(n)),
       );
-      // Surface the comparison: focus its tab, or expand it if it's popped out.
+      // Surface the comparison: focus its tab on whichever dock it currently lives
+      // on — the main one, or the popped-out side dock.
       set((st) =>
-        st.doc.comparePopped
+        st.doc.poppedPanels?.includes("compare")
           ? {
               doc: {
                 ...st.doc,
