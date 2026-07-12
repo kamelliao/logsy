@@ -181,6 +181,20 @@ test.describe("split view", () => {
     expect([...new Set(dirs)].sort()).toEqual(["deviceA", "deviceB"]);
   });
 
+  test("hovering a tab shows the log's full path", async ({ page, tauri }) => {
+    await openTwo(page, tauri);
+    await split(page);
+
+    await pane(page, 0).locator(".pane-tab").first().hover();
+    // The sidebar's tooltip chrome (`.file-tip`), but carrying only the path — a
+    // tab is often truncated, and its dir suffix shows just one parent.
+    const tip = page.locator(".file-tip");
+    await expect(tip).toBeVisible();
+    await expect(tip).toHaveText("/logs/b.log");
+    await expect(page.locator(".file-tip .file-tip-name")).toHaveCount(0);
+    await expect(page.locator(".file-tip .file-tip-meta")).toHaveCount(0);
+  });
+
   test("clicking another pane focuses it without a reload overlay", async ({
     page,
     tauri,
