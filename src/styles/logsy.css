@@ -8149,6 +8149,17 @@ body.nb-block-dragging * {
   flex-shrink: 0;
   user-select: none;
 }
+/* In the editor, a line number jumps to that line in the source log (the click is
+   delegated in PinnedLinesView). Scoped to `.pl-card` — the NodeView wrapper — so
+   the affordance is editor-only: an exported notebook ships its own stylesheet and
+   renders the numbers as plain, inert text. */
+.pl-card .pl-num {
+  cursor: pointer;
+}
+.pl-card .pl-num:hover {
+  color: var(--accent-bg);
+  text-decoration: underline;
+}
 .pl-text {
   color: var(--text);
 }

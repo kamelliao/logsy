@@ -1,4 +1,11 @@
-import { test, expect, openLog, type Page } from "./support/fixtures";
+import {
+  test,
+  expect,
+  openLog,
+  logRow,
+  logRowMenu,
+  type Page,
+} from "./support/fixtures";
 
 // Notebook panel: creation, slash menu, block drag (pointer-based — HTML5 DnD
 // is dead inside Tauri's dragDropEnabled webview), the Notion-style title, and
@@ -154,5 +161,104 @@ test.describe("Notebook", () => {
     await expect(page.locator(".nb-prosemirror .ProseMirror")).toContainText(
       "keep me",
     );
+  });
+});
+
+// A pinned line's NUMBER is a link: clicking it focuses the source log (switching
+// files first when the card cites a different one) and jumps to that line. The
+// number stays a plain `<span>` — an EXPORTED notebook must render it as inert
+// text, so no anchor/handler/pointer-cursor may leak into `renderHTML`.
+test.describe("Notebook — pinned line numbers link to the log", () => {
+  // Long enough that a jump has to actually scroll.
+  const LONG = Array.from(
+    { length: 400 },
+    (_, i) => `line ${i + 1} payload`,
+  ).join("\n");
+
+  const scrollTop = (page: Page) =>
+    page
+      .locator(".log-scroll")
+      .first()
+      .evaluate((e) => e.scrollTop);
+
+  test("clicking a line number scrolls the log to that line", async ({
+    page,
+    tauri,
+  }) => {
+    await openLog(page, tauri, "/logs/big.log", LONG);
+    await logRowMenu(page, 3, /Add to notebook/);
+    await expect(page.locator(".pl-card")).toBeVisible();
+
+    // Scroll far away, so landing back on line 3 is unambiguous.
+    await page
+      .locator(".log-scroll")
+      .first()
+      .evaluate((e) => {
+        e.scrollTop = 6000;
+      });
+    await expect.poll(() => scrollTop(page)).toBeGreaterThan(1000);
+
+    await page.locator(".pl-card .pl-num").first().click();
+    await expect.poll(() => scrollTop(page)).toBe(0); // line 3 sits at the top
+    await expect(logRow(page, 3)).toHaveClass(/selected|current|active/);
+  });
+
+  test("clicking a line number switches to the card's source log first", async ({
+    page,
+    tauri,
+  }) => {
+    await tauri.setFile("/logs/big.log", LONG);
+    await tauri.setFile("/logs/other.log", "other one\nother two\n");
+    await tauri.setDialogOpen(["/logs/big.log", "/logs/other.log"]);
+    await page.locator(".empty-workspace").click();
+    await expect(page.locator(".file-item")).toHaveCount(2);
+    if (await page.locator(".sidebar.collapsed").count())
+      await page.locator(".sidebar-top button").click();
+
+    const fileRow = (name: string) =>
+      page.locator(".file-item").filter({ hasText: name });
+
+    // Pin a line from big.log…
+    await fileRow("big.log").click();
+    await expect(page.locator(".lv-title")).toContainText("big.log");
+    await logRowMenu(page, 5, /Add to notebook/);
+    await expect(page.locator(".pl-card")).toBeVisible();
+
+    // …then switch away, so the card now cites a log the view isn't showing.
+    await fileRow("other.log").click();
+    await expect(page.locator(".lv-title")).toContainText("other.log");
+
+    await page.locator(".pl-card .pl-num").first().click();
+    // The click pulls the source log back into view and lands on its line 5.
+    await expect(page.locator(".lv-title")).toContainText("big.log");
+    await expect(logRow(page, 5)).toHaveClass(/selected|current|active/);
+  });
+
+  test("an exported notebook keeps the line numbers as plain text", async ({
+    page,
+    tauri,
+  }) => {
+    await openLog(page, tauri, "/logs/big.log", LONG);
+    await logRowMenu(page, 3, /Add to notebook/);
+    await expect(page.locator(".pl-card")).toBeVisible();
+    // The editor shows the affordance…
+    await expect(page.locator(".pl-card .pl-num").first()).toHaveCSS(
+      "cursor",
+      "pointer",
+    );
+
+    await tauri.setDialogSave("/out/report.html");
+    await page.getByRole("button", { name: /Export as HTML/i }).click();
+    const write = (await tauri.calls())
+      .filter((c) => c.cmd === "write_text_file")
+      .pop();
+    const html = String((write?.args as { contents?: string })?.contents ?? "");
+
+    // …but the export is inert: the number is a bare span, with nothing that
+    // would make it look or behave like a link in a browser.
+    expect(html).toContain('<span class="pl-num">3</span>');
+    expect(html).not.toMatch(/<a\s[^>]*href/i);
+    expect(html).not.toMatch(/onclick/i);
+    expect(html).not.toMatch(/cursor:\s*pointer/i);
   });
 });

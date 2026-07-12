@@ -61,6 +61,26 @@ export function PinnedLinesView({ node, updateAttributes }: NodeViewProps) {
     }
   }, [updateAttributes]);
 
+  // Click a line number to jump to that line in its source log (switching to the
+  // file first, if it isn't the active one). Delegated from the <pre> rather than
+  // bound per row: the rows are uncontrolled innerHTML — that's what lets the user's
+  // inline styling (`richContent`) survive — so there are no React elements to hang
+  // a handler on. The number is read back from the row's text, which keeps the DOM
+  // free of extra attributes and so keeps the exported HTML plain text.
+  const onBodyClick = useCallback(
+    (e: React.MouseEvent<HTMLPreElement>) => {
+      const target = e.target as HTMLElement | null;
+      const num = target?.closest?.(".pl-num");
+      if (!num) return;
+      // A drag that happens to END on a number is a text selection, not a click.
+      if (window.getSelection()?.isCollapsed === false) return;
+      const n = parseInt(num.textContent ?? "", 10);
+      if (!Number.isFinite(n)) return;
+      getPinnedLinesJumpHandler()?.(fileId, n);
+    },
+    [fileId],
+  );
+
   return (
     <NodeViewWrapper className="pl-card" contentEditable={false}>
       <div className="pl-source-bar">
@@ -87,6 +107,7 @@ export function PinnedLinesView({ node, updateAttributes }: NodeViewProps) {
         className="pl-body"
         contentEditable={true}
         suppressContentEditableWarning
+        onClick={onBodyClick}
         onKeyDown={(e) => {
           e.stopPropagation();
           const mod = e.ctrlKey || e.metaKey;
