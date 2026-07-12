@@ -170,6 +170,8 @@ export function App() {
       id: f.id,
       name: f.name,
       dir: suffixes[f.id],
+      // Shown in full on the tab's hover tooltip — a tab is often truncated.
+      path: f.path,
     }));
   }, [state.files]);
   // Find bars: while split, each pane owns an ephemeral one (two panes on one file

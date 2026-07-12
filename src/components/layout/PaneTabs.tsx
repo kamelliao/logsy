@@ -8,13 +8,20 @@ import {
 import { X } from "lucide-react";
 import { useDraggable } from "@dnd-kit/core";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
-/** A file as the tab strip shows it: its name, plus the parent-dir suffix that
- *  tells same-named logs apart (VS Code style; undefined when the name is unique). */
+/** A file as the tab strip shows it: its name, the parent-dir suffix that tells
+ *  same-named logs apart (VS Code style; undefined when the name is unique), and
+ *  its full path for the hover tooltip. */
 export interface TabFile {
   id: string;
   name: string;
   dir?: string;
+  path?: string | null;
 }
 
 interface Props {
@@ -41,6 +48,7 @@ function PaneTab({
   id,
   name,
   dir,
+  path,
   active,
   onActivate,
   onClose,
@@ -49,6 +57,7 @@ function PaneTab({
   id: string;
   name: string;
   dir?: string;
+  path?: string | null;
   active: boolean;
   onActivate: () => void;
   onClose: () => void;
@@ -60,32 +69,48 @@ function PaneTab({
   // moves), so tabs never shuffle mid-drag and the strip never grows a scrollbar.
   const style: CSSProperties = { opacity: isDragging ? 0.4 : 1 };
   return (
-    <div
-      ref={setNodeRef}
-      style={style}
-      className={"pane-tab" + (active ? " active" : "")}
-      title={dir ? `${name} — ${dir}` : name}
-      onClick={onActivate}
-      {...attributes}
-      {...listeners}
-      role="tab"
-      aria-selected={active}
-    >
-      <span className="pane-tab-name">{name}</span>
-      {dir && <span className="pane-tab-dir">{dir}</span>}
-      <button
-        className="pane-tab-x"
-        title="Close tab in this pane"
-        // Pointer-down stop so a click on the X never starts a tab drag.
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={(e) => {
-          e.stopPropagation();
-          onClose();
-        }}
+    // Hovering a tab shows the log's full path, in the same styled tooltip the
+    // sidebar's file rows use (`.file-tip`) — a tab is often truncated, and with a
+    // disambiguation suffix it still only shows one parent dir. The trigger renders
+    // the draggable tab itself, so dnd-kit's ref/listeners ride along on it.
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <div
+            ref={setNodeRef}
+            style={style}
+            className={"pane-tab" + (active ? " active" : "")}
+            onClick={onActivate}
+            {...attributes}
+            {...listeners}
+            // After the spread: dnd-kit's `attributes` carry role="button", and a
+            // tab in a strip is a tab.
+            role="tab"
+            aria-selected={active}
+          />
+        }
       >
-        <X size={12} />
-      </button>
-    </div>
+        <span className="pane-tab-name">{name}</span>
+        {dir && <span className="pane-tab-dir">{dir}</span>}
+        <button
+          className="pane-tab-x"
+          title="Close tab in this pane"
+          // Pointer-down stop so a click on the X never starts a tab drag.
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onClose();
+          }}
+        >
+          <X size={12} />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        <div className="file-tip">
+          <div className="file-tip-path">{path || name}</div>
+        </div>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -145,6 +170,7 @@ export function PaneTabs({
             id={id}
             name={fileOf(id)?.name ?? id}
             dir={fileOf(id)?.dir}
+            path={fileOf(id)?.path}
             active={id === activeId}
             onActivate={() => onActivate(id)}
             onClose={() => onClose(id)}
