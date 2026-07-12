@@ -173,9 +173,43 @@ export interface Notebook {
   updatedAt: number;
 }
 
+/**
+ * One split-view pane — a VS Code "editor group": its own ordered file tabs and
+ * active tab. The pane does NOT own a filter set; the set follows whichever
+ * document the pane shows (`LogFile.activeSetId`), so two panes on different
+ * files apply different sets.
+ */
+export interface Pane {
+  id: string;
+  /** Ordered file ids shown as tabs in this pane. */
+  tabs: string[];
+  /** The tab this pane currently shows (a file id, or null when it has none). */
+  active: string | null;
+}
+
+/**
+ * The split-view layout: N panes laid out in ONE row (`dir: "h"`) or ONE column
+ * (`dir: "v"`) — a list, not a nested grid. A single pane means the split is off
+ * (that pane is simply the main group). Persisted, but not undoable: it's window
+ * layout, not document content, so it must not land on the undo stack.
+ */
+export interface SplitView {
+  dir: "h" | "v";
+  /** Ordered left→right ("h") or top→bottom ("v"). Always at least one. */
+  panes: Pane[];
+  /** The focused pane. Its active tab IS the app's active file, so the dock
+   *  panels and write actions follow whichever pane was last touched. */
+  activePaneId: string;
+  /** Pane sizes in percent, keyed by pane id. A pane with no entry gets an even
+   *  share; `normalizeState` drops entries for panes that no longer exist. */
+  sizes?: Record<string, number>;
+}
+
 export interface AppState {
   files: LogFile[];
   activeFileId: string | null;
+  /** Split-view layout (panes + their tabs). Always normalized to ≥1 pane. */
+  splitView?: SplitView;
   /**
    * Global, ordered list of filter sets — shared by every open file (a filter set
    * is not tied to a document). Its order is the set-tab strip order shown in the
@@ -191,7 +225,6 @@ export interface AppState {
   /** Most-recently-used filter file paths (newest first), for Recent Filter Files. */
   recentFilterFiles: string[];
   sidebarCollapsed: boolean;
-  splitRatio: number;
   panelPos: "bottom" | "right";
   mapColorMode: "bg" | "text";
   mapWidth: number;

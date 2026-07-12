@@ -1,4 +1,11 @@
-import type { AppState, Filter, FilterSet, Notebook } from "@/types";
+import type {
+  AppState,
+  Filter,
+  FilterSet,
+  Notebook,
+  Pane,
+  SplitView,
+} from "@/types";
 import { DEFAULT_TEXT_COLOR, DEFAULT_BG_COLOR, FONT_DEFAULT } from "@/config";
 
 /** A TipTap doc counts as "written in" once it holds more than a lone empty
@@ -69,6 +76,12 @@ export function filterFromTatAttrs(
   });
 }
 
+/** A fresh, single-pane split view (i.e. the split is off) holding no tabs. */
+function initialSplitView(): SplitView {
+  const pane: Pane = { id: uid("pane"), tabs: [], active: null };
+  return { dir: "h", panes: [pane], activePaneId: pane.id };
+}
+
 /** A fresh, empty workspace. Files are added by the user loading logs from disk. */
 export function initialState(): AppState {
   return {
@@ -77,7 +90,7 @@ export function initialState(): AppState {
     recentFiles: [],
     recentFilterFiles: [],
     sidebarCollapsed: true,
-    splitRatio: 0.5,
+    splitView: initialSplitView(),
     panelPos: "right",
     mapColorMode: "bg",
     mapWidth: 16,
@@ -258,6 +271,64 @@ export function normalizeState(state: AppState): AppState {
   ) {
     state.activeFileId = state.files[0]?.id ?? null;
   }
+  // Split view: N panes in one row/column. Prune tabs whose file is gone (a log
+  // closed in a previous session), drop panes left with none, and guarantee the
+  // invariants App relies on — at least one pane, a focused pane that exists, and
+  // an active tab that is one of the pane's tabs. States saved before the split
+  // view was persisted have no `splitView` at all and land on the seeded default.
+  {
+    const fileIds = new Set(state.files.map((f) => f.id));
+    const raw = state.splitView as Partial<SplitView> | undefined;
+    const panes: Pane[] = [];
+    const seenPane = new Set<string>();
+    for (const p of Array.isArray(raw?.panes) ? raw.panes : []) {
+      if (!p || typeof p.id !== "string" || seenPane.has(p.id)) continue;
+      const tabs = (Array.isArray(p.tabs) ? p.tabs : []).filter(
+        (id, i, a) =>
+          typeof id === "string" && fileIds.has(id) && a.indexOf(id) === i,
+      );
+      if (!tabs.length) continue; // every log this pane showed is closed → drop it
+      seenPane.add(p.id);
+      panes.push({
+        id: p.id,
+        tabs,
+        active:
+          typeof p.active === "string" && tabs.includes(p.active)
+            ? p.active
+            : tabs[tabs.length - 1],
+      });
+    }
+    // Keep one pane no matter what: a fresh workspace, or one whose every log is
+    // gone, still needs the main group. Seed it from the active file.
+    if (!panes.length) {
+      panes.push({
+        id: uid("pane"),
+        tabs: state.activeFileId ? [state.activeFileId] : [],
+        active: state.activeFileId,
+      });
+    }
+    const activePaneId =
+      raw?.activePaneId && seenPane.has(raw.activePaneId)
+        ? raw.activePaneId
+        : panes[0].id;
+    // The focused pane's active tab IS the app's active file. On a restore the
+    // layout wins (the dock panels follow the focused pane), so re-point a stale
+    // `activeFileId` at whatever that pane is actually showing.
+    const focused = panes.find((p) => p.id === activePaneId)!.active;
+    if (focused) state.activeFileId = focused;
+    // Sizes only for panes that survived; an absent pane gets an even share.
+    const sizes: Record<string, number> = {};
+    for (const p of panes) {
+      const v = raw?.sizes?.[p.id];
+      if (typeof v === "number" && Number.isFinite(v) && v > 0) sizes[p.id] = v;
+    }
+    state.splitView = {
+      dir: raw?.dir === "v" ? "v" : "h",
+      panes,
+      activePaneId,
+      ...(Object.keys(sizes).length ? { sizes } : {}),
+    };
+  }
   // File groups: keep only well-formed entries; drop a file's groupId when it
   // points at a group that no longer exists (mirrors the filter-group backfill
   // above). Older states have neither field → every file is ungrouped, i.e.
@@ -345,6 +416,9 @@ export function normalizeState(state: AppState): AppState {
   ).structuredView;
   // viewMode moved onto each LogFile; drop the stale app-level field.
   delete (state as Partial<Record<"viewMode", unknown>>).viewMode;
+  // The split view stores real pane sizes now (`splitView.sizes`); the old
+  // single-number ratio was never read.
+  delete (state as Partial<Record<"splitRatio", unknown>>).splitRatio;
   // Global filter-pack library: keep only well-formed packs. Don't deep-rewrite
   // a pack's internals — its `order` references filter/group ids, so coercing
   // them through makeFilter (fresh ids) would break the layout. Packs are
