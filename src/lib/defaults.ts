@@ -6,6 +6,7 @@ import type {
   Pane,
   SplitView,
 } from "@/types";
+import { PANEL_TABS } from "@/types";
 import { DEFAULT_TEXT_COLOR, DEFAULT_BG_COLOR, FONT_DEFAULT } from "@/config";
 
 /** A TipTap doc counts as "written in" once it holds more than a lone empty
@@ -97,12 +98,8 @@ export function initialState(): AppState {
     fontSize: FONT_DEFAULT,
     fontWeight: 400,
     showLineNumbers: true,
-    comparePos: "right",
     filterCollapsed: false,
     activePanelTab: "filters",
-    comparePopped: false,
-    timelinePopped: false,
-    poppedActiveTab: "compare",
     poppedCollapsed: false,
     panelSizes: {},
     filterSets: [],
@@ -362,23 +359,41 @@ export function normalizeState(state: AppState): AppState {
   if (!state.fontSize) state.fontSize = FONT_DEFAULT;
   if (!state.fontWeight) state.fontWeight = 400;
   if (state.showLineNumbers === undefined) state.showLineNumbers = true;
-  if (state.comparePos !== "bottom" && state.comparePos !== "right")
-    state.comparePos = "right";
   if (state.filterCollapsed === undefined) state.filterCollapsed = false;
-  if (
-    !["filters", "compare", "bookmarks", "timeline", "notebook"].includes(
-      state.activePanelTab,
-    )
-  )
-    state.activePanelTab = "filters";
-  if (typeof state.comparePopped !== "boolean") state.comparePopped = false;
-  if (typeof state.timelinePopped !== "boolean") state.timelinePopped = false;
-  if (
-    state.poppedActiveTab !== "compare" &&
-    state.poppedActiveTab !== "timeline"
-  )
-    state.poppedActiveTab = "compare";
+  // The popped-out side dock. ANY panel can be popped out now; older states said so
+  // with two booleans (Compare/Timeline only), so migrate those into the list. The
+  // main dock must keep at least one tab, so the list can never hold every panel —
+  // and both active-tab pointers must name a panel that's actually on their dock.
+  {
+    const legacy = state as Partial<
+      Record<"comparePopped" | "timelinePopped", boolean>
+    >;
+    const raw: unknown[] = Array.isArray(state.poppedPanels)
+      ? state.poppedPanels
+      : [
+          ...(legacy.comparePopped ? ["compare"] : []),
+          ...(legacy.timelinePopped ? ["timeline"] : []),
+        ];
+    delete legacy.comparePopped;
+    delete legacy.timelinePopped;
+    // Canonical order (not the order they were popped), so the popped tab strip
+    // reads the same as the main one.
+    let popped = PANEL_TABS.filter((t) => raw.includes(t));
+    if (popped.length >= PANEL_TABS.length) popped = popped.slice(0, -1);
+    const main = PANEL_TABS.filter((t) => !popped.includes(t));
+
+    if (popped.length) state.poppedPanels = popped;
+    else delete state.poppedPanels;
+    if (!main.includes(state.activePanelTab)) state.activePanelTab = main[0];
+    if (!state.poppedActiveTab || !popped.includes(state.poppedActiveTab)) {
+      if (popped.length) state.poppedActiveTab = popped[0];
+      else delete state.poppedActiveTab;
+    }
+  }
   if (typeof state.poppedCollapsed !== "boolean") state.poppedCollapsed = false;
+  // The popped dock sits opposite the main one (derived from `panelPos`); the old
+  // standalone compare-dock position was never read.
+  delete (state as Partial<Record<"comparePos", unknown>>).comparePos;
   // Migrate the pre-shared-dock collapse flag onto the shared popped dock.
   const legacyCmpCollapsed = (
     state as Partial<Record<"compareCollapsed", boolean>>

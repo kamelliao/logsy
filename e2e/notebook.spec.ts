@@ -262,3 +262,120 @@ test.describe("Notebook — pinned line numbers link to the log", () => {
     expect(html).not.toMatch(/cursor:\s*pointer/i);
   });
 });
+
+// Pinned lines / compare rows are log-derived, so they take the log's font size
+// (Ctrl +/−, Ctrl+wheel). An EXPORTED notebook keeps a fixed size — it ships its own
+// stylesheet, and a reader shouldn't inherit the author's zoom level.
+test.describe("Notebook — log text follows the log font size", () => {
+  const fontSizeOf = (page: Page, sel: string) =>
+    page
+      .locator(sel)
+      .first()
+      .evaluate((e) => getComputedStyle(e).fontSize);
+
+  test("zooming the log resizes the pinned lines with it", async ({
+    page,
+    tauri,
+  }) => {
+    await openLog(page, tauri);
+    await logRowMenu(page, 3, /Add to notebook/);
+    await expect(page.locator(".pl-card")).toBeVisible();
+    expect(await fontSizeOf(page, ".pl-body")).toBe(
+      await fontSizeOf(page, ".log-row"),
+    );
+
+    for (let i = 0; i < 3; i++) await page.keyboard.press("Control+=");
+    await expect.poll(() => fontSizeOf(page, ".log-row")).not.toBe("12.5px"); // the zoom landed
+    // …and the notebook's copy of those lines moved with it.
+    expect(await fontSizeOf(page, ".pl-body")).toBe(
+      await fontSizeOf(page, ".log-row"),
+    );
+  });
+
+  test("an exported notebook keeps a fixed font size", async ({
+    page,
+    tauri,
+  }) => {
+    await openLog(page, tauri);
+    await logRowMenu(page, 3, /Add to notebook/);
+    await expect(page.locator(".pl-card")).toBeVisible();
+    for (let i = 0; i < 3; i++) await page.keyboard.press("Control+=");
+
+    await tauri.setDialogSave("/out/report.html");
+    await page.getByRole("button", { name: /Export as HTML/i }).click();
+    const write = (await tauri.calls())
+      .filter((c) => c.cmd === "write_text_file")
+      .pop();
+    const html = String((write?.args as { contents?: string })?.contents ?? "");
+    // The zoom is a viewing preference: it must not ride along into the file.
+    expect(html).toContain("font-size:12.5px");
+    expect(html).not.toContain("--log-font-size");
+  });
+});
+
+// Opening a notebook exported with "Export as JSON" (a bare TipTap doc).
+test.describe("Notebook — open a .json", () => {
+  const DOC = JSON.stringify({
+    type: "doc",
+    content: [
+      {
+        type: "heading",
+        attrs: { level: 1 },
+        content: [{ type: "text", text: "Crash triage" }],
+      },
+      {
+        type: "paragraph",
+        content: [{ type: "text", text: "restored from disk" }],
+      },
+    ],
+  });
+
+  test("opens from the empty state, named after the file", async ({
+    page,
+    tauri,
+  }) => {
+    await openLog(page, tauri);
+    await tauri.setFile("/reports/triage.json", DOC);
+    await tauri.setDialogOpen("/reports/triage.json");
+
+    await page.locator(".ptab", { hasText: "Notebook" }).click();
+    await expect(page.locator(".nb-empty")).toBeVisible();
+    await page.getByRole("button", { name: /Open notebook/ }).click();
+
+    const pm = page.locator(".nb-prosemirror .ProseMirror");
+    await expect(pm).toContainText("Crash triage");
+    await expect(pm).toContainText("restored from disk");
+    await expect(page.locator(".nb-title")).toHaveValue("triage");
+  });
+
+  test("opening the same file twice de-duplicates the name", async ({
+    page,
+    tauri,
+  }) => {
+    await openLog(page, tauri);
+    await tauri.setFile("/reports/triage.json", DOC);
+    await tauri.setDialogOpen("/reports/triage.json");
+    await page.locator(".ptab", { hasText: "Notebook" }).click();
+    await page.getByRole("button", { name: /Open notebook/ }).click();
+    await expect(page.locator(".nb-title")).toHaveValue("triage");
+
+    await tauri.setDialogOpen("/reports/triage.json");
+    await page.locator(".nb-bar-btn[title^='Open notebook']").click();
+    await expect(page.locator(".nb-title")).toHaveValue("triage (2)");
+  });
+
+  test("a JSON that isn't a notebook is refused", async ({ page, tauri }) => {
+    await openLog(page, tauri);
+    await tauri.setFile("/reports/junk.json", '{"hello":"world"}');
+    await tauri.setDialogOpen("/reports/junk.json");
+
+    await page.locator(".ptab", { hasText: "Notebook" }).click();
+    await page.getByRole("button", { name: /Open notebook/ }).click();
+
+    await expect(page.locator("[data-sonner-toast]").first()).toContainText(
+      /isn't a Logsy notebook/,
+    );
+    // No notebook was created — the panel is still empty.
+    await expect(page.locator(".nb-empty")).toBeVisible();
+  });
+});

@@ -19,6 +19,15 @@ export interface NotebookState {
 export interface NotebookActions {
   /** Create a notebook (optionally named) and make it active; returns its id. */
   createNotebook: (name?: string) => string;
+  /**
+   * Add a notebook that already HAS content (opening an exported .json) and make it
+   * active. The doc must land in the SAME write that creates the notebook: the
+   * editor is keyed by notebook id, so it mounts as soon as the id goes active and
+   * would otherwise come up empty and then autosave that emptiness over the import.
+   * The name is de-duplicated, so opening the same file twice doesn't give you two
+   * identically-named notebooks.
+   */
+  importNotebook: (name: string, doc: Record<string, unknown>) => string;
   renameNotebook: (id: string, name: string) => void;
   deleteNotebook: (id: string) => void;
   setActiveNotebook: (id: string) => void;
@@ -52,11 +61,40 @@ export function createNotebookActions(
     return id;
   };
 
+  /** "Report" → "Report (2)" when the name is already taken. */
+  const uniqueName = (base: string, taken: Notebook[]): string => {
+    const name = base.trim() || "Untitled";
+    if (!taken.some((n) => n.name === name)) return name;
+    for (let i = 2; ; i++) {
+      const candidate = `${name} (${i})`;
+      if (!taken.some((n) => n.name === candidate)) return candidate;
+    }
+  };
+
   return {
     notebooks: [],
     activeNotebookId: null,
 
     createNotebook: create,
+
+    importNotebook: (name, doc) => {
+      const id = uid("nb");
+      const now = Date.now();
+      set((s: Store) => ({
+        notebooks: [
+          ...s.notebooks,
+          {
+            id,
+            name: uniqueName(name, s.notebooks),
+            doc,
+            createdAt: now,
+            updatedAt: now,
+          },
+        ],
+        activeNotebookId: id,
+      }));
+      return id;
+    },
 
     renameNotebook: (id, name) =>
       set((s: Store) => ({

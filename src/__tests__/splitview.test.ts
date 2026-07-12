@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { initialState, normalizeState } from "@/lib/defaults";
 import type { AppState, LogFile, SplitView } from "@/types";
+import { PANEL_TABS } from "@/types";
 
 function makeFile(id: string, name = id + ".log"): LogFile {
   return { id, name, path: `/logs/${name}`, lineCount: 0 } as LogFile;
@@ -122,4 +123,50 @@ test("the retired splitRatio field is dropped from a restored workspace", () => 
     splitRatio: 0.5,
   } as AppState & { splitRatio: number });
   expect("splitRatio" in s).toBe(false);
+});
+
+// ---- popped dock: any panel can be popped out into the shared side dock --------
+
+test("the old comparePopped/timelinePopped booleans migrate into poppedPanels", () => {
+  const s = normalizeState({
+    ...stateWith([makeFile("f1")]),
+    comparePopped: true,
+    timelinePopped: true,
+    activePanelTab: "compare",
+  } as AppState & { comparePopped: boolean; timelinePopped: boolean });
+  expect(s.poppedPanels).toEqual(["timeline", "compare"]); // canonical order
+  expect("comparePopped" in s).toBe(false);
+  expect("timelinePopped" in s).toBe(false);
+  // activePanelTab pointed at a panel that is now on the OTHER dock → re-homed.
+  expect(s.activePanelTab).toBe("filters");
+  expect(s.poppedActiveTab).toBe("timeline");
+});
+
+test("a workspace with nothing popped carries no poppedPanels", () => {
+  const s = normalizeState(stateWith([makeFile("f1")]));
+  expect(s.poppedPanels).toBeUndefined();
+  expect(s.poppedActiveTab).toBeUndefined();
+});
+
+test("the main dock always keeps at least one tab", () => {
+  const s = normalizeState({
+    ...stateWith([makeFile("f1")]),
+    poppedPanels: [...PANEL_TABS], // every panel popped — impossible
+  } as AppState);
+  expect(s.poppedPanels!.length).toBe(PANEL_TABS.length - 1);
+  // Whatever is left is what the main dock shows.
+  const main = PANEL_TABS.filter((t) => !s.poppedPanels!.includes(t));
+  expect(main).toHaveLength(1);
+  expect(s.activePanelTab).toBe(main[0]);
+});
+
+test("a stale poppedActiveTab is re-pointed at a panel actually on that dock", () => {
+  const s = normalizeState({
+    ...stateWith([makeFile("f1")]),
+    poppedPanels: ["notebook"],
+    poppedActiveTab: "compare", // compare is on the MAIN dock
+    activePanelTab: "notebook", // …and notebook is popped
+  } as AppState);
+  expect(s.poppedActiveTab).toBe("notebook");
+  expect(s.activePanelTab).not.toBe("notebook");
 });

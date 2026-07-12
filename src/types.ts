@@ -1,3 +1,17 @@
+/**
+ * The dock's panels, in main-tab order. Each is a tab in the main dock unless the
+ * user pops it out into the shared side dock (`AppState.poppedPanels`) to read two
+ * at once. The main dock always keeps at least one, so they can't all be popped.
+ */
+export const PANEL_TABS = [
+  "filters",
+  "bookmarks",
+  "timeline",
+  "compare",
+  "notebook",
+] as const;
+export type PanelTab = (typeof PANEL_TABS)[number];
+
 export interface Filter {
   id: string;
   pattern: string;
@@ -233,21 +247,19 @@ export interface AppState {
   fontWeight: number;
   /** Show the line-number gutter in the log view (and include numbers when copying). */
   showLineNumbers: boolean;
-  /** Where the comparison panel docks *when popped out* of the tabbed panel. */
-  comparePos: "bottom" | "right";
   /** Collapsed (rolled-up) state of the main tabbed panel. */
   filterCollapsed: boolean;
-  /** Active tab in the main panel. */
-  activePanelTab: "filters" | "compare" | "bookmarks" | "timeline" | "notebook";
-  /** When true, Compare is shown in the popped dock (beside Filters) instead of as
-   *  a tab in the main panel. */
-  comparePopped: boolean;
-  /** When true, Timeline is shown in the popped dock (beside Filters) instead of
-   *  as a tab in the main panel. */
-  timelinePopped?: boolean;
-  /** Compare and Timeline, when popped out, SHARE one dock on the side opposite
-   *  the main panel. This is the active tab within that shared popped dock. */
-  poppedActiveTab?: "compare" | "timeline";
+  /** Active tab in the main panel. Always one of the panels still docked there. */
+  activePanelTab: PanelTab;
+  /**
+   * The panels currently POPPED OUT of the main dock into the shared side dock
+   * (on the side opposite the main panel), so two of them can be read at once.
+   * Any panel can be popped; the main dock always keeps at least one, so this can
+   * never hold every panel. Undefined/empty = nothing popped (the common case).
+   */
+  poppedPanels?: PanelTab[];
+  /** Active tab WITHIN the shared popped dock. */
+  poppedActiveTab?: PanelTab;
   /** Collapsed (rolled-up) state of the shared popped dock. */
   poppedCollapsed?: boolean;
   /**

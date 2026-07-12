@@ -20,8 +20,9 @@ import {
   ResizablePanel,
   ResizablePanelGroup,
 } from "@/components/ui/resizable";
-import type { useDockLayout, PoppedTab } from "@/hooks/useDockLayout";
+import type { useDockLayout } from "@/hooks/useDockLayout";
 import type { useCompareCollapse } from "@/hooks/useCompareCollapse";
+import type { PanelTab } from "@/types";
 
 type DockLayout = ReturnType<typeof useDockLayout>;
 type CompareCollapse = ReturnType<typeof useCompareCollapse>;
@@ -57,8 +58,15 @@ interface Props {
   // Dock-head actions not owned by useDockLayout.
   clearCompare: () => void;
   clearTimeline: () => void;
-  onSelectPoppedTab: (t: PoppedTab) => void;
 }
+
+const PANEL_LABEL: Record<PanelTab, string> = {
+  filters: "Filters",
+  bookmarks: "Bookmarks",
+  timeline: "Timeline",
+  compare: "Compare",
+  notebook: "Notebook",
+};
 
 const foldChevron = (pos: "bottom" | "right", collapsed: boolean) =>
   pos === "bottom" ? (
@@ -108,7 +116,6 @@ export function Workspace({
   showCompare,
   clearCompare,
   clearTimeline,
-  onSelectPoppedTab,
 }: Props): ReactNode {
   const {
     isPanelPending,
@@ -118,12 +125,11 @@ export function Workspace({
     toggleFilterCollapsed,
     togglePoppedCollapsed,
     selectPanelTab,
-    popCompareOut,
-    dockCompareBack,
-    popTimelineOut,
-    dockTimelineBack,
-    compareTabAvailable,
-    timelineTabAvailable,
+    selectPoppedTab,
+    popOut,
+    dockBack,
+    canPop,
+    mainTabs,
     poppedTabs,
     popOpen,
     poppedActiveTab,
@@ -135,34 +141,104 @@ export function Workspace({
     POP_COLLAPSED,
   } = dock;
 
-  // The main panel: a tab bar switching between Filters and (when present and
-  // not popped out) Compare. Collapses to its tab strip.
-  const mainDockNode = (): ReactNode => {
-    const collapsed = filterCollapsed;
-    const pos = panelPos;
+  const bodyOf: Record<PanelTab, ReactNode> = {
+    filters: filterBody,
+    bookmarks: bookmarksBody,
+    timeline: timelineBody,
+    compare: compareBody,
+    notebook: notebookBody,
+  };
+  // The count a tab shows as its badge; null = this panel has no count concept.
+  const countOf = (t: PanelTab): number | null =>
+    t === "bookmarks"
+      ? markerCount
+      : t === "timeline"
+        ? markCount
+        : t === "compare"
+          ? showCompare
+            ? compareCount
+            : 0
+          : null;
+  // The label a collapsed right-hand dock shows on its vertical strip.
+  const stripTitle = (t: PanelTab): string => {
+    const n = countOf(t);
+    return n === null ? PANEL_LABEL[t] : `${PANEL_LABEL[t]} · ${n}`;
+  };
+
+  // The panel-specific buttons in a dock head (everything left of the dock's own
+  // pop/dock/position/collapse controls). Same for a panel whichever dock it sits
+  // on, which is the point: a popped-out panel keeps its actions.
+  const panelActions = (t: PanelTab): ReactNode => {
+    if (t === "compare")
+      return (
+        <>
+          <button
+            className="dock-btn"
+            title={
+              compareCollapse.allCollapsed
+                ? "Expand all tables"
+                : "Collapse all tables"
+            }
+            disabled={!compareCollapse.hasGroups}
+            onClick={compareCollapse.toggleAll}
+          >
+            {compareCollapse.allCollapsed ? (
+              <ChevronsUpDown size={14} />
+            ) : (
+              <ChevronsDownUp size={14} />
+            )}
+          </button>
+          <button
+            className="dock-btn"
+            title="Clear comparison"
+            onClick={clearCompare}
+          >
+            <Eraser size={14} />
+          </button>
+        </>
+      );
+    if (t === "timeline")
+      return (
+        <button
+          className="dock-btn"
+          title="Clear timeline"
+          onClick={clearTimeline}
+        >
+          <Eraser size={14} />
+        </button>
+      );
+    return null;
+  };
+
+  /**
+   * One dock: a tab strip over the active panel's body. Both docks are this — the
+   * MAIN one (the panels not popped out) and the POPPED one beside it (those that
+   * are). They share the chrome so a panel looks and behaves the same on either.
+   */
+  const dockNode = (which: "main" | "popped"): ReactNode => {
+    const isMain = which === "main";
+    const tabs = isMain ? mainTabs : poppedTabs;
+    const active = isMain ? activePanelTab : poppedActiveTab;
+    const collapsed = isMain ? filterCollapsed : poppedCollapsed;
+    const pos = isMain ? panelPos : poppedPos;
+    const toggleCollapsed = isMain
+      ? toggleFilterCollapsed
+      : togglePoppedCollapsed;
+    const selectTab = isMain ? selectPanelTab : selectPoppedTab;
     const chevron = foldChevron(pos, collapsed);
+    const hint = isMain ? "  (Ctrl+B)" : "";
 
     // Right-docked + collapsed: a thin vertical strip labelled with the active tab.
     if (collapsed && pos === "right") {
       return (
-        <div className="dock dock-right collapsed panel-dock">
+        <div className="dock dock-right collapsed panel-dock" data-dock={which}>
           <div
             className="dock-head"
-            onClick={toggleFilterCollapsed}
-            title="Expand  (Ctrl+B)"
+            onClick={toggleCollapsed}
+            title={"Expand" + hint}
           >
             <span className="dock-chevron">{chevron}</span>
-            <span className="dock-title">
-              {activePanelTab === "compare"
-                ? `Compare · ${compareCount}`
-                : activePanelTab === "bookmarks"
-                  ? `Bookmarks · ${markerCount}`
-                  : activePanelTab === "timeline"
-                    ? `Timeline · ${markCount}`
-                    : activePanelTab === "notebook"
-                      ? "Notebook"
-                      : "Filters"}
-            </span>
+            <span className="dock-title">{stripTitle(active)}</span>
           </div>
         </div>
       );
@@ -173,66 +249,32 @@ export function Workspace({
         className={
           "dock dock-" + pos + (collapsed ? " collapsed" : "") + " panel-dock"
         }
+        // Which dock this is, independent of where it sits: the popped dock renders
+        // BEFORE the main one whenever the main is right-docked, so DOM order can't
+        // identify them.
+        data-dock={which}
       >
         <div className="dock-head tabbed">
           <div className="panel-tabs">
-            <button
-              className={
-                "ptab" + (activePanelTab === "filters" ? " active" : "")
-              }
-              onClick={() => selectPanelTab("filters")}
-            >
-              Filters
-            </button>
-            <button
-              className={
-                "ptab" + (activePanelTab === "bookmarks" ? " active" : "")
-              }
-              onClick={() => selectPanelTab("bookmarks")}
-            >
-              Bookmarks
-              {markerCount > 0 && (
-                <span className="ptab-badge">{markerCount}</span>
-              )}
-            </button>
-            {timelineTabAvailable && (
-              <button
-                className={
-                  "ptab" + (activePanelTab === "timeline" ? " active" : "")
-                }
-                onClick={() => selectPanelTab("timeline")}
-              >
-                Timeline
-                {markCount > 0 && (
-                  <span className="ptab-badge">{markCount}</span>
-                )}
-              </button>
-            )}
-            {compareTabAvailable && (
-              <button
-                className={
-                  "ptab" + (activePanelTab === "compare" ? " active" : "")
-                }
-                onClick={() => selectPanelTab("compare")}
-              >
-                Compare
-                {showCompare && (
-                  <span className="ptab-badge">{compareCount}</span>
-                )}
-              </button>
-            )}
-            <button
-              className={
-                "ptab" + (activePanelTab === "notebook" ? " active" : "")
-              }
-              onClick={() => selectPanelTab("notebook")}
-            >
-              Notebook
-            </button>
+            {tabs.map((t) => {
+              const n = countOf(t);
+              return (
+                <button
+                  key={t}
+                  className={"ptab" + (active === t ? " active" : "")}
+                  onClick={() => selectTab(t)}
+                >
+                  {PANEL_LABEL[t]}
+                  {n !== null && n > 0 && (
+                    <span className="ptab-badge">{n}</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
           <div className="dock-spacer" />
           {/* Split view: which document these panels act on (focused pane's file). */}
-          {docChip && (
+          {isMain && docChip && (
             <span className="dock-doc" title={`Panels act on ${docChip}`}>
               <span className="dock-doc-caret" aria-hidden>
                 ▸
@@ -240,235 +282,65 @@ export function Workspace({
               <span className="dock-doc-name">{docChip}</span>
             </span>
           )}
-          {activePanelTab === "compare" && (
+          {panelActions(active)}
+          {isMain ? (
             <>
+              {/* The last remaining tab can't be popped — the main dock keeps one. */}
+              {canPop && (
+                <button
+                  className="dock-btn"
+                  title={`Pop ${PANEL_LABEL[active]} out to the side`}
+                  onClick={() => popOut(active)}
+                >
+                  {pos === "bottom" ? (
+                    <PanelLeftOpen size={14} />
+                  ) : (
+                    <PanelTopOpen size={14} />
+                  )}
+                </button>
+              )}
               <button
                 className="dock-btn"
-                title={
-                  compareCollapse.allCollapsed
-                    ? "Expand all tables"
-                    : "Collapse all tables"
+                title={pos === "bottom" ? "Dock right" : "Dock bottom"}
+                onClick={() =>
+                  setFilterPos(pos === "bottom" ? "right" : "bottom")
                 }
-                disabled={!compareCollapse.hasGroups}
-                onClick={compareCollapse.toggleAll}
-              >
-                {compareCollapse.allCollapsed ? (
-                  <ChevronsUpDown size={14} />
-                ) : (
-                  <ChevronsDownUp size={14} />
-                )}
-              </button>
-              <button
-                className="dock-btn"
-                title="Clear comparison"
-                onClick={clearCompare}
-              >
-                <Eraser size={14} />
-              </button>
-              <button
-                className="dock-btn"
-                title="Pop out beside Filters"
-                onClick={popCompareOut}
               >
                 {pos === "bottom" ? (
-                  <PanelLeftOpen size={14} />
+                  <PanelRight size={14} />
                 ) : (
-                  <PanelTopOpen size={14} />
+                  <PanelBottom size={14} />
                 )}
-              </button>
-            </>
-          )}
-          {activePanelTab === "timeline" && (
-            <>
-              <button
-                className="dock-btn"
-                title="Clear timeline"
-                onClick={clearTimeline}
-              >
-                <Eraser size={14} />
-              </button>
-              <button
-                className="dock-btn"
-                title="Pop out beside Filters"
-                onClick={popTimelineOut}
-              >
-                {pos === "bottom" ? (
-                  <PanelLeftOpen size={14} />
-                ) : (
-                  <PanelTopOpen size={14} />
-                )}
-              </button>
-            </>
-          )}
-          <button
-            className="dock-btn"
-            title={pos === "bottom" ? "Dock right" : "Dock bottom"}
-            onClick={() => setFilterPos(pos === "bottom" ? "right" : "bottom")}
-          >
-            {pos === "bottom" ? (
-              <PanelRight size={14} />
-            ) : (
-              <PanelBottom size={14} />
-            )}
-          </button>
-          <button
-            className="dock-btn"
-            title={(collapsed ? "Expand" : "Collapse") + "  (Ctrl+B)"}
-            onClick={toggleFilterCollapsed}
-          >
-            {chevron}
-          </button>
-        </div>
-        {!collapsed && (
-          <div className={"dock-body" + (isPanelPending ? " pending" : "")}>
-            {activePanelTab === "filters"
-              ? filterBody
-              : activePanelTab === "compare"
-                ? compareBody
-                : activePanelTab === "timeline"
-                  ? timelineBody
-                  : activePanelTab === "notebook"
-                    ? notebookBody
-                    : bookmarksBody}
-          </div>
-        )}
-      </div>
-    );
-  };
-
-  // The shared popped dock: Compare and Timeline, when popped out, live here as
-  // tabs (one or both). It docks on the side opposite the main panel so the two
-  // never sit on the same edge. Collapsing mirrors the main dock exactly (same
-  // shared tab-strip look): right → a thin vertical title strip, otherwise the
-  // tab bar stays visible (just the body is dropped).
-  const popDockNode = (): ReactNode => {
-    const collapsed = poppedCollapsed;
-    const pos = poppedPos;
-    const chevron = foldChevron(pos, collapsed);
-    const activeTitle =
-      poppedActiveTab === "compare"
-        ? `Compare · ${compareCount}`
-        : `Timeline · ${markCount}`;
-
-    // Right-docked + collapsed: a thin vertical strip labelled with the active tab.
-    if (collapsed && pos === "right") {
-      return (
-        <div className="dock dock-right collapsed panel-dock">
-          <div
-            className="dock-head"
-            onClick={togglePoppedCollapsed}
-            title="Expand"
-          >
-            <span className="dock-chevron">{chevron}</span>
-            <span className="dock-title">{activeTitle}</span>
-          </div>
-        </div>
-      );
-    }
-
-    return (
-      <div
-        className={
-          "dock dock-" + pos + (collapsed ? " collapsed" : "") + " panel-dock"
-        }
-      >
-        <div className="dock-head tabbed">
-          <div className="panel-tabs">
-            {poppedTabs.map((t) => (
-              <button
-                key={t}
-                className={"ptab" + (poppedActiveTab === t ? " active" : "")}
-                onClick={() => onSelectPoppedTab(t)}
-              >
-                {t === "compare" ? (
-                  <>
-                    Compare
-                    {showCompare && (
-                      <span className="ptab-badge">{compareCount}</span>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    Timeline
-                    {markCount > 0 && (
-                      <span className="ptab-badge">{markCount}</span>
-                    )}
-                  </>
-                )}
-              </button>
-            ))}
-          </div>
-          <div className="dock-spacer" />
-          {poppedActiveTab === "compare" ? (
-            <>
-              <button
-                className="dock-btn"
-                title={
-                  compareCollapse.allCollapsed
-                    ? "Expand all tables"
-                    : "Collapse all tables"
-                }
-                disabled={!compareCollapse.hasGroups}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  compareCollapse.toggleAll();
-                }}
-              >
-                {compareCollapse.allCollapsed ? (
-                  <ChevronsUpDown size={14} />
-                ) : (
-                  <ChevronsDownUp size={14} />
-                )}
-              </button>
-              <button
-                className="dock-btn"
-                title="Clear comparison"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  clearCompare();
-                }}
-              >
-                <Eraser size={14} />
               </button>
             </>
           ) : (
             <button
               className="dock-btn"
-              title="Clear timeline"
-              onClick={(e) => {
-                e.stopPropagation();
-                clearTimeline();
-              }}
+              title={`Dock ${PANEL_LABEL[active]} back into the panel`}
+              onClick={() => dockBack(active)}
             >
-              <Eraser size={14} />
+              {pos === "bottom" ? (
+                <PanelRightClose size={14} />
+              ) : (
+                <PanelBottomClose size={14} />
+              )}
             </button>
           )}
           <button
             className="dock-btn"
-            title="Dock back into panel"
-            onClick={(e) => {
-              e.stopPropagation();
-              if (poppedActiveTab === "compare") dockCompareBack();
-              else dockTimelineBack();
-            }}
-          >
-            {pos === "bottom" ? (
-              <PanelRightClose size={14} />
-            ) : (
-              <PanelBottomClose size={14} />
-            )}
-          </button>
-          <button
-            className="dock-btn"
-            title={collapsed ? "Expand" : "Collapse"}
-            onClick={togglePoppedCollapsed}
+            title={(collapsed ? "Expand" : "Collapse") + hint}
+            onClick={toggleCollapsed}
           >
             {chevron}
           </button>
         </div>
         {!collapsed && (
-          <div className="dock-body">
-            {poppedActiveTab === "compare" ? compareBody : timelineBody}
+          <div
+            className={
+              "dock-body" + (isMain && isPanelPending ? " pending" : "")
+            }
+          >
+            {bodyOf[active]}
           </div>
         )}
       </div>
@@ -538,7 +410,7 @@ export function Workspace({
     ref: React.RefObject<PanelImperativeHandle | null>;
   }): PanelDesc => ({
     id: d.id,
-    node: d.id === "fp" ? mainDockNode() : popDockNode(),
+    node: dockNode(d.id === "fp" ? "main" : "popped"),
     collapsible: true,
     ref: d.ref,
     collapsed: d.id === "fp" ? filterCollapsed : poppedCollapsed,
