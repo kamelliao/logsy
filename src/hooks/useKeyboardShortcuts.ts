@@ -23,8 +23,10 @@ interface Deps {
   setFindOpen: (v: boolean) => void;
   // Ctrl+F: open the find bar *and* focus its input (re-focuses when already open).
   focusFind: () => void;
-  // Ctrl+\: toggle the same-file split view.
-  toggleSplit: () => void;
+  // Ctrl+\: split the focused pane — open one more beside it on the same log.
+  splitPane: () => void;
+  // Ctrl+Shift+\: close the focused pane (no-op when it's the only one).
+  closePane: () => void;
 
   // Escape stack (innermost overlay first).
   findOpen: boolean;
@@ -58,7 +60,8 @@ export function useKeyboardShortcuts(deps: Deps): void {
     setViewMode,
     setFindOpen,
     focusFind,
-    toggleSplit,
+    splitPane,
+    closePane,
     findOpen,
     openScreen,
     filesCount,
@@ -128,7 +131,11 @@ export function useKeyboardShortcuts(deps: Deps): void {
       },
       "$mod+\\": (e) => {
         e.preventDefault();
-        toggleSplit();
+        splitPane();
+      },
+      "$mod+Shift+\\": (e) => {
+        e.preventDefault();
+        closePane();
       },
       "$mod+h": (e) => {
         e.preventDefault();
@@ -176,7 +183,8 @@ export function useKeyboardShortcuts(deps: Deps): void {
     openFiles,
     setFindOpen,
     focusFind,
-    toggleSplit,
+    splitPane,
+    closePane,
     setViewMode,
     setOpenScreen,
     setShortcutsOpen,

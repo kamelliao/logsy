@@ -9,15 +9,23 @@ import { X } from "lucide-react";
 import { useDraggable } from "@dnd-kit/core";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+/** A file as the tab strip shows it: its name, plus the parent-dir suffix that
+ *  tells same-named logs apart (VS Code style; undefined when the name is unique). */
+export interface TabFile {
+  id: string;
+  name: string;
+  dir?: string;
+}
+
 interface Props {
-  /** Which split pane (group) this strip belongs to. */
-  pane: "a" | "b";
-  /** Ordered file ids shown as tabs in this pane (group). */
+  /** Which pane (editor group) this strip belongs to. */
+  pane: string;
+  /** Ordered file ids shown as tabs in this pane. */
   tabs: string[];
   /** The pane's active tab (file id), highlighted. */
   activeId: string | null;
   /** All open files, for resolving a tab id to its display name. */
-  files: { id: string; name: string }[];
+  files: TabFile[];
   /** While a tab is dragged over THIS pane, the insertion index to draw the `|`
    *  caret at (0..tabs.length); null when the drag isn't over this pane. */
   caretIndex: number | null;
@@ -32,16 +40,16 @@ function PaneTab({
   pane,
   id,
   name,
+  dir,
   active,
-  closable,
   onActivate,
   onClose,
 }: {
-  pane: "a" | "b";
+  pane: string;
   id: string;
   name: string;
+  dir?: string;
   active: boolean;
-  closable: boolean;
   onActivate: () => void;
   onClose: () => void;
 }) {
@@ -56,7 +64,7 @@ function PaneTab({
       ref={setNodeRef}
       style={style}
       className={"pane-tab" + (active ? " active" : "")}
-      title={name}
+      title={dir ? `${name} — ${dir}` : name}
       onClick={onActivate}
       {...attributes}
       {...listeners}
@@ -64,30 +72,30 @@ function PaneTab({
       aria-selected={active}
     >
       <span className="pane-tab-name">{name}</span>
-      {closable && (
-        <button
-          className="pane-tab-x"
-          title="Close tab in this pane"
-          // Pointer-down stop so a click on the X never starts a tab drag.
-          onPointerDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.stopPropagation();
-            onClose();
-          }}
-        >
-          <X size={12} />
-        </button>
-      )}
+      {dir && <span className="pane-tab-dir">{dir}</span>}
+      <button
+        className="pane-tab-x"
+        title="Close tab in this pane"
+        // Pointer-down stop so a click on the X never starts a tab drag.
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+      >
+        <X size={12} />
+      </button>
     </div>
   );
 }
 
 /**
- * A VS Code-style tab strip for one split pane ("editor group"). Each tab is an
- * open file; clicking one activates it in this pane (and makes it the app's active
- * file). Closing a tab removes it from this pane only. Tabs can be dragged to the
- * other pane (or reordered) — App's DndContext + a pointer-driven caret handle the
- * drop position. A pane keeps at least one tab.
+ * A VS Code-style tab strip for one pane ("editor group"). Each tab is an open
+ * file; clicking one activates it in this pane (and makes it the app's active
+ * file). Closing a tab removes it from this pane only — the log stays open in the
+ * sidebar. Tabs can be dragged to another pane (or reordered) — App's DndContext +
+ * a pointer-driven caret handle the drop position. A pane that loses its last tab
+ * is closed, unless it's the only one.
  */
 export function PaneTabs({
   pane,
@@ -98,7 +106,7 @@ export function PaneTabs({
   onActivate,
   onClose,
 }: Props): ReactNode {
-  const nameOf = (id: string) => files.find((f) => f.id === id)?.name ?? id;
+  const fileOf = (id: string) => files.find((f) => f.id === id);
   const caret = <span className="pane-tab-caret" aria-hidden />;
   // Mouse-wheel support: translate a plain vertical wheel into horizontal tab
   // scrolling. Attached natively (not via React's onWheel, which is passive so
@@ -135,10 +143,9 @@ export function PaneTabs({
           <PaneTab
             pane={pane}
             id={id}
-            name={nameOf(id)}
+            name={fileOf(id)?.name ?? id}
+            dir={fileOf(id)?.dir}
             active={id === activeId}
-            // The last tab is closable too — closing it collapses this pane.
-            closable
             onActivate={() => onActivate(id)}
             onClose={() => onClose(id)}
           />

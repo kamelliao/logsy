@@ -218,13 +218,16 @@ interface LogViewProps {
   // ---- split view (#6) ----
   /** Which pane this instance is. Two panes on the same file scroll/find/select
    *  independently; the find bar's persisted contents are keyed per pane. */
-  paneId?: "a" | "b";
-  /** Whether the split is currently on (drives the header controls). */
+  paneId?: string;
+  /** Whether the split is currently on, i.e. more than one pane (drives the
+   *  header controls: the direction toggle and this pane's close button). */
   splitOn?: boolean;
   /** Split orientation: "h" = left/right, "v" = top/bottom. */
   splitDir?: "h" | "v";
-  /** Toggle the split on/off (bound by App). Also used by pane B's close button. */
-  onToggleSplit?: () => void;
+  /** Split this pane: open another one beside it showing the same log (Ctrl+\). */
+  onSplitPane?: () => void;
+  /** Close THIS pane (only offered while the split is on — the last pane stays). */
+  onClosePane?: () => void;
   /** Change the split orientation. */
   onSetSplitDir?: (dir: "h" | "v") => void;
   /** Marks this pane the active one (for Ctrl+F routing) when it's interacted with. */
@@ -272,13 +275,13 @@ export function LogView({
   paneId = "a",
   splitOn = false,
   splitDir = "v",
-  onToggleSplit,
+  onSplitPane,
+  onClosePane,
   onSetSplitDir,
   onPaneFocus,
   hideTitle,
 }: LogViewProps) {
   const rowH = Math.round(fontSize * 1.5);
-  const secondary = paneId === "b";
   // Filter id → 1-based position in the set, so a matched row's tooltip can name
   // its winner as "#N" (matching the serials shown in the filter/timeline panels).
   const filterSerial = useMemo(() => {
@@ -1389,7 +1392,7 @@ export function LogView({
 
   return (
     <div
-      className={"logview" + (secondary ? " logview-secondary" : "")}
+      className="logview"
       ref={rootRef}
       onPointerEnter={() => (hoverRef.current = true)}
       onPointerLeave={() => (hoverRef.current = false)}
@@ -1515,9 +1518,10 @@ export function LogView({
             </TooltipTrigger>
             <TooltipContent>Export filtered view</TooltipContent>
           </Tooltip>
-          {/* Split-view controls. When split is on, either pane can flip the
-              orientation; the primary pane's button toggles the split (secondary
-              pane shows a close button instead). */}
+          {/* Split-view controls. Every pane can split itself (opening one more
+              beside it) — the layout is a plain row/column of panes, so this just
+              grows. While the split is on, any pane can also flip the whole
+              layout's orientation or close itself; the last pane keeps neither. */}
           {splitOn && onSetSplitDir && (
             <Tooltip>
               <TooltipTrigger
@@ -1540,40 +1544,40 @@ export function LogView({
               </TooltipContent>
             </Tooltip>
           )}
-          {onToggleSplit &&
-            (secondary ? (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      className="dock-btn"
-                      aria-label="Close split pane"
-                      onClick={onToggleSplit}
-                    />
-                  }
-                >
-                  <X size={14} />
-                </TooltipTrigger>
-                <TooltipContent>Close split pane</TooltipContent>
-              </Tooltip>
-            ) : (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <button
-                      className={
-                        "dock-btn lv-toggle" + (splitOn ? " active" : "")
-                      }
-                      aria-label="Split view"
-                      onClick={onToggleSplit}
-                    />
-                  }
-                >
-                  <SplitSquareHorizontal size={14} />
-                </TooltipTrigger>
-                <TooltipContent>Split view (Ctrl+\)</TooltipContent>
-              </Tooltip>
-            ))}
+          {onSplitPane && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    className={
+                      "dock-btn lv-toggle" + (splitOn ? " active" : "")
+                    }
+                    aria-label="Split view"
+                    onClick={onSplitPane}
+                  />
+                }
+              >
+                <SplitSquareHorizontal size={14} />
+              </TooltipTrigger>
+              <TooltipContent>Split view (Ctrl+\)</TooltipContent>
+            </Tooltip>
+          )}
+          {splitOn && onClosePane && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <button
+                    className="dock-btn"
+                    aria-label="Close pane"
+                    onClick={onClosePane}
+                  />
+                }
+              >
+                <X size={14} />
+              </TooltipTrigger>
+              <TooltipContent>Close pane (Ctrl+Shift+\)</TooltipContent>
+            </Tooltip>
+          )}
         </div>
       </div>
 

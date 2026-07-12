@@ -715,8 +715,28 @@ button {
   box-shadow: inset 0 -2px 0 var(--text);
 }
 .pane-tab-name {
+  flex: 0 1 auto;
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* Dim parent-dir suffix telling same-named logs apart (mirrors the sidebar's
+   .file-dir). Only present when two open logs share a basename, so an undecorated
+   tab keeps its old look. */
+.pane-tab-dir {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  color: var(--text-3);
+}
+.pane-tab.active .pane-tab-dir {
+  color: var(--text-2);
+}
+/* A disambiguated tab carries two labels — give it room before it ellipsizes. */
+.pane-tab:has(.pane-tab-dir) {
+  max-width: 300px;
 }
 /* The tab clone shown in the DragOverlay while dragging (the real one is clipped
    by the strip's overflow). Detached, so it needs its own surface + shadow. */

@@ -5,6 +5,7 @@ import {
   useCallback,
   useDeferredValue,
   useRef,
+  Fragment,
   CSSProperties,
   ReactNode,
 } from "react";
@@ -22,9 +23,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { FilterGroup } from "@/types";
+import type { FilterGroup, Pane } from "@/types";
 import { DEFAULT_PALETTE } from "@/lib/palette";
 import type { PaletteEntry } from "@/types";
+
+/** Stable empty array — a pane with no compare/timeline lines must not hand
+ *  PaneData a fresh `[]` each render (it would re-memo its Sets every time). */
+const EMPTY_NUMS: number[] = [];
 
 import { compileAll, computeView } from "@/lib/engine";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -49,7 +54,8 @@ import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { Workspace } from "@/components/layout/Workspace";
-import { PaneTabs } from "@/components/layout/PaneTabs";
+import { PaneTabs, type TabFile } from "@/components/layout/PaneTabs";
+import { PaneData, type PaneBundle } from "@/components/layout/PaneData";
 import { Titlebar } from "@/components/layout/Titlebar";
 import { GotoDialog } from "@/components/dialogs/GotoDialog";
 import { Overlays } from "@/components/layout/Overlays";
@@ -57,6 +63,7 @@ import { useFontZoom } from "@/hooks/useFontZoom";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useMenuDefs } from "@/hooks/useMenuDefs";
 import { useLogFiles } from "@/hooks/useLogFiles";
+import { useSplitView, paneLayout, type Zone } from "@/hooks/useSplitView";
 import { useDockLayout } from "@/hooks/useDockLayout";
 import { useCompare } from "@/hooks/useCompare";
 import { useTimeline } from "@/hooks/useTimeline";
@@ -71,6 +78,7 @@ import {
 import { NotebookPanel } from "@/components/notebook/NotebookPanel";
 import { setPinnedLinesJumpHandler } from "@/components/notebook/PinnedLinesNode";
 import { activeFile } from "@/state/selectors";
+import { disambiguationSuffixes } from "@/lib/path";
 import { SAFE_MODE, DOCS_URL, APP_VERSION_FALLBACK } from "@/config";
 import { useShallow } from "zustand/react/shallow";
 
@@ -135,34 +143,48 @@ export function App() {
   // text highlighted at the moment Ctrl+F was pressed, for seeding the query.
   const [findFocusNonce, setFindFocusNonce] = useState(0);
   const [findSeed, setFindSeed] = useState("");
-  // ---- split view (#6→#5): VS Code-style editor groups. Ephemeral, not persisted. ----
-  // Each pane is a "group" with its own ordered file tabs + active tab. The FOCUSED
-  // pane's active tab is the app's active file, so the filter/compare/timeline/
-  // bookmark panels + write actions follow whichever pane you last touched; only the
-  // non-focused pane needs its own computed view. `dir`: "h" = left/right (default).
-  // Each pane's find bar is ephemeral while split is on.
-  // A pane is a VS Code editor group: its own ordered file tabs + active tab. The
-  // active filter set is NOT stored here — it's a per-document property
-  // (`LogFile.activeSetId`), so each pane's set follows whichever file it shows.
-  type Pane = { tabs: string[]; active: string | null };
-  const [split, setSplit] = useState<{ on: boolean; dir: "h" | "v" }>({
-    on: false,
-    dir: "h",
-  });
-  const [activePaneId, setActivePaneId] = useState<"a" | "b">("a");
-  const [panes, setPanes] = useState<{ a: Pane; b: Pane }>({
-    a: { tabs: [], active: null },
-    b: { tabs: [], active: null },
-  });
-  const [findOpenA, setFindOpenA] = useState(false);
-  const [findOpenB, setFindOpenB] = useState(false);
-  const [findFocusNonceB, setFindFocusNonceB] = useState(0);
-  // While a file is dragged (OS or sidebar), where it would drop. In split mode:
-  // onto a pane (add tab). In single-pane mode: the CENTER (open in place) or one of
-  // four EDGE zones (open a new split on that side). Drives the drop indicators.
-  type Zone = "left" | "right" | "top" | "bottom";
+  // ---- split view: VS Code-style editor groups, persisted on `doc.splitView`. ----
+  // The layout is N panes in ONE row or column (no nesting), each an "editor group"
+  // with its own ordered file tabs + active tab. The FOCUSED pane's active tab is the
+  // app's active file, so the filter/compare/timeline/bookmark panels + write actions
+  // follow whichever pane you last touched.
+  //
+  // The layout and every mutation on it live in useSplitView (constructed below, once
+  // `selectFile` exists). App keeps only the ephemeral chrome around it: the drop
+  // hints, the tab-drag state, and the per-pane find bars.
+  const sv = state.splitView!; // normalizeState guarantees a layout with ≥1 pane
+  const splitOn = sv.panes.length > 1;
+  // The document each pane is showing. Handed to useLogFiles so a pane restored onto
+  // a log that was never the active file still gets its lines read from disk.
+  const paneFileIds = useMemo(
+    () => sv.panes.map((p) => p.active).filter((id): id is string => !!id),
+    [sv.panes],
+  );
+  // Files as the pane tab strips show them: the name, plus the parent-dir suffix
+  // that tells same-named logs apart (`deviceA/0703`) — the same VS Code-style
+  // disambiguation the sidebar does, which matters far more here, since two panes
+  // showing `console.log` from different devices are otherwise identical tabs.
+  const tabFiles: TabFile[] = useMemo(() => {
+    const suffixes = disambiguationSuffixes(state.files);
+    return state.files.map((f) => ({
+      id: f.id,
+      name: f.name,
+      dir: suffixes[f.id],
+    }));
+  }, [state.files]);
+  // Find bars: while split, each pane owns an ephemeral one (two panes on one file
+  // keep independent queries). A lone pane keeps the file-backed, persisted `findOpen`.
+  const [findOpenByPane, setFindOpenByPane] = useState<Record<string, boolean>>(
+    {},
+  );
+  const [findNonceByPane, setFindNonceByPane] = useState<
+    Record<string, number>
+  >({});
+  // While a file is dragged (OS or sidebar), where it would drop. With several panes:
+  // onto a pane (add tab). With one: the CENTER (open in place) or one of four EDGE
+  // zones (open a new pane on that side). Drives the drop indicators.
   type DropHint =
-    | { kind: "pane"; pane: "a" | "b" }
+    | { kind: "pane"; pane: string }
     | { kind: "center" }
     | { kind: "edge"; zone: Zone }
     | null;
@@ -218,13 +240,13 @@ export function App() {
     state.files.find((f) => f.id === state.activeFileId) ??
     state.files[0] ??
     null;
-  // In split view, both panes' files are already loaded and rendered, so moving
-  // focus between them must NOT go through the deferred file-switch path (its
-  // one-frame lag + "Loading…" overlay would flash a reload). Use the LIVE active
-  // file so a focus swap is instant; single-pane keeps the deferred behaviour.
-  const file = split.on ? liveActiveFile : (deferredFile ?? liveActiveFile);
+  // In split view every pane's file is already loaded and rendered, so moving focus
+  // between panes must NOT go through the deferred file-switch path (its one-frame
+  // lag + "Loading…" overlay would flash a reload). Use the LIVE active file so a
+  // focus swap is instant; single-pane keeps the deferred behaviour.
+  const file = splitOn ? liveActiveFile : (deferredFile ?? liveActiveFile);
   const isSwitchingFile =
-    !split.on && !!deferredFile && deferredFile.id !== state.activeFileId;
+    !splitOn && !!deferredFile && deferredFile.id !== state.activeFileId;
 
   // ---------- dock layout ----------
   // Resolved before `set` because the dock owns the deferred panel-view selection
@@ -248,7 +270,7 @@ export function App() {
   // flashes — the deferred `file` already smooths that transition. Split view uses
   // the LIVE set so a focus swap between panes doesn't lag/flash.
   const deferredSet =
-    !split.on && !isSwitchingFile && dock.deferredActiveSetId
+    !splitOn && !isSwitchingFile && dock.deferredActiveSetId
       ? state.filterSets.find((g) => g.id === dock.deferredActiveSetId)
       : undefined;
   const set =
@@ -285,7 +307,13 @@ export function App() {
     openFiles,
     loadPaths,
     setFileEncoding,
-  } = useLogFiles({ file, osDropRef, osDragRef });
+  } = useLogFiles({ file, paneFileIds, osDropRef, osDragRef });
+
+  // Every pane mutation (focus, tabs, split/close, drag-between-panes, sizes). Built
+  // here because its actions route through `selectFile` — the layout itself was read
+  // from the store above, so nothing below depends on this ordering.
+  const split = useSplitView({ selectFile });
+  const { panes, activePaneId } = split;
 
   const compiled = useMemo(
     () => compileAll(set?.filters ?? []),
@@ -353,96 +381,6 @@ export function App() {
   const effectiveViewMode: "all" | "matches" = soloView
     ? "matches"
     : fileViewMode;
-
-  // The NON-focused split pane shows its own file with its own computed view (the
-  // focused pane reuses the active-file derivations above). Solo doesn't apply here
-  // (it's an active-file concept). Only computed while split is on.
-  const otherPaneId: "a" | "b" = activePaneId === "a" ? "b" : "a";
-  const otherFileId = split.on ? panes[otherPaneId].active : null;
-  const otherFile = otherFileId
-    ? (state.files.find((f) => f.id === otherFileId) ?? null)
-    : null;
-  const otherLines = linesFor(otherFile?.id);
-  // The non-focused pane's set is that document's own active selection (per-file),
-  // so two panes showing different files apply different filter sets.
-  const otherSet =
-    (otherFile?.activeSetId
-      ? state.filterSets.find((g) => g.id === otherFile.activeSetId)
-      : undefined) ??
-    state.filterSets[0] ??
-    null;
-  const otherCompiled = useMemo(
-    () => compileAll(otherSet?.filters ?? []),
-    [otherSet?.filters],
-  );
-  const otherView = useMemo(
-    () => computeView(otherLines, otherCompiled),
-    [otherLines, otherCompiled],
-  );
-  const otherCompareLines = useMemo(
-    () =>
-      new Set(
-        otherFile ? (state.compareLinesByFile?.[otherFile.id] ?? []) : [],
-      ),
-    [otherFile, state.compareLinesByFile],
-  );
-  const otherTimelineLines = useMemo(
-    () =>
-      new Set(
-        otherFile ? (state.timelineLinesByFile?.[otherFile.id] ?? []) : [],
-      ),
-    [otherFile, state.timelineLinesByFile],
-  );
-
-  // Keep the FOCUSED pane's active tab in sync with the app's active file (which the
-  // sidebar / open dialog drive). Opening/selecting a file makes it the focused
-  // pane's active tab, adding a tab if it's new — VS Code's "open into the active
-  // group" behaviour.
-  useEffect(() => {
-    const active = state.activeFileId;
-    if (!active) return;
-    const pane = split.on ? activePaneId : "a";
-    setPanes((p) => {
-      const g = p[pane];
-      if (g.active === active && g.tabs.includes(active)) return p;
-      if (split.on) {
-        // Split: opening/selecting a file adds it to the focused group (VS Code).
-        const tabs = g.tabs.includes(active) ? g.tabs : [...g.tabs, active];
-        return { ...p, [pane]: { tabs, active } };
-      }
-      // Single pane: keep the persisted main-group strip only while the active file
-      // is one of its tabs (e.g. after closing a split); switching to a file outside
-      // it resets the group to just that file — so merely opening files doesn't
-      // accumulate a runaway strip.
-      const tabs = g.tabs.includes(active) ? g.tabs : [active];
-      return { ...p, a: { tabs, active } };
-    });
-  }, [split.on, activePaneId, state.activeFileId]);
-
-  // Drop tabs whose file was closed; re-point a group's active tab if it vanished.
-  useEffect(() => {
-    const ids = new Set(state.files.map((f) => f.id));
-    setPanes((p) => {
-      const fix = (g: Pane): Pane => {
-        const tabs = g.tabs.filter((id) => ids.has(id));
-        const active =
-          g.active && ids.has(g.active)
-            ? g.active
-            : (tabs[tabs.length - 1] ?? null);
-        return { tabs, active };
-      };
-      const a = fix(p.a);
-      const b = fix(p.b);
-      if (
-        a.active === p.a.active &&
-        b.active === p.b.active &&
-        a.tabs.length === p.a.tabs.length &&
-        b.tabs.length === p.b.tabs.length
-      )
-        return p;
-      return { a, b };
-    });
-  }, [state.files]);
 
   // Clear the drop hint (+ any pending edge-dwell timer) once the OS drag leaves.
   useEffect(() => {
@@ -610,169 +548,43 @@ export function App() {
     // which clears the document selection before LogView's effects run.
     setFindSeed(window.getSelection()?.toString() ?? "");
     // Route to the last-touched pane (each pane has its own find bar while split).
-    if (split.on) {
-      if (activePaneId === "b") {
-        setFindOpenB(true);
-        setFindFocusNonceB((n) => n + 1);
-      } else {
-        setFindOpenA(true);
-        setFindFocusNonce((n) => n + 1);
-      }
+    if (splitOn) {
+      setFindOpenByPane((m) => ({ ...m, [activePaneId]: true }));
+      setFindNonceByPane((m) => ({
+        ...m,
+        [activePaneId]: (m[activePaneId] ?? 0) + 1,
+      }));
     } else {
       setFindOpen(true);
       setFindFocusNonce((n) => n + 1);
     }
   };
-  // Split toggle (button / Ctrl+\). Turning ON keeps the main group (pane A) and
-  // seeds pane B with another open file (or the same when only one is open); the
-  // main group's accumulated tabs are preserved. Turning OFF merges both groups'
-  // tabs back into pane A (the surviving single view), keeping the active file.
-  const toggleSplit = () => {
-    const turningOn = !split.on;
-    setSplit((s) => ({ ...s, on: turningOn }));
-    setActivePaneId("a");
-    setPanes((p) => {
-      const active = state.activeFileId;
-      if (turningOn) {
-        const other = state.files.find((f) => f.id !== active)?.id ?? active;
-        const a = p.a.tabs.length
-          ? p.a
-          : { tabs: active ? [active] : [], active };
-        return { a, b: { tabs: other ? [other] : [], active: other } };
-      }
-      const merged = [
-        ...p.a.tabs,
-        ...p.b.tabs.filter((id) => !p.a.tabs.includes(id)),
-      ];
-      return { a: { tabs: merged, active }, b: { tabs: [], active: null } };
-    });
-  };
-  const setSplitDir = (dir: "h" | "v") => setSplit((s) => ({ ...s, dir }));
-  // Focus a pane: it becomes active and its active tab becomes the app's file. The
-  // filter panel + highlights then follow that document's own active set (per-file),
-  // so no set syncing is needed here.
-  const focusPane = (pane: "a" | "b") => {
-    if (pane === activePaneId) return;
-    setActivePaneId(pane);
-    const target = panes[pane].active;
-    if (target && target !== state.activeFileId) selectFile(target);
-  };
-  // Click a file tab in a pane: focus that pane, activate the tab, make it the file.
-  const activateTab = (pane: "a" | "b", fileId: string) => {
-    setActivePaneId(pane);
-    setPanes((p) => ({
-      ...p,
-      [pane]: {
-        tabs: p[pane].tabs.includes(fileId)
-          ? p[pane].tabs
-          : [...p[pane].tabs, fileId],
-        active: fileId,
-      },
-    }));
-    if (fileId !== state.activeFileId) selectFile(fileId);
-  };
-  // Collapse the split back to a single view: the surviving pane's group becomes the
-  // main group A (its tabs persist as the single-pane strip). Used when a pane loses
-  // its last tab (closed or dragged away).
-  const closeSplit = (survivorPane: "a" | "b") => {
-    const g = panes[survivorPane];
-    setSplit((s) => ({ ...s, on: false }));
-    setActivePaneId("a");
-    setPanes((p) => ({ a: p[survivorPane], b: { tabs: [], active: null } }));
-    if (g.active && g.active !== state.activeFileId) selectFile(g.active);
-  };
-  // Close a file tab in a pane (the file stays open globally). In split mode,
-  // closing a pane's LAST tab collapses that pane (the other becomes the single
-  // view). In single mode the main-group strip only shows at ≥2 tabs, so this never
-  // empties it.
-  const closeTab = (pane: "a" | "b", fileId: string) => {
-    const g = panes[pane];
-    const remaining = g.tabs.filter((id) => id !== fileId);
-    if (remaining.length === 0) {
-      if (split.on) closeSplit(pane === "a" ? "b" : "a");
-      return;
-    }
-    const nextActive =
-      g.active === fileId ? remaining[remaining.length - 1] : g.active;
-    setPanes((p) => ({
-      ...p,
-      [pane]: { tabs: remaining, active: nextActive },
-    }));
-    if (
-      pane === activePaneId &&
-      g.active === fileId &&
-      nextActive &&
-      nextActive !== state.activeFileId
-    )
-      selectFile(nextActive);
-  };
-  // Drop a dragged tab into `toPane` at `index` (drag-between-panes or reorder). The
-  // source keeps ≥1 tab on a cross-pane move; the target activates the file + focuses.
-  const moveTabTo = (
-    fromPane: "a" | "b",
-    toPane: "a" | "b",
-    fileId: string,
-    index: number,
-  ) => {
-    // Dragging a pane's LAST tab to the other pane empties the source → collapse to
-    // a single view: the target group (with the moved file) becomes the main group.
-    if (
-      fromPane !== toPane &&
-      panes[fromPane].tabs.filter((id) => id !== fileId).length === 0
-    ) {
-      const to = panes[toPane];
-      const toTabs = to.tabs.includes(fileId) ? to.tabs : [...to.tabs, fileId];
-      setSplit((s) => ({ ...s, on: false }));
-      setActivePaneId("a");
-      setPanes({
-        a: { tabs: toTabs, active: fileId },
-        b: { tabs: [], active: null },
-      });
-      if (fileId !== state.activeFileId) selectFile(fileId);
-      return;
-    }
-    setPanes((p) => {
-      const from = p[fromPane];
-      const to = p[toPane];
-      const fromTabs = from.tabs.filter((id) => id !== fileId);
-      // Insert into the target list at the caret index (adjusted if the file was
-      // already there before the slot).
-      const origIdx = to.tabs.indexOf(fileId);
-      const toBase = to.tabs.filter((id) => id !== fileId);
-      let idx = index;
-      if (origIdx >= 0 && origIdx < index) idx -= 1;
-      idx = Math.max(0, Math.min(idx, toBase.length));
-      toBase.splice(idx, 0, fileId);
-      if (fromPane === toPane) {
-        return { ...p, [toPane]: { tabs: toBase, active: fileId } };
-      }
-      const fromActive =
-        from.active === fileId
-          ? (fromTabs[fromTabs.length - 1] ?? null)
-          : from.active;
-      return {
-        ...p,
-        [fromPane]: { tabs: fromTabs, active: fromActive },
-        [toPane]: { tabs: toBase, active: fileId },
-      };
-    });
-    setActivePaneId(toPane);
-    if (fileId !== state.activeFileId) selectFile(fileId);
-  };
+  // Per-pane find-bar accessors: ephemeral + per-pane while split, file-backed (and
+  // persisted) when a single pane is showing.
+  const findOpenFor = (paneId: string) =>
+    splitOn ? !!findOpenByPane[paneId] : findOpen;
+  const findNonceFor = (paneId: string) =>
+    splitOn ? (findNonceByPane[paneId] ?? 0) : findFocusNonce;
+  const setFindOpenFor =
+    (paneId: string) => (v: boolean | ((prev: boolean) => boolean)) => {
+      if (!splitOn) return setFindOpen(v);
+      setFindOpenByPane((m) => ({
+        ...m,
+        [paneId]: typeof v === "function" ? v(!!m[paneId]) : v,
+      }));
+    };
   // The drop target while a tab is dragged: which pane + the insertion index the
   // `|` caret marks. Computed from the live pointer (below), so tabs never live-
   // reorder during the drag.
   const computeTabDrop = (
     px: number,
     py: number,
-  ): { pane: "a" | "b"; index: number } | null => {
-    // Split panes carry data-pane; the single-pane group is `.lv-pane` (= pane "a").
-    const groups = document.querySelectorAll("[data-pane], .lv-pane");
-    for (const g of groups) {
+  ): { pane: string; index: number } | null => {
+    for (const g of document.querySelectorAll("[data-pane]")) {
       const r = g.getBoundingClientRect();
       if (px < r.left || px > r.right || py < r.top || py > r.bottom) continue;
-      const p = g.getAttribute("data-pane") ?? "a";
-      if (p !== "a" && p !== "b") continue;
+      const p = g.getAttribute("data-pane");
+      if (!p) continue;
       const tabEls = g.querySelectorAll(".pane-tabs .pane-tab");
       let index = tabEls.length;
       for (let i = 0; i < tabEls.length; i++) {
@@ -787,15 +599,13 @@ export function App() {
     return null;
   };
   // Rect hit-testing in CSS px (robust against overlays, which `elementFromPoint`
-  // would hit). Which split pane a CSS coord is over:
-  const paneAtCss = (cx: number, cy: number): "a" | "b" | null => {
-    let found: "a" | "b" | null = null;
+  // would hit). Which pane a CSS coord is over:
+  const paneAtCss = (cx: number, cy: number): string | null => {
+    let found: string | null = null;
     document.querySelectorAll("[data-pane]").forEach((el) => {
       const r = (el as HTMLElement).getBoundingClientRect();
-      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom) {
-        const p = el.getAttribute("data-pane");
-        if (p === "a" || p === "b") found = p;
-      }
+      if (cx >= r.left && cx <= r.right && cy >= r.top && cy <= r.bottom)
+        found = el.getAttribute("data-pane");
     });
     return found;
   };
@@ -823,57 +633,18 @@ export function App() {
     );
     return dist[nearest] <= 0.22 ? nearest : "center";
   };
-  // The drop action for a CSS-px cursor: onto a split pane (when split), else the
-  // single pane's center (open here) or an edge (open a new split on that side).
+  // The drop action for a CSS-px cursor: onto a pane (when several are open), else
+  // the lone pane's center (open here) or an edge (open a new pane on that side).
+  // Edge zones stay a single-pane affordance — with panes already side by side, the
+  // adjacent edges of neighbouring panes would be an ambiguous target.
   const computeDropHint = (cx: number, cy: number): DropHint => {
-    if (split.on) {
+    if (splitOn) {
       const p = paneAtCss(cx, cy);
       return p ? { kind: "pane", pane: p } : null;
     }
     const z = zoneOfLogview(cx, cy);
     if (!z) return null;
     return z === "center" ? { kind: "center" } : { kind: "edge", zone: z };
-  };
-  // Open a split with `fileIds` in a new pane on the dragged-to side; the current
-  // active file takes the other pane. Focus the new pane.
-  const openSplitWith = (zone: Zone, fileIds: string[]) => {
-    const layout: Record<Zone, { dir: "h" | "v"; newPane: "a" | "b" }> = {
-      left: { dir: "h", newPane: "a" },
-      right: { dir: "h", newPane: "b" },
-      top: { dir: "v", newPane: "a" },
-      bottom: { dir: "v", newPane: "b" },
-    };
-    const { dir, newPane } = layout[zone];
-    const activeFid = state.activeFileId;
-    const newFid = fileIds[fileIds.length - 1] ?? null;
-    const paneNew: Pane = { tabs: [...fileIds], active: newFid };
-    const paneOld: Pane = {
-      tabs: activeFid ? [activeFid] : [],
-      active: activeFid,
-    };
-    setSplit({ on: true, dir });
-    setPanes(
-      newPane === "a" ? { a: paneNew, b: paneOld } : { a: paneOld, b: paneNew },
-    );
-    setActivePaneId(newPane);
-    if (newFid && newFid !== state.activeFileId) selectFile(newFid);
-  };
-  // Add already-resolved file ids to a split pane as tabs (shared by OS-drop + the
-  // sidebar drop routing).
-  const addFilesToPane = (pane: "a" | "b", ids: string[]) => {
-    if (!ids.length) return;
-    setPanes((p) => ({
-      ...p,
-      [pane]: {
-        tabs: [
-          ...p[pane].tabs,
-          ...ids.filter((id) => !p[pane].tabs.includes(id)),
-        ],
-        active: ids[ids.length - 1],
-      },
-    }));
-    setActivePaneId(pane);
-    selectFile(ids[ids.length - 1]);
   };
   // Highlight where an OS-dragged file would land (pane or edge-split preview).
   osDragRef.current = (x, y) => {
@@ -896,8 +667,9 @@ export function App() {
         .map((p) => files.find((f) => f.path === p)?.id)
         .filter((id): id is string => !!id);
       if (!ids.length) return;
-      if (hint.kind === "pane") addFilesToPane(hint.pane, ids);
-      else if (hint.kind === "edge") openSplitWith(hint.zone, ids);
+      if (hint.kind === "pane") split.addFilesToPane(hint.pane, ids);
+      else if (hint.kind === "edge")
+        split.openPaneAtEdge(panes[0].id, hint.zone, ids);
       // center: loadPaths already opened + activated the file(s) in place.
     })();
     return true;
@@ -906,21 +678,25 @@ export function App() {
   const tabSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
   );
-  // The file name shown in the DragOverlay clone while a tab is dragged (the source
-  // tab stays put), and the live caret target ({pane,index}) it will drop into.
-  const [draggingTabName, setDraggingTabName] = useState<string | null>(null);
-  const [draggingFromPane, setDraggingFromPane] = useState<"a" | "b" | null>(
-    null,
-  );
+  // A tab's drag id is "<paneId>:<fileId>" — both are uid()s, which never contain a
+  // colon, so the FIRST one splits them.
+  const splitDragId = (id: string): { pane: string; fileId: string } => {
+    const at = id.indexOf(":");
+    return { pane: id.slice(0, at), fileId: id.slice(at + 1) };
+  };
+  // The file shown in the DragOverlay clone while a tab is dragged (the source tab
+  // stays put), and the live caret target ({pane,index}) it will drop into.
+  const [draggingTab, setDraggingTab] = useState<TabFile | null>(null);
+  const [draggingFromPane, setDraggingFromPane] = useState<string | null>(null);
   const [tabDropTarget, setTabDropTarget] = useState<{
-    pane: "a" | "b";
+    pane: string;
     index: number;
   } | null>(null);
   const tabPointerCleanup = useRef<(() => void) | null>(null);
   const onTabDragStart = (e: DragStartEvent) => {
-    const fileId = String(e.active.id).slice(2);
-    setDraggingFromPane(String(e.active.id).slice(0, 1) as "a" | "b");
-    setDraggingTabName(state.files.find((f) => f.id === fileId)?.name ?? null);
+    const { pane, fileId } = splitDragId(String(e.active.id));
+    setDraggingFromPane(pane);
+    setDraggingTab(tabFiles.find((f) => f.id === fileId) ?? null);
     // Track the live pointer to drive the drop caret (dnd-kit's `over` can't give
     // us an insertion index without live-reordering droppables).
     const move = (ev: PointerEvent) =>
@@ -932,7 +708,7 @@ export function App() {
   const endTabDrag = () => {
     tabPointerCleanup.current?.();
     tabPointerCleanup.current = null;
-    setDraggingTabName(null);
+    setDraggingTab(null);
     setDraggingFromPane(null);
     setTabDropTarget(null);
   };
@@ -940,9 +716,8 @@ export function App() {
     const dt = tabDropTarget;
     endTabDrag();
     if (!dt) return;
-    const fromPane = String(e.active.id).slice(0, 1) as "a" | "b";
-    const fileId = String(e.active.id).slice(2);
-    moveTabTo(fromPane, dt.pane, fileId, dt.index);
+    const { pane, fileId } = splitDragId(String(e.active.id));
+    split.moveTabTo(pane, dt.pane, fileId, dt.index);
   };
   const toggleSidebar = () =>
     setState((s) => ({ ...s, sidebarCollapsed: !s.sidebarCollapsed }));
@@ -987,7 +762,8 @@ export function App() {
     openGoto,
     focusFilterSearch,
     focusFind,
-    toggleSplit,
+    splitPane: split.splitPane,
+    closePane: () => split.closePane(activePaneId),
   });
 
   const menuDefs = useMenuDefs({
@@ -1007,18 +783,16 @@ export function App() {
   // Build the resizable workspace: log view + filter/compare docks. Docks dock
   // bottom or right; on the same side compare sits before (above/left-of) filter.
   function renderWorkspace(): ReactNode {
-    // Files as {id,name} for the pane tab strips.
-    const openFilesList = state.files.map((f) => ({ id: f.id, name: f.name }));
-
-    // Per-pane data bundle. The FOCUSED pane reuses the active-file derivations
-    // (view/set/markers/compare/…); the other pane uses its own file's computed
-    // view. All WRITE actions target the bundle's file explicitly (viewMode,
-    // encoding) or the active file (compare/timeline/bookmark) — safe because
-    // interacting with a pane focuses it first, making its file active.
-    const bundleFor = (pane: "a" | "b") => {
-      if (pane === activePaneId) {
-        if (!file) return null;
-        return {
+    // The FOCUSED pane's bundle: it reuses the active-file derivations (view / set /
+    // markers / compare / solo) that the dock panels are built from, so the active
+    // file's view is never computed twice. Every OTHER pane derives its own inside
+    // PaneData — App can't useMemo per pane when the pane count is variable.
+    //
+    // All WRITE actions target the bundle's file explicitly (viewMode, encoding) or
+    // the active file (compare/timeline/bookmark) — safe because interacting with a
+    // pane focuses it first, making its file the active one.
+    const focusedBundle: PaneBundle | null = file
+      ? {
           file,
           view: logView,
           lines,
@@ -1031,220 +805,225 @@ export function App() {
             soloView && soloFilter
               ? soloFilter.pattern || "untitled filter"
               : null,
-        };
-      }
-      if (!otherFile) return null;
-      return {
-        file: otherFile,
-        view: otherView,
-        lines: otherLines,
-        filters: otherSet?.filters ?? [],
-        viewMode: (otherFile.viewMode ?? "all") as "all" | "matches",
-        markers: otherFile.markers ?? [],
-        compareLines: otherCompareLines,
-        timelineLines: otherTimelineLines,
-        soloPattern: null,
-      };
-    };
+        }
+      : null;
 
-    const logViewFor = (pane: "a" | "b"): ReactNode => {
-      const b = bundleFor(pane);
-      if (!b) return null;
-      const isFocused = pane === activePaneId;
-      // Show the tab strip when split, or (single pane) when the main group kept ≥2
-      // tabs — e.g. after closing a split. A lone file stays strip-free.
-      const showTabs = split.on || panes[pane].tabs.length >= 2;
-      // Find bar: per-pane ephemeral while split is on; falls back to the file-backed
-      // findOpen for the single pane.
-      const findOpenP = split.on
-        ? pane === "a"
-          ? findOpenA
-          : findOpenB
-        : findOpen;
-      const setFindOpenP = split.on
-        ? pane === "a"
-          ? setFindOpenA
-          : setFindOpenB
-        : setFindOpen;
-      const findNonceP =
-        split.on && pane === "b" ? findFocusNonceB : findFocusNonce;
-      const lv = (
-        <LogView
-          key={b.file.id + ":" + pane}
-          paneId={pane}
-          file={b.file}
-          view={b.view}
-          lines={b.lines}
-          filters={b.filters}
-          viewMode={b.viewMode}
-          soloPattern={b.soloPattern}
-          onExitSolo={() => setSoloFilterId(null)}
-          onToggleViewMode={(m) => setViewModeFor(b.file.id, m)}
-          onToggleFind={() => setFindOpenP((v) => !v)}
-          findOpen={findOpenP}
-          onCloseFind={() => setFindOpenP(false)}
-          findFocusNonce={findNonceP}
-          findSeed={findSeed}
-          onBuildFilter={openFilterFromPattern}
-          mapColorMode={state.mapColorMode ?? "bg"}
-          mapWidth={state.mapWidth ?? 14}
-          fontSize={fontSize}
-          showLineNumbers={showLineNumbers}
-          compareLines={b.compareLines}
-          onAddToCompare={addToCompare}
-          onRemoveFromCompare={removeFromCompare}
-          timelineLines={b.timelineLines}
-          onAddToTimeline={addLinesToTimeline}
-          onRemoveFromTimeline={removeFromTimeline}
-          selectAllNonce={isFocused ? selectAllNonce : undefined}
-          gotoSignal={isFocused ? gotoSignal : undefined}
-          onExportView={exportFilteredView}
-          markers={b.markers}
-          markerJump={isFocused ? markerJump : undefined}
-          onSetMarker={setMarker}
-          onRemoveMarker={removeMarker}
-          onSetEncoding={(label) => setFileEncoding(b.file.id, label)}
-          splitOn={split.on}
-          splitDir={split.dir}
-          onToggleSplit={toggleSplit}
-          onSetSplitDir={setSplitDir}
-          onPaneFocus={() => focusPane(pane)}
-          hideTitle={showTabs}
-          onAddToNotebook={(ns) => {
-            const picked = ns
-              .map((n) => ({ n, text: b.view.rows[n - 1]?.text ?? "" }))
-              .filter((l) => l.text !== "");
-            if (picked.length) {
-              useStore.getState().ensureNotebook();
-              callAddPinnedLines(picked, b.file.name, b.file.id);
-              selectPanelTab("notebook");
-            }
-          }}
-        />
-      );
-      // Single pane: an optional main-group tab strip on top, then the log wrapped
-      // so the drop preview (center "open here" or an edge split) can overlay it.
-      if (!split.on) {
-        return (
-          <div className="lv-pane">
-            {showTabs && (
-              <PaneTabs
-                pane="a"
-                tabs={panes.a.tabs}
-                activeId={panes.a.active}
-                files={openFilesList}
-                caretIndex={
-                  tabDropTarget?.pane === "a" ? tabDropTarget.index : null
-                }
-                onActivate={(id) => activateTab("a", id)}
-                onClose={(id) => closeTab("a", id)}
-              />
-            )}
-            <div className="lv-wrap">
-              {lv}
-              {dropHint?.kind === "center" && (
-                <div className="lv-split-preview center">
-                  <div className="pane-drop-card">
-                    <Upload size={16} />
-                    <span>Open here</span>
-                  </div>
-                </div>
-              )}
-              {dropHint?.kind === "edge" && (
-                <div className={"lv-split-preview " + dropHint.zone}>
-                  <div className="pane-drop-card">
-                    <Upload size={16} />
-                    <span>Open split</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      }
+    // One pane: its tab strip + its LogView, wrapped in PaneData (which supplies the
+    // pane's view of its document). PaneData wraps EVERY pane, focused or not, so the
+    // element tree keeps the same shape when focus moves — otherwise LogView would
+    // remount on a focus swap and lose its scroll position.
+    const logViewFor = (pane: Pane): ReactNode => {
+      const isFocused = pane.id === activePaneId;
+      const paneFile = pane.active
+        ? (state.files.find((f) => f.id === pane.active) ?? null)
+        : null;
+      // The pane's filter set is its DOCUMENT's own selection, so panes on different
+      // files apply different sets with no syncing.
+      const paneSet =
+        (paneFile?.activeSetId
+          ? state.filterSets.find((g) => g.id === paneFile.activeSetId)
+          : undefined) ??
+        state.filterSets[0] ??
+        null;
       return (
-        <div
-          className={"pane-group" + (isFocused ? " focused" : "")}
-          data-pane={pane}
-          onPointerDownCapture={() => focusPane(pane)}
+        <PaneData
+          key={pane.id}
+          file={paneFile}
+          filters={paneSet?.filters ?? null}
+          lines={linesFor(pane.active)}
+          compareLineNums={
+            (paneFile && state.compareLinesByFile?.[paneFile.id]) || EMPTY_NUMS
+          }
+          timelineLineNums={
+            (paneFile && state.timelineLinesByFile?.[paneFile.id]) || EMPTY_NUMS
+          }
+          override={isFocused ? focusedBundle : null}
         >
-          <PaneTabs
-            pane={pane}
-            tabs={panes[pane].tabs}
-            activeId={panes[pane].active}
-            files={openFilesList}
-            caretIndex={
-              tabDropTarget?.pane === pane ? tabDropTarget.index : null
+          {(b) => {
+            if (!b) return null;
+            // Show the tab strip when split, or (lone pane) when it kept ≥2 tabs —
+            // e.g. after closing a split. A single open log stays strip-free.
+            const showTabs = splitOn || pane.tabs.length >= 2;
+            const setFindOpenP = setFindOpenFor(pane.id);
+            const lv = (
+              <LogView
+                key={b.file.id + ":" + pane.id}
+                paneId={pane.id}
+                file={b.file}
+                view={b.view}
+                lines={b.lines}
+                filters={b.filters}
+                viewMode={b.viewMode}
+                soloPattern={b.soloPattern}
+                onExitSolo={() => setSoloFilterId(null)}
+                onToggleViewMode={(m) => setViewModeFor(b.file.id, m)}
+                onToggleFind={() => setFindOpenP((v) => !v)}
+                findOpen={findOpenFor(pane.id)}
+                onCloseFind={() => setFindOpenP(false)}
+                findFocusNonce={findNonceFor(pane.id)}
+                findSeed={findSeed}
+                onBuildFilter={openFilterFromPattern}
+                mapColorMode={state.mapColorMode ?? "bg"}
+                mapWidth={state.mapWidth ?? 14}
+                fontSize={fontSize}
+                showLineNumbers={showLineNumbers}
+                compareLines={b.compareLines}
+                onAddToCompare={addToCompare}
+                onRemoveFromCompare={removeFromCompare}
+                timelineLines={b.timelineLines}
+                onAddToTimeline={addLinesToTimeline}
+                onRemoveFromTimeline={removeFromTimeline}
+                selectAllNonce={isFocused ? selectAllNonce : undefined}
+                gotoSignal={isFocused ? gotoSignal : undefined}
+                onExportView={exportFilteredView}
+                markers={b.markers}
+                markerJump={isFocused ? markerJump : undefined}
+                onSetMarker={setMarker}
+                onRemoveMarker={removeMarker}
+                onSetEncoding={(label) => setFileEncoding(b.file.id, label)}
+                splitOn={splitOn}
+                splitDir={sv.dir}
+                onSplitPane={split.splitPane}
+                onClosePane={() => split.closePane(pane.id)}
+                onSetSplitDir={split.setDir}
+                onPaneFocus={() => split.focusPane(pane.id)}
+                hideTitle={showTabs}
+                onAddToNotebook={(ns) => {
+                  const picked = ns
+                    .map((n) => ({ n, text: b.view.rows[n - 1]?.text ?? "" }))
+                    .filter((l) => l.text !== "");
+                  if (picked.length) {
+                    useStore.getState().ensureNotebook();
+                    callAddPinnedLines(picked, b.file.name, b.file.id);
+                    selectPanelTab("notebook");
+                  }
+                }}
+              />
+            );
+            const tabs = showTabs && (
+              <PaneTabs
+                pane={pane.id}
+                tabs={pane.tabs}
+                activeId={pane.active}
+                files={tabFiles}
+                caretIndex={
+                  tabDropTarget?.pane === pane.id ? tabDropTarget.index : null
+                }
+                onActivate={(id) => split.activateTab(pane.id, id)}
+                onClose={(id) => split.closeTab(pane.id, id)}
+              />
+            );
+            // A lone pane: no focus frame (there's nothing to disambiguate), and the
+            // log is wrapped so the center/edge drop preview can overlay it.
+            if (!splitOn) {
+              return (
+                <div className="lv-pane" data-pane={pane.id}>
+                  {tabs}
+                  <div className="lv-wrap">
+                    {lv}
+                    {dropHint?.kind === "center" && (
+                      <div className="lv-split-preview center">
+                        <div className="pane-drop-card">
+                          <Upload size={16} />
+                          <span>Open here</span>
+                        </div>
+                      </div>
+                    )}
+                    {dropHint?.kind === "edge" && (
+                      <div className={"lv-split-preview " + dropHint.zone}>
+                        <div className="pane-drop-card">
+                          <Upload size={16} />
+                          <span>Open split</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
             }
-            onActivate={(id) => activateTab(pane, id)}
-            onClose={(id) => closeTab(pane, id)}
-          />
-          {lv}
-          {dropHint?.kind === "pane" && dropHint.pane === pane && (
-            <div className="pane-drop-hint">
-              <div className="pane-drop-card">
-                <Upload size={16} />
-                <span>Drop to open here</span>
+            return (
+              <div
+                className={"pane-group" + (isFocused ? " focused" : "")}
+                data-pane={pane.id}
+                onPointerDownCapture={() => split.focusPane(pane.id)}
+              >
+                {tabs}
+                {lv}
+                {dropHint?.kind === "pane" && dropHint.pane === pane.id && (
+                  <div className="pane-drop-hint">
+                    <div className="pane-drop-card">
+                      <Upload size={16} />
+                      <span>Drop to open here</span>
+                    </div>
+                  </div>
+                )}
+                {/* Dragging a tab onto a DIFFERENT pane highlights that pane too (the
+                    `|` caret in its strip shows exactly where it will land). */}
+                {draggingTab &&
+                  tabDropTarget?.pane === pane.id &&
+                  draggingFromPane !== pane.id && (
+                    <div className="pane-tab-drop" />
+                  )}
               </div>
-            </div>
-          )}
-          {/* Dragging a tab onto a DIFFERENT pane highlights that pane too (the `|`
-              caret in its strip shows exactly where it will land). */}
-          {draggingTabName &&
-            tabDropTarget?.pane === pane &&
-            draggingFromPane !== pane && <div className="pane-tab-drop" />}
-        </div>
+            );
+          }}
+        </PaneData>
       );
     };
 
-    const logview = split.on ? (
+    // The clone that follows the pointer while a tab is dragged (the source tab stays
+    // put, clipped by its strip's overflow).
+    const dragClone = draggingTab ? (
+      <div className="pane-tab active pane-tab-overlay">
+        <span className="pane-tab-name">{draggingTab.name}</span>
+        {draggingTab.dir && (
+          <span className="pane-tab-dir">{draggingTab.dir}</span>
+        )}
+      </div>
+    ) : null;
+
+    // The panes, laid out in one resizable row ("h") or column ("v"). Sizes persist
+    // per pane id; a pane with none (freshly split) takes an even share of what's
+    // left. The per-pane floor scales with the count, so it can never sum past 100%
+    // however many panes are open.
+    const layout = paneLayout(panes, sv.sizes);
+    const paneMin = `${Math.max(2, Math.min(12, 90 / panes.length))}%`;
+    const logview = (
       <DndContext
         sensors={tabSensors}
         onDragStart={onTabDragStart}
         onDragEnd={onTabDragEnd}
         onDragCancel={endTabDrag}
       >
-        <ResizablePanelGroup
-          // Remount when the orientation flips — the library can't switch a live
-          // group between horizontal/vertical.
-          key={"lv-split-" + split.dir}
-          id="lv-split"
-          orientation={split.dir === "h" ? "horizontal" : "vertical"}
-          defaultLayout={{ "pane-a": 50, "pane-b": 50 }}
-        >
-          <ResizablePanel id="pane-a" defaultSize="50%" minSize="12%">
-            {logViewFor("a")}
-          </ResizablePanel>
-          <ResizableHandle withHandle />
-          <ResizablePanel id="pane-b" defaultSize="50%" minSize="12%">
-            {logViewFor("b")}
-          </ResizablePanel>
-        </ResizablePanelGroup>
-        <DragOverlay dropAnimation={null}>
-          {draggingTabName ? (
-            <div className="pane-tab active pane-tab-overlay">
-              <span className="pane-tab-name">{draggingTabName}</span>
-            </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
-    ) : (
-      // Single pane still needs a DndContext so the main-group tab strip's tabs are
-      // draggable (reorder within the one group).
-      <DndContext
-        sensors={tabSensors}
-        onDragStart={onTabDragStart}
-        onDragEnd={onTabDragEnd}
-        onDragCancel={endTabDrag}
-      >
-        {logViewFor("a")}
-        <DragOverlay dropAnimation={null}>
-          {draggingTabName ? (
-            <div className="pane-tab active pane-tab-overlay">
-              <span className="pane-tab-name">{draggingTabName}</span>
-            </div>
-          ) : null}
-        </DragOverlay>
+        {splitOn ? (
+          <ResizablePanelGroup
+            // Remount when the orientation flips OR the pane set changes — the
+            // library can't switch a live group's axis, nor have a Panel inserted
+            // into / removed from a live set ("constraints not found").
+            key={"lv-split:" + sv.dir + ":" + panes.map((p) => p.id).join(",")}
+            id="lv-split"
+            orientation={sv.dir === "h" ? "horizontal" : "vertical"}
+            defaultLayout={layout}
+            onLayoutChanged={split.setSizes}
+          >
+            {panes.map((p, i) => (
+              <Fragment key={p.id}>
+                <ResizablePanel
+                  id={p.id}
+                  defaultSize={`${layout[p.id]}%`}
+                  minSize={paneMin}
+                >
+                  {logViewFor(p)}
+                </ResizablePanel>
+                {i < panes.length - 1 && <ResizableHandle withHandle />}
+              </Fragment>
+            ))}
+          </ResizablePanelGroup>
+        ) : (
+          // A lone pane still needs the DndContext so its tab strip can be reordered.
+          logViewFor(panes[0])
+        )}
+        <DragOverlay dropAnimation={null}>{dragClone}</DragOverlay>
       </DndContext>
     );
 
@@ -1344,7 +1123,7 @@ export function App() {
         compareCollapse={compareCollapse}
         // Split view only: name the document the dock panels act on (the focused
         // pane's file), so it's unambiguous which log Filters/Bookmarks/… target.
-        docChip={split.on ? (file?.name ?? null) : null}
+        docChip={splitOn ? (file?.name ?? null) : null}
         panelPos={state.panelPos}
         filterCollapsed={state.filterCollapsed}
         poppedCollapsed={!!state.poppedCollapsed}
@@ -1412,9 +1191,9 @@ export function App() {
               onFileDropAt={(fileId, x, y) => {
                 const hint = computeDropHint(x, y);
                 if (!hint) return false;
-                if (hint.kind === "pane") activateTab(hint.pane, fileId);
+                if (hint.kind === "pane") split.activateTab(hint.pane, fileId);
                 else if (hint.kind === "center") selectFile(fileId);
-                else openSplitWith(hint.zone, [fileId]);
+                else split.openPaneAtEdge(panes[0].id, hint.zone, [fileId]);
                 return true;
               }}
             />

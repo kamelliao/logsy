@@ -13,6 +13,10 @@ import { useStore } from "@/store";
 // localStorage (they can be huge) — on restart we reload them from `file.path`.
 const linesStore: Record<string, string[]> = {};
 const EMPTY_LINES: string[] = [];
+// Reads in flight, by file id. A pane's read isn't visible in `linesStore` until it
+// lands, so without this a re-render mid-read would fire a second read for the
+// same file.
+const readsInFlight = new Set<string>();
 
 // The live document, read without a render dependency — the old `stateRef.current`.
 // Module-level so it's a stable reference (safe to use inside useCallback bodies).
@@ -27,6 +31,10 @@ function splitLines(text: string): string[] {
 interface Deps {
   /** The active log file resolved at render time (drives the reload-on-restart effect). */
   file: LogFile | null;
+  /** The document each split pane is showing. The split layout is persisted, so on
+   *  restart a pane can show a log that was never the ACTIVE file — nothing else
+   *  would ever read it, and the pane would render as an empty log. */
+  paneFileIds: string[];
   /** Optional hook: an OS file drop at (x,y) physical px — return true to claim it
    *  (e.g. the split view routing it to the pane under the cursor), skipping the
    *  default "replace the active file" behaviour. */
@@ -65,7 +73,12 @@ export interface LogFilesApi {
  * Document mutations and the confirm dialog come from the store; only the active
  * `file` (a render-time derivation) is passed in.
  */
-export function useLogFiles({ file, osDropRef, osDragRef }: Deps): LogFilesApi {
+export function useLogFiles({
+  file,
+  paneFileIds,
+  osDropRef,
+  osDragRef,
+}: Deps): LogFilesApi {
   const patchState = useStore((s) => s.patchState);
   const setState = useStore((s) => s.setDoc);
   const pushRecent = useStore((s) => s.pushRecent);
@@ -371,6 +384,51 @@ export function useLogFiles({ file, osDropRef, osDragRef }: Deps): LogFilesApi {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file?.id, file?.path]);
+
+  // The same reload, for the documents the OTHER split panes are showing. The split
+  // layout persists, so a restored pane can show a log that was never the active
+  // file — the effect above would never read it and the pane would come up blank
+  // ("no lines match"). Read quietly: the active file's read owns the loading
+  // overlay, and a background pane filling in shouldn't cover the workspace.
+  useEffect(() => {
+    const todo = paneFileIds.filter(
+      (id) => id !== file?.id && !linesStore[id] && !readsInFlight.has(id),
+    );
+    if (!todo.length) return;
+    let cancelled = false;
+    for (const id of todo) {
+      const f = getDoc().files.find((x) => x.id === id);
+      if (!f?.path) continue;
+      const { path, name, encodingOverride } = f;
+      readsInFlight.add(id);
+      void (async () => {
+        try {
+          const res = await invoke<{ text: string; encoding: string }>(
+            "read_text_file",
+            { path, encoding: encodingOverride },
+          );
+          linesStore[id] = splitLines(res.text);
+          patchState(
+            (s) => {
+              const x = s.files.find((y) => y.id === id);
+              if (!x) return;
+              x.encoding = res.encoding;
+              if (!encodingOverride) x.detectedEncoding = res.encoding;
+            },
+            { undoable: false },
+          );
+          if (!cancelled) setLinesVersion((v) => v + 1);
+        } catch (e) {
+          if (!cancelled) toast.error(`Could not reload ${name}: ${String(e)}`);
+        } finally {
+          readsInFlight.delete(id);
+        }
+      })();
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [paneFileIds, file?.id, patchState]);
 
   // OS drag-and-drop of files onto the window (Tauri handles this natively).
   const loadPathsRef = useRef(loadPaths);
