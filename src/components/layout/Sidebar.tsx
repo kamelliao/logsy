@@ -178,10 +178,15 @@ function FileItem({
               data-nav={file.id}
               onFocus={onFocus}
               onClick={onClick}
-              onAuxClick={(e) => {
-                // Middle-click closes the row, like a browser / editor tab.
+              // Middle-click closes the row, like a browser / editor tab. Handled on
+              // POINTERDOWN, not auxclick: the file list scrolls, so a middle press
+              // puts the webview into autoscroll mode and no auxclick is delivered.
+              // preventDefault() is what suppresses that; stopPropagation keeps the
+              // press off the row's drag activator on the wrapper.
+              onPointerDown={(e) => {
                 if (e.button !== 1) return;
                 e.preventDefault();
+                e.stopPropagation();
                 onDelete();
               }}
               onContextMenu={(e) => {

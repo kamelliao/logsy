@@ -91,6 +91,17 @@ test.describe("sidebar", () => {
     await expect(page.locator(".file-item.selected")).toHaveCount(0);
   });
 
+  test("middle-clicking a file row closes it", async ({ page, tauri }) => {
+    await openMany(page, tauri, ["boot.log", "wifi.log"]);
+    await page
+      .locator(".file-item")
+      .filter({ hasText: "boot.log" })
+      .click({ button: "middle" });
+    await confirmDialog(page, "Close");
+    await expect(page.locator(".file-item")).toHaveCount(1);
+    await expect(page.locator(".file-item .file-name")).toHaveText("wifi.log");
+  });
+
   test("the arrow keys walk the list, Enter opens, Shift extends", async ({
     page,
     tauri,
