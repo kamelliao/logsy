@@ -667,11 +667,24 @@ export function App() {
     const dpr = window.devicePixelRatio || 1;
     const hint = computeDropHint(x / dpr, y / dpr);
     if (!hint) return false; // not over the log area → default (open screen path)
+    // Dropped into a pane → the new file opens on THAT pane's filter set, not the
+    // focused pane's (they can differ; the set follows the document a pane shows).
+    const paneSetId =
+      hint.kind === "pane"
+        ? (() => {
+            const shown = panes.find((p) => p.id === hint.pane)?.active;
+            const f = shown ? state.files.find((x) => x.id === shown) : null;
+            return f?.activeSetId ?? state.filterSets[0]?.id ?? undefined;
+          })()
+        : undefined;
     void (async () => {
       // A pane/edge drop places the file itself, so loadPaths must NOT activate it
       // on the way in — an activated file is pulled into the focused pane, and the
       // drop would land it in two panes. Only a center drop wants the default.
-      await loadPaths(paths, { activate: hint.kind === "center" });
+      await loadPaths(paths, {
+        activate: hint.kind === "center",
+        setId: paneSetId,
+      });
       // loadPaths dedupes by path; resolve each back to its id.
       const files = useStore.getState().doc.files;
       const ids = paths

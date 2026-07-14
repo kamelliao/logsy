@@ -3,6 +3,7 @@ import {
   expect,
   dragTo,
   addFilter,
+  addSet,
   filterRow,
   SAMPLE_LOG,
   type Page,
@@ -222,6 +223,30 @@ test.describe("split view", () => {
     // sets, no share badge), so a filter added applies across both panes.
     await expect(page.locator(".gtab")).toHaveCount(1);
     await expect(page.locator(".gtab-shared")).toHaveCount(0);
+  });
+
+  test("a log dropped on a pane opens on THAT pane's filter set", async ({
+    page,
+    tauri,
+  }) => {
+    await openTwo(page, tauri); // a.log + b.log, single pane on b.log
+    await splitTwoFiles(page, tauri); // pane 0: b.log, pane 1: a.log
+
+    // Give pane 1 (a.log) a second set, then focus pane 0 again — the two panes now
+    // show different sets, and the FOCUSED one is not the drop target.
+    await pane(page, 1).locator(".lv-stat").click();
+    await addSet(page);
+    await expect(page.locator(".gtab.active .gtab-name")).toHaveText("New set");
+    await pane(page, 0).locator(".lv-stat").click();
+    await expect(page.locator(".gtab.active .gtab-name")).toHaveText("Filters");
+
+    // A new log dropped on pane 1 must adopt pane 1's lens, not the focused pane's.
+    await tauri.setFile("/logs/c.log", SAMPLE_LOG);
+    await dropOnPane(page, tauri, 1, "/logs/c.log");
+    await expect(
+      pane(page, 1).locator(".pane-tab.active", { hasText: "c.log" }),
+    ).toBeVisible();
+    await expect(page.locator(".gtab.active .gtab-name")).toHaveText("New set");
   });
 
   test("a filter added while comparing applies to both files", async ({

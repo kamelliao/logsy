@@ -64,7 +64,12 @@ export interface LogFilesApi {
   /** Close several logs at once, behind a single confirm. */
   deleteFiles: (fids: string[]) => Promise<void>;
   openFiles: () => Promise<void>;
-  loadPaths: (paths: string[], opts?: { activate?: boolean }) => Promise<void>;
+  /** `setId`: the filter set the new documents open on (a pane drop passes that
+   *  pane's set); defaults to the active file's. */
+  loadPaths: (
+    paths: string[],
+    opts?: { activate?: boolean; setId?: string },
+  ) => Promise<void>;
   /** Re-decode a file with a forced encoding label (null = back to auto-detect). */
   setFileEncoding: (fid: string, label: string | null) => Promise<void>;
 }
@@ -165,8 +170,13 @@ export function useLogFiles({
   // pass it: activating here would first pull the file into whichever pane is
   // focused — useSplitView syncs the active file into the focused pane — and it
   // would end up in two panes at once.
+  //
+  // `setId` is the lens the new documents start on. A drop routed to a split pane
+  // passes THAT pane's set, so the file lands showing what the pane beside it shows;
+  // without it a new file adopts the ACTIVE file's set, which for a drop into an
+  // unfocused pane would be some other pane's lens.
   const loadPaths = useCallback(
-    async (paths: string[], opts?: { activate?: boolean }) => {
+    async (paths: string[], opts?: { activate?: boolean; setId?: string }) => {
       const activate = opts?.activate ?? true;
       let lastErr = "";
       try {
@@ -204,8 +214,8 @@ export function useLogFiles({
           linesStore[id] = lns;
           patchState(
             (s) => {
-              // The set LIST is global; a new document adopts the current file's
-              // active set as its starting lens (else the first set).
+              // The set LIST is global; a new document adopts the caller's set (a
+              // pane drop), else the current file's, else the first one.
               const cur = s.files.find((x) => x.id === s.activeFileId);
               const f: LogFile = {
                 id,
@@ -214,7 +224,11 @@ export function useLogFiles({
                 lineCount: lns.length,
                 encoding,
                 detectedEncoding: encoding,
-                activeSetId: cur?.activeSetId ?? s.filterSets[0]?.id ?? null,
+                activeSetId:
+                  opts?.setId ??
+                  cur?.activeSetId ??
+                  s.filterSets[0]?.id ??
+                  null,
               };
               s.files.push(f);
               // Auto-activate the freshly opened file — unless the caller places
