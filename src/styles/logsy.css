@@ -327,49 +327,6 @@ button {
   color: var(--text);
 }
 
-/* Batch bar: what the multi-selection (or the current filter) can act on. */
-.file-selbar {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  margin: 0 8px 4px;
-  padding: 3px 6px;
-  border-radius: 7px;
-  background: var(--accent-bg);
-}
-.file-selbar .fs-count {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: 11.5px;
-  color: var(--text-2);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.file-selbar .fs-btn {
-  flex: 0 0 auto;
-  height: 20px;
-  padding: 0 6px;
-  border: none;
-  border-radius: 5px;
-  background: transparent;
-  color: var(--text-2);
-  font-size: 11.5px;
-  cursor: pointer;
-}
-.file-selbar .fs-btn:hover:not(:disabled) {
-  background: #fff;
-  color: var(--text);
-}
-.file-selbar .fs-btn.danger:hover {
-  color: #d64545;
-}
-.file-selbar .fs-btn:disabled {
-  opacity: 0.5;
-  cursor: default;
-}
-
 .file-list {
   padding: 2px 8px;
   overflow-y: auto;
@@ -400,11 +357,11 @@ button {
 .file-item.active {
   background: #e1e4e8;
 }
-/* In the multi-selection (Ctrl/Shift-click) — the batch bar acts on these. A step
-   deeper than the `.active` row's grey, with the label in the accent blue. */
+/* In the multi-selection (Ctrl/Shift-click) — the row menu's batch actions act on
+   these. Same grey as the `.active` row; the accent-blue label is what sets it apart. */
 .file-item.selected,
 .file-item.selected:hover {
-  background: #d3d7dc;
+  background: #e1e4e8;
   color: #2c6ce6;
   font-weight: 600;
 }
