@@ -31,6 +31,8 @@ interface Props {
   tabs: string[];
   /** The pane's active tab (file id), highlighted. */
   activeId: string | null;
+  /** Whether this pane is the focused one (its active tab is the app's file). */
+  focused: boolean;
   /** All open files, for resolving a tab id to its display name. */
   files: TabFile[];
   /** While a tab is dragged over THIS pane, the insertion index to draw the `|`
@@ -140,6 +142,7 @@ export function PaneTabs({
   pane,
   tabs,
   activeId,
+  focused,
   files,
   caretIndex,
   onActivate,
@@ -165,6 +168,30 @@ export function PaneTabs({
     vp.addEventListener("wheel", onWheel, { passive: false });
     return () => vp.removeEventListener("wheel", onWheel);
   }, []);
+  // Keep the active tab reachable: opening a file (which appends/activates a tab)
+  // or GAINING focus scrolls the strip just far enough to reveal it. The two
+  // triggers are tracked by hand because a re-render alone must not scroll — in
+  // particular the pane that LOSES focus also re-renders with a new `focused`, and
+  // it has no business moving. Done without scrollIntoView, which would also scroll
+  // the app's other scroll containers (the pane's LogView sits in one). A no-op when
+  // the tab is already in view, so clicking a visible tab never shifts the strip.
+  const lastActive = useRef<string | null>(null);
+  const wasFocused = useRef(false);
+  useEffect(() => {
+    const moved = activeId !== lastActive.current;
+    const gainedFocus = focused && !wasFocused.current;
+    lastActive.current = activeId;
+    wasFocused.current = focused;
+    if (!moved && !gainedFocus) return;
+    const vp = vpRef.current;
+    const tab = vp?.querySelector<HTMLElement>(".pane-tab.active");
+    if (!vp || !tab) return;
+    const v = vp.getBoundingClientRect();
+    const t = tab.getBoundingClientRect();
+    const pad = 8; // leave a sliver of the neighbouring tab showing
+    if (t.left < v.left) vp.scrollLeft -= v.left - t.left + pad;
+    else if (t.right > v.right) vp.scrollLeft += t.right - v.right + pad;
+  }, [activeId, focused]);
   // Base UI ScrollArea (same overlay-scrollbar chrome as the filter panel's group
   // tabs): the native scrollbar is hidden and replaced by a thin overlay in a
   // reserved bottom lane, so an overflowing strip never rubber-bands the tabs or

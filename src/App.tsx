@@ -933,6 +933,7 @@ export function App() {
                 pane={pane.id}
                 tabs={pane.tabs}
                 activeId={pane.active}
+                focused={isFocused}
                 files={tabFiles}
                 caretIndex={
                   tabDropTarget?.pane === pane.id ? tabDropTarget.index : null
