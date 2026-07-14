@@ -27,6 +27,10 @@ export interface UiSlice {
    *  overlay, but for actions that live in the store rather than that hook. */
   loadingLabel: string | null;
   setLoadingLabel: (v: string | null) => void;
+  /** File ids, most-recently-viewed first — Quick Open's default ordering. Session
+   *  state, not persisted: after a reload the file order stands in for it. */
+  fileMru: string[];
+  touchFileMru: (id: string) => void;
 }
 
 export function createUiSlice(set: StoreSet): UiSlice {
@@ -49,5 +53,12 @@ export function createUiSlice(set: StoreSet): UiSlice {
     togglePacks: () => set((s) => ({ packsOpen: !s.packsOpen })),
     loadingLabel: null,
     setLoadingLabel: (v) => set({ loadingLabel: v }),
+    fileMru: [],
+    touchFileMru: (id) =>
+      set((s) =>
+        s.fileMru[0] === id
+          ? {}
+          : { fileMru: [id, ...s.fileMru.filter((x) => x !== id)] },
+      ),
   };
 }

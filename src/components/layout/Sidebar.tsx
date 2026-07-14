@@ -1,11 +1,19 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   ChevronDown,
   ChevronRight,
   FilePlus,
+  Folder,
   FolderPlus,
   MoreVertical,
   PanelLeft,
+  Search,
   Settings,
   X,
 } from "lucide-react";
@@ -31,6 +39,7 @@ import {
 import type { AppState, FileGroup, FileIcon, LogFile } from "@/types";
 import { FILE_ICONS, FileGlyph } from "@/components/widgets/fileIcons";
 import { disambiguationSuffixes } from "@/lib/path";
+import { fuzzyMatch, substringMatch } from "@/lib/fuzzy";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/store";
 import { UNGROUPED } from "@/store/slices/fileGroupSlice";
@@ -54,36 +63,54 @@ interface FileItemProps {
   file: LogFile;
   active: boolean;
   canDelete: boolean;
+  /** In the sidebar's multi-selection (Ctrl/Shift-click), which the batch acts on. */
+  selected: boolean;
+  /** Currently displayed in some split pane — the row gets an accent edge. */
+  inPane: boolean;
+  /** Reordering is off while the list is filtered (the order shown isn't the real one). */
+  dndDisabled: boolean;
   /** Parent-dir suffix disambiguating same-named files (VS Code style); dim. */
   suffix?: string;
   groups: FileGroup[];
-  onSelect: () => void;
+  /** Click with its modifiers — the sidebar turns it into select / toggle / range. */
+  onClick: (e: React.MouseEvent) => void;
   onDelete: () => void;
   onSetIcon: (icon: FileIcon) => void;
   onMoveToGroup: (groupId: string | null) => void;
   onNewGroupWith: () => void;
+  /** Batch close, offered by the context menu when the row is part of a selection. */
+  selectedCount: number;
+  onCloseSelected: () => void;
 }
 
 function FileItem({
   file,
   active,
   canDelete,
+  selected,
+  inPane,
+  dndDisabled,
   suffix,
   groups,
-  onSelect,
+  onClick,
   onDelete,
   onSetIcon,
   onMoveToGroup,
   onNewGroupWith,
+  selectedCount,
+  onCloseSelected,
 }: FileItemProps) {
   // Right-click context menu, anchored at the cursor.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  // The row is part of a multi-selection → its menu acts on the batch, not on it alone.
+  const batch = selected && selectedCount > 1;
 
   // Drag-to-reorder. The whole row is the drag handle; a small activation
   // distance (set on the sensor) keeps a plain click selecting the file rather
   // than starting a drag.
   const { attributes, listeners, setNodeRef, isDragging } = useSortable({
     id: file.id,
+    disabled: dndDisabled,
   });
   // The row stays put while dragging (no transform / live reorder) — a clone in the
   // DragOverlay follows the cursor and a drop line marks the target, like the pane
@@ -118,8 +145,19 @@ function FileItem({
         <TooltipTrigger
           render={
             <div
-              className={"file-item" + (active ? " active" : "")}
-              onClick={onSelect}
+              className={
+                "file-item" +
+                (active ? " active" : "") +
+                (selected ? " selected" : "") +
+                (inPane ? " in-pane" : "")
+              }
+              onClick={onClick}
+              onAuxClick={(e) => {
+                // Middle-click closes the row, like a browser / editor tab.
+                if (e.button !== 1) return;
+                e.preventDefault();
+                onDelete();
+              }}
               onContextMenu={(e) => {
                 e.preventDefault();
                 setMenu({ x: e.clientX, y: e.clientY });
@@ -194,7 +232,11 @@ function FileItem({
             ))}
           </div>
           <div className="menu-sep" />
-          <div className="menu-section">Move to group</div>
+          {/* Every action below acts on the whole selection when this row is part of
+              one — the row's own id alone otherwise. */}
+          <div className="menu-section">
+            {batch ? `Move ${selectedCount} files to group` : "Move to group"}
+          </div>
           {groups.map((g) => (
             <div
               key={g.id}
@@ -205,7 +247,7 @@ function FileItem({
               }}
             >
               <span className="mi-ico">
-                <FolderPlus size={14} />
+                <Folder size={14} />
               </span>{" "}
               {g.name}
             </div>
@@ -220,9 +262,9 @@ function FileItem({
             <span className="mi-ico">
               <FolderPlus size={14} />
             </span>{" "}
-            New group…
+            {batch ? `New group with ${selectedCount} files…` : "New group…"}
           </div>
-          {file.groupId != null && (
+          {(batch || file.groupId != null) && (
             <div
               className="menu-item"
               onClick={() => {
@@ -237,6 +279,22 @@ function FileItem({
             </div>
           )}
           <div className="menu-sep" />
+          {/* Batch close. "Close N selected" only shows for a row that's part of the
+              selection — closing from outside it would be a surprise. */}
+          {batch && (
+            <div
+              className="menu-item danger"
+              onClick={() => {
+                setMenu(null);
+                onCloseSelected();
+              }}
+            >
+              <span className="mi-ico">
+                <X size={14} />
+              </span>{" "}
+              Close {selectedCount} selected
+            </div>
+          )}
           <div
             className="menu-item danger"
             onClick={() => {
@@ -289,8 +347,12 @@ interface GroupSectionProps {
   onToggle: () => void;
   onRename: (name: string) => void;
   onUngroup: () => void;
+  /** Close every log in the group (the group itself goes with its last file). */
+  onCloseFiles: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
+  /** While the list is filtered the group is force-expanded, showing only matches. */
+  forceOpen: boolean;
   startRenaming: boolean;
   onRenameHandled: () => void;
   children: React.ReactNode;
@@ -305,12 +367,15 @@ function GroupSection({
   onToggle,
   onRename,
   onUngroup,
+  onCloseFiles,
   onMoveUp,
   onMoveDown,
+  forceOpen,
   startRenaming,
   onRenameHandled,
   children,
 }: GroupSectionProps) {
+  const open = forceOpen || !group.collapsed;
   const [menu, setMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(group.name);
@@ -348,14 +413,10 @@ function GroupSection({
       <div className="fg-header">
         <button
           className="fg-chevron"
-          title={group.collapsed ? "Expand group" : "Collapse group"}
+          title={open ? "Collapse group" : "Expand group"}
           onClick={onToggle}
         >
-          {group.collapsed ? (
-            <ChevronRight size={14} />
-          ) : (
-            <ChevronDown size={14} />
-          )}
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </button>
         {editing ? (
           <input
@@ -437,15 +498,26 @@ function GroupSection({
             >
               Ungroup (keep files)
             </div>
+            {fileIds.length > 0 && (
+              <div
+                className="menu-item danger"
+                onClick={() => {
+                  setMenu(false);
+                  onCloseFiles();
+                }}
+              >
+                Close {fileIds.length} {fileIds.length === 1 ? "log" : "logs"}
+              </div>
+            )}
           </div>
         )}
       </div>
       <FileDropZone
         cid={group.id}
-        fileIds={collapsed || group.collapsed ? [] : fileIds}
+        fileIds={collapsed || !open ? [] : fileIds}
         className="fg-body"
       >
-        {!group.collapsed && children}
+        {open && children}
       </FileDropZone>
     </div>
   );
@@ -460,6 +532,8 @@ interface SidebarProps {
   onSelectFile: (id: string) => void;
   onOpenFile: () => void;
   onDeleteFile: (id: string) => void;
+  /** Close several logs behind one confirm (the multi-selection, a group, "close all"). */
+  onDeleteFiles: (ids: string[]) => void;
   onSetFileIcon: (id: string, icon: FileIcon) => void;
   /** Opens the Settings dialog (the sidebar row is just its launcher). */
   onOpenSettings: () => void;
@@ -480,6 +554,7 @@ export function Sidebar({
   onSelectFile,
   onOpenFile,
   onDeleteFile,
+  onDeleteFiles,
   onSetFileIcon,
   onOpenSettings,
   onFileDragOver,
@@ -516,7 +591,122 @@ export function Sidebar({
     container: string;
     beforeId: string | null;
   } | null>(null);
-  const map = baseMap;
+
+  // ---------- filter box ----------
+  // Fuzzy-narrows the list by name or path. While it's on, every group is shown
+  // expanded (a match must never hide inside a collapsed group) and reordering is
+  // off — the order on screen isn't the document's, so a drop would be ambiguous.
+  const [query, setQuery] = useState("");
+  const filtering = query.trim().length > 0;
+  const matchIds = useMemo(() => {
+    const q = query.trim();
+    if (!q) return null;
+    const hits = new Set<string>();
+    for (const f of state.files)
+      if (fuzzyMatch(q, f.name) || (f.path && substringMatch(q, f.path)))
+        hits.add(f.id);
+    return hits;
+  }, [query, state.files]);
+
+  const map: ContainerMap = matchIds
+    ? Object.fromEntries(
+        Object.keys(baseMap).map((k) => [
+          k,
+          baseMap[k].filter((id) => matchIds.has(id)),
+        ]),
+      )
+    : baseMap;
+  const matchCount = matchIds ? matchIds.size : state.files.length;
+  // Rows top-to-bottom as rendered (groups, then the ungrouped bucket) — the order a
+  // Shift-click range walks.
+  const visibleOrder = [...groups.flatMap((g) => map[g.id]), ...map[UNGROUPED]];
+
+  // ---------- multi-selection ----------
+  // Ctrl-click toggles a row, Shift-click takes the range from the last anchor. The
+  // selection is what the batch actions (close, group) operate on; it's independent
+  // of the ACTIVE file, which only a plain click moves.
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [anchorId, setAnchorId] = useState<string | null>(null);
+  // Closing a file leaves its id behind — resolve against the live document.
+  const selected = useMemo(() => {
+    const live = new Set(state.files.map((f) => f.id));
+    return new Set(selectedIds.filter((id) => live.has(id)));
+  }, [selectedIds, state.files]);
+
+  // Escape drops the selection, like the filter panel's select mode. Ignored inside a
+  // text field, so Escape in the filter box still clears the QUERY first.
+  useEffect(() => {
+    if (!selectedIds.length) return;
+    function onKey(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest('input, textarea, [contenteditable="true"]')) return;
+      setSelectedIds([]);
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [selectedIds.length]);
+
+  const onRowClick = (e: React.MouseEvent, fid: string) => {
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedIds((prev) =>
+        prev.includes(fid) ? prev.filter((x) => x !== fid) : [...prev, fid],
+      );
+      setAnchorId(fid);
+      return;
+    }
+    if (e.shiftKey && anchorId) {
+      const a = visibleOrder.indexOf(anchorId);
+      const b = visibleOrder.indexOf(fid);
+      if (a >= 0 && b >= 0) {
+        const [lo, hi] = a < b ? [a, b] : [b, a];
+        setSelectedIds(visibleOrder.slice(lo, hi + 1));
+        return;
+      }
+    }
+    // A plain click is the old behaviour: drop the selection and open the file.
+    setSelectedIds([]);
+    setAnchorId(fid);
+    onSelectFile(fid);
+  };
+
+  /** What a row's action applies to: the whole selection when the row is in it. */
+  const targetsOf = (fid: string) =>
+    selected.has(fid) && selected.size > 1 ? [...selected] : [fid];
+
+  const closeIds = (ids: string[]) => {
+    if (!ids.length) return;
+    setSelectedIds([]);
+    onDeleteFiles(ids);
+  };
+  const closeSelected = () => closeIds([...selected]);
+  const moveToGroup = (fid: string, gid: string | null) => {
+    for (const id of targetsOf(fid)) moveFileToGroup(id, gid);
+    setSelectedIds([]);
+  };
+  const newGroupWith = (fid: string) => {
+    const gid = createFileGroup();
+    for (const id of targetsOf(fid)) moveFileToGroup(id, gid);
+    setSelectedIds([]);
+    setRenamingGroupId(gid);
+  };
+  const groupSelected = () => {
+    const ids = [...selected];
+    if (!ids.length) return;
+    const gid = createFileGroup();
+    for (const id of ids) moveFileToGroup(id, gid);
+    setSelectedIds([]);
+    setRenamingGroupId(gid);
+  };
+
+  // ---------- pane occupancy ----------
+  // Files a split pane is currently SHOWING (its active tab) — the row gets an accent
+  // edge, so with the view split you can see at a glance which logs are on screen.
+  const shownInPane = new Set(
+    (state.splitView?.panes ?? [])
+      .map((p) => p.active)
+      .filter((id): id is string => !!id),
+  );
 
   // Click vs. drag: a 4px activation distance lets a plain click still select.
   const sensors = useSensors(
@@ -632,32 +822,43 @@ export function Sidebar({
         file={f}
         active={!openScreen && f.id === state.activeFileId}
         canDelete={true}
+        selected={selected.has(f.id)}
+        inPane={!openScreen && shownInPane.has(f.id)}
+        dndDisabled={filtering}
         suffix={dirSuffixes[f.id]}
         groups={groups}
-        onSelect={() => onSelectFile(f.id)}
+        onClick={(e) => onRowClick(e, f.id)}
         onDelete={() => onDeleteFile(f.id)}
         onSetIcon={(icon) => onSetFileIcon(f.id, icon)}
-        onMoveToGroup={(gid) => moveFileToGroup(f.id, gid)}
-        onNewGroupWith={() => {
-          const gid = createFileGroup();
-          moveFileToGroup(f.id, gid);
-        }}
+        onMoveToGroup={(gid) => moveToGroup(f.id, gid)}
+        onNewGroupWith={() => newGroupWith(f.id)}
+        selectedCount={selected.size}
+        onCloseSelected={closeSelected}
       />
     );
   };
 
-  // Render a container's file rows with the drop line inserted at the target slot.
+  // Render a container's file rows with the drop line inserted at the target slot
+  // (no drop line while filtering — reordering is off).
   const renderFiles = (fileIds: string[], cid: string): React.ReactNode[] => {
     const line = (key: string) => (
       <div key={key} className="file-drop-line" aria-hidden />
     );
     const out: React.ReactNode[] = [];
     for (const fid of fileIds) {
-      if (dropTarget?.container === cid && dropTarget.beforeId === fid)
+      if (
+        !filtering &&
+        dropTarget?.container === cid &&
+        dropTarget.beforeId === fid
+      )
         out.push(line("dl-" + fid));
       out.push(renderFile(fid));
     }
-    if (dropTarget?.container === cid && dropTarget.beforeId === null)
+    if (
+      !filtering &&
+      dropTarget?.container === cid &&
+      dropTarget.beforeId === null
+    )
       out.push(line("dl-end"));
     return out;
   };
@@ -676,7 +877,83 @@ export function Sidebar({
           <PanelLeft size={18} />
         </Button>
       </div>
-      <div className="file-list scroll">
+
+      {/* Filter box + selection bar sit ABOVE the scroll box, so they stay put while
+          the list scrolls. Both are meaningless in the icon-only rail. */}
+      {!collapsed && state.files.length > 0 && (
+        <div className="file-filter">
+          <Search size={13} className="ff-ico" />
+          <input
+            className="ff-input"
+            placeholder="Filter files…"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Escape") {
+                e.preventDefault();
+                setQuery("");
+              }
+            }}
+          />
+          {filtering && (
+            <>
+              <span className="ff-count">{matchCount}</span>
+              <button
+                className="ff-x"
+                title="Clear filter"
+                onClick={() => setQuery("")}
+              >
+                <X size={13} />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {!collapsed && (selected.size > 0 || filtering) && (
+        <div className="file-selbar">
+          {selected.size > 0 ? (
+            <>
+              <span className="fs-count">{selected.size} selected</span>
+              <button className="fs-btn" onClick={groupSelected}>
+                Group
+              </button>
+              <button className="fs-btn danger" onClick={closeSelected}>
+                Close
+              </button>
+              <button className="fs-btn" onClick={() => setSelectedIds([])}>
+                Clear
+              </button>
+            </>
+          ) : (
+            <>
+              <span className="fs-count">
+                {matchCount} {matchCount === 1 ? "match" : "matches"}
+              </span>
+              <button
+                className="fs-btn"
+                disabled={!matchCount}
+                onClick={() => setSelectedIds(visibleOrder)}
+              >
+                Select all
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Clicking the empty space around the rows drops the selection (a file explorer's
+          "click away to deselect"). Rows, group headers and the row menus handle their
+          own clicks, so they're excluded. */}
+      <div
+        className="file-list scroll"
+        onClick={(e) => {
+          if (!selectedIds.length) return;
+          const t = e.target as HTMLElement;
+          if (t.closest(".file-item, .fg-header, .menu-pop, .new-tab")) return;
+          setSelectedIds([]);
+        }}
+      >
         <DndContext
           sensors={sensors}
           collisionDetection={collisionDetection}
@@ -688,44 +965,51 @@ export function Sidebar({
           onDragCancel={endDrag}
         >
           {/* Groups first (like a file explorer's folders), then the loose
-              ungrouped files below them. */}
-          {groups.map((g, i) => (
-            <GroupSection
-              key={g.id}
-              group={g}
-              fileIds={map[g.id]}
-              collapsed={collapsed}
-              canMoveUp={i > 0}
-              canMoveDown={i < groups.length - 1}
-              onToggle={() => toggleFileGroupCollapsed(g.id)}
-              onRename={(name) => renameFileGroup(g.id, name)}
-              onUngroup={() => deleteFileGroup(g.id)}
-              onMoveUp={() =>
-                applyFileLayout(
-                  map,
-                  arrayMove(
-                    groups.map((x) => x.id),
-                    i,
-                    i - 1,
-                  ),
-                )
-              }
-              onMoveDown={() =>
-                applyFileLayout(
-                  map,
-                  arrayMove(
-                    groups.map((x) => x.id),
-                    i,
-                    i + 1,
-                  ),
-                )
-              }
-              startRenaming={renamingGroupId === g.id}
-              onRenameHandled={() => setRenamingGroupId(null)}
-            >
-              {renderFiles(map[g.id], g.id)}
-            </GroupSection>
-          ))}
+              ungrouped files below them. A group with no match drops out of a
+              filtered list entirely. */}
+          {groups.map((g, i) =>
+            filtering && !map[g.id].length ? null : (
+              <GroupSection
+                key={g.id}
+                group={g}
+                fileIds={map[g.id]}
+                collapsed={collapsed}
+                canMoveUp={i > 0}
+                canMoveDown={i < groups.length - 1}
+                onToggle={() => toggleFileGroupCollapsed(g.id)}
+                onRename={(name) => renameFileGroup(g.id, name)}
+                onUngroup={() => deleteFileGroup(g.id)}
+                onCloseFiles={() => closeIds(baseMap[g.id])}
+                // The layout must always be rebuilt from the FULL map — `map` is the
+                // filtered view, and passing it would drop every unmatched file.
+                onMoveUp={() =>
+                  applyFileLayout(
+                    baseMap,
+                    arrayMove(
+                      groups.map((x) => x.id),
+                      i,
+                      i - 1,
+                    ),
+                  )
+                }
+                onMoveDown={() =>
+                  applyFileLayout(
+                    baseMap,
+                    arrayMove(
+                      groups.map((x) => x.id),
+                      i,
+                      i + 1,
+                    ),
+                  )
+                }
+                forceOpen={filtering}
+                startRenaming={renamingGroupId === g.id}
+                onRenameHandled={() => setRenamingGroupId(null)}
+              >
+                {renderFiles(map[g.id], g.id)}
+              </GroupSection>
+            ),
+          )}
 
           <FileDropZone
             cid={UNGROUPED}

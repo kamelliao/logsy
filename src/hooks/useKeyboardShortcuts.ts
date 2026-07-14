@@ -18,6 +18,8 @@ interface Deps {
   // tinykeys-driven actions ($mod = Ctrl/Cmd). undo/redo/zoom/openNewFilter and
   // `editing` are read from the store; the rest are App-local / IO handlers.
   openFiles: () => void | Promise<void>;
+  /** Ctrl+P: the Quick Open palette (fuzzy-jump to an already-open log). */
+  openQuickOpen: () => void;
   fileViewMode: "all" | "matches";
   setViewMode: (m: "all" | "matches") => void;
   setFindOpen: (v: boolean) => void;
@@ -56,6 +58,7 @@ export function useKeyboardShortcuts(deps: Deps): void {
     openMenu,
     setOpenMenu,
     openFiles,
+    openQuickOpen,
     fileViewMode,
     setViewMode,
     setFindOpen,
@@ -121,6 +124,10 @@ export function useKeyboardShortcuts(deps: Deps): void {
         e.preventDefault();
         void openFiles();
       },
+      "$mod+p": (e) => {
+        e.preventDefault();
+        openQuickOpen();
+      },
       "$mod+f": (e) => {
         e.preventDefault();
         focusFind();
@@ -181,6 +188,7 @@ export function useKeyboardShortcuts(deps: Deps): void {
     shortcutsOpen,
     aboutOpen,
     openFiles,
+    openQuickOpen,
     setFindOpen,
     focusFind,
     splitPane,

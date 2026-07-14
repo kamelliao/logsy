@@ -18,6 +18,8 @@ interface Deps {
   // file-backed bar).
   focusFind: () => void;
   openGoto: () => void;
+  /** Ctrl+P — the Quick Open palette. */
+  openQuickOpen: () => void;
   toggleFilterCollapsed: () => void;
   setViewMode: (m: "all" | "matches") => void;
   toggleLineNumbers: () => void;
@@ -165,6 +167,12 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
         key: "Ctrl G",
         disabled: !file,
         action: deps.openGoto,
+      },
+      {
+        label: "Go to file…",
+        key: "Ctrl P",
+        disabled: !state.files.length,
+        action: deps.openQuickOpen,
       },
     ],
     View: [

@@ -58,6 +58,7 @@ import { PaneTabs, type TabFile } from "@/components/layout/PaneTabs";
 import { PaneData, type PaneBundle } from "@/components/layout/PaneData";
 import { Titlebar } from "@/components/layout/Titlebar";
 import { GotoDialog } from "@/components/dialogs/GotoDialog";
+import { QuickOpenDialog } from "@/components/dialogs/QuickOpenDialog";
 import { Overlays } from "@/components/layout/Overlays";
 import { useFontZoom } from "@/hooks/useFontZoom";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
@@ -121,6 +122,8 @@ export function App() {
   const [appVersion, setAppVersion] = useState(APP_VERSION_FALLBACK);
   // Go-to-line dialog + signals pushed to LogView for menu-driven actions.
   const [gotoOpen, setGotoOpen] = useState(false);
+  // Quick Open palette (Ctrl+P) — fuzzy-jump between the open logs.
+  const [quickOpen, setQuickOpen] = useState(false);
   const [selectAllNonce, setSelectAllNonce] = useState(0);
   const [gotoSignal, setGotoSignal] = useState<{
     n: number;
@@ -306,6 +309,7 @@ export function App() {
     setOpenScreen,
     selectFile,
     deleteFile,
+    deleteFiles,
     openFiles,
     loadPaths,
     setFileEncoding,
@@ -752,6 +756,7 @@ export function App() {
     openMenu,
     setOpenMenu,
     openFiles,
+    openQuickOpen: () => setQuickOpen(true),
     fileViewMode,
     setViewMode,
     // Escape closes whichever bar is actually showing: the focused pane's while
@@ -779,6 +784,7 @@ export function App() {
     selectAllLines,
     focusFind,
     openGoto,
+    openQuickOpen: () => setQuickOpen(true),
     toggleFilterCollapsed,
     setViewMode,
     toggleLineNumbers,
@@ -1175,6 +1181,7 @@ export function App() {
               onSelectFile={selectFile}
               onOpenFile={() => setOpenScreen(true)}
               onDeleteFile={deleteFile}
+              onDeleteFiles={deleteFiles}
               onSetFileIcon={(id, icon) =>
                 patchState(
                   (s) => {
@@ -1275,6 +1282,15 @@ export function App() {
             <GotoDialog
               onSubmit={(n) => setGotoSignal({ n, nonce: Date.now() })}
               onClose={() => setGotoOpen(false)}
+            />
+          )}
+
+          {/* quick open (Ctrl+P) */}
+          {quickOpen && (
+            <QuickOpenDialog
+              files={state.files}
+              onPick={selectFile}
+              onClose={() => setQuickOpen(false)}
             />
           )}
 

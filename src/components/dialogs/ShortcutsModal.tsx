@@ -40,6 +40,7 @@ const SECTIONS: Section[] = [
   {
     title: "Navigation & search",
     rows: [
+      { keys: ["Ctrl", "P"], label: "Quick open (jump to an open log)" },
       { keys: ["Ctrl", "F"], label: "Find in view" },
       { keys: ["Enter"], label: "Next match" },
       { keys: ["Shift", "Enter"], label: "Previous match" },

@@ -272,6 +272,104 @@ button {
   color: var(--text-3);
   padding: 6px 16px;
 }
+/* Fuzzy filter box above the file list (name or path). */
+.file-filter {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 28px;
+  margin: 0 8px 4px;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--panel-bg, #fff);
+}
+/* NB: `--accent-bg` is a 10% TINT, not the brand blue — the solid accent is the literal
+   #2c6ce6 the rest of this sheet uses. */
+.file-filter:focus-within {
+  border-color: #2c6ce6;
+}
+.file-filter .ff-ico {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.file-filter .ff-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--text);
+}
+.file-filter .ff-count {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.file-filter .ff-x {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.file-filter .ff-x:hover {
+  background: #d8dbdf;
+  color: var(--text);
+}
+
+/* Batch bar: what the multi-selection (or the current filter) can act on. */
+.file-selbar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 8px 4px;
+  padding: 3px 6px;
+  border-radius: 7px;
+  background: var(--accent-bg);
+}
+.file-selbar .fs-count {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.file-selbar .fs-btn {
+  flex: 0 0 auto;
+  height: 20px;
+  padding: 0 6px;
+  border: none;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.file-selbar .fs-btn:hover:not(:disabled) {
+  background: #fff;
+  color: var(--text);
+}
+.file-selbar .fs-btn.danger:hover {
+  color: #d64545;
+}
+.file-selbar .fs-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .file-list {
   padding: 2px 8px;
   overflow-y: auto;
@@ -301,6 +399,26 @@ button {
 }
 .file-item.active {
   background: #e1e4e8;
+}
+/* In the multi-selection (Ctrl/Shift-click) — the batch bar acts on these. A step
+   deeper than the `.active` row's grey, with the label in the accent blue. */
+.file-item.selected,
+.file-item.selected:hover {
+  background: #d3d7dc;
+  color: #2c6ce6;
+  font-weight: 600;
+}
+/* Currently on screen in some split pane. The left edge marks it, so with the view
+   split you can see which logs a pane is showing without reading the tab strips. */
+.file-item.in-pane::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  bottom: 6px;
+  width: 2px;
+  border-radius: 0 2px 2px 0;
+  background: #2c6ce6;
 }
 .file-item .file-ico {
   color: #4f8cff;
@@ -470,8 +588,12 @@ button {
 }
 
 /* ---- File groups (collapsible sidebar sections) ---- */
+/* Never shrink: .file-list is a column flex box, so a shrinkable section would be
+   squeezed below its content once the list overflows and the rows would spill over
+   the actions below instead of scrolling. */
 .file-group {
   margin-top: 4px;
+  flex: 0 0 auto;
 }
 .fg-header {
   position: relative;
@@ -578,7 +700,7 @@ button {
 /* Grows to fill the space below the file rows, so a file can be dropped past the
    last entry (that empty area is still the ungrouped drop zone → insert at end). */
 .fg-ungrouped {
-  flex: 1 1 auto;
+  flex: 1 0 auto;
   min-height: 40px;
   margin-top: 4px;
 }
@@ -603,6 +725,7 @@ button {
 }
 .sidebar-actions {
   margin-top: 2px;
+  flex: 0 0 auto;
 }
 /* no scrollbar in the narrow collapsed rail (still scrolls via wheel) */
 .sidebar.collapsed .file-list {
@@ -5687,6 +5810,114 @@ button {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 14px;
+}
+
+/* ============================================================
+   Quick Open palette (Ctrl+P)
+   ============================================================ */
+.qo-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: grid;
+  place-items: start center;
+  padding-top: 12vh;
+  background: rgba(20, 22, 26, 0.34);
+  animation: fade 0.12s ease;
+}
+.qo-box {
+  width: 620px;
+  max-width: calc(100vw - 40px);
+  background: #fff;
+  border-radius: 12px;
+  box-shadow: var(--shadow-modal);
+  padding: 8px;
+  animation: pop 0.13s ease;
+}
+.qo-input {
+  width: 100%;
+  box-sizing: border-box;
+  font: inherit;
+  font-size: 14px;
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #fff;
+}
+.qo-input:focus {
+  outline: 2px solid #2c6ce6;
+  outline-offset: -1px;
+}
+.qo-list {
+  margin-top: 6px;
+  max-height: 46vh;
+  overflow-y: auto;
+}
+.qo-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 30px;
+  padding: 0 8px;
+  border-radius: 7px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+/* The row Enter would open — same treatment as the sidebar's selected rows: a deeper
+   grey with the name in the accent blue. */
+.qo-row.sel {
+  background: #d3d7dc;
+}
+.qo-row.sel .qo-name,
+.qo-row.sel .qo-hit {
+  color: #2c6ce6;
+}
+.qo-row.sel .qo-path,
+.qo-row.sel .qo-lines {
+  color: var(--text-2);
+}
+.qo-row .qo-ico {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  color: #4f8cff;
+}
+.qo-row .qo-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* Unmatched text sits back so the matched characters (dark + bold) carry the row. */
+  color: var(--text-2);
+}
+.qo-row .qo-hit {
+  color: var(--text);
+  font-weight: 700;
+}
+.qo-row .qo-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.qo-row .qo-lines {
+  flex: 0 0 auto;
+  font-size: 11px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.qo-empty {
+  padding: 14px 10px;
+  font-size: 13px;
+  color: var(--text-3);
+  text-align: center;
 }
 
 /* ============================================================
