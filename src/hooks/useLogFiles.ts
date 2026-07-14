@@ -61,6 +61,8 @@ export interface LogFilesApi {
   setOpenScreen: React.Dispatch<React.SetStateAction<boolean>>;
   selectFile: (fid: string) => void;
   deleteFile: (fid: string) => Promise<void>;
+  /** Close several logs at once, behind a single confirm. */
+  deleteFiles: (fids: string[]) => Promise<void>;
   openFiles: () => Promise<void>;
   loadPaths: (paths: string[], opts?: { activate?: boolean }) => Promise<void>;
   /** Re-decode a file with a forced encoding label (null = back to auto-detect). */
@@ -114,6 +116,7 @@ export function useLogFiles({
   const selectFile = (fid: string) => {
     setOpenScreen(false);
     selectNonceRef.current++;
+    useStore.getState().touchFileMru(fid);
     // The heavy re-render this triggers (computeView over the switched-to file)
     // is deferred in render via App's deferred active-file id (isSwitchingFile),
     // not here — a transition can't defer this Zustand (useSyncExternalStore)
@@ -121,12 +124,19 @@ export function useLogFiles({
     setState((s) => ({ ...s, activeFileId: fid }));
   };
 
-  // Closing a log discards its workspace (filters, sets) — confirm first.
-  const deleteFile = async (fid: string) => {
-    const f = getDoc().files.find((x) => x.id === fid);
+  // Closing a log discards its workspace (filters, sets) — confirm first. Closing
+  // several takes ONE confirm for the batch, not one per file.
+  const deleteFiles = async (fids: string[]) => {
+    const ids = new Set(fids);
+    if (!ids.size) return;
+    const docFiles = getDoc().files;
+    const first = docFiles.find((x) => ids.has(x.id));
+    const many = ids.size > 1;
     const ok = await useStore.getState().confirm({
-      title: "Close log?",
-      message: `Close "${f?.name ?? "this log"}"? Its filters in this workspace will be discarded.`,
+      title: many ? `Close ${ids.size} logs?` : "Close log?",
+      message: many
+        ? `Close ${ids.size} logs? Their filters in this workspace will be discarded.`
+        : `Close "${first?.name ?? "this log"}"? Its filters in this workspace will be discarded.`,
       okLabel: "Close",
       cancelLabel: "Cancel",
       danger: true,
@@ -134,13 +144,16 @@ export function useLogFiles({
     if (!ok) return;
     patchState(
       (s) => {
-        s.files = s.files.filter((x) => x.id !== fid);
-        if (s.activeFileId === fid) s.activeFileId = s.files[0]?.id ?? null;
-        delete linesStore[fid];
+        s.files = s.files.filter((x) => !ids.has(x.id));
+        if (s.activeFileId && ids.has(s.activeFileId))
+          s.activeFileId = s.files[0]?.id ?? null;
+        for (const id of ids) delete linesStore[id];
       },
       { undoable: false },
     );
   };
+
+  const deleteFile = (fid: string) => deleteFiles([fid]);
 
   // Read each path from disk and add it as a log file. The same path may be
   // opened more than once — each open is a separate entry (duplicates get a
@@ -451,6 +464,7 @@ export function useLogFiles({
     setOpenScreen,
     selectFile,
     deleteFile,
+    deleteFiles,
     openFiles,
     loadPaths,
     setFileEncoding,
