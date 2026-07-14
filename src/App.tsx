@@ -615,8 +615,10 @@ export function App() {
     });
     return found;
   };
-  // In single-pane mode, which zone of the log view a CSS coord is in: within ~22%
-  // of an edge → that edge (opens a split there); otherwise the center (open here).
+  // In single-pane mode, which zone of the log view a CSS coord is in: only right up
+  // against an edge (the outer 10%) does it split there; the whole middle opens the
+  // file in place. Splitting is the rarer intent, so it takes a deliberate aim.
+  const EDGE_ZONE = 0.1;
   const zoneOfLogview = (cx: number, cy: number): Zone | "center" | null => {
     let hit: DOMRect | null = null;
     document.querySelectorAll(".logview").forEach((el) => {
@@ -637,7 +639,7 @@ export function App() {
     const nearest = (Object.keys(dist) as Zone[]).reduce((a, b) =>
       dist[a] <= dist[b] ? a : b,
     );
-    return dist[nearest] <= 0.22 ? nearest : "center";
+    return dist[nearest] <= EDGE_ZONE ? nearest : "center";
   };
   // The drop action for a CSS-px cursor: onto a pane (when several are open), else
   // the lone pane's center (open here) or an edge (open a new pane on that side).
@@ -1195,12 +1197,16 @@ export function App() {
               onFileDragOver={(pt) =>
                 applyDropHint(pt ? computeDropHint(pt.x, pt.y) : null)
               }
-              onFileDropAt={(fileId, x, y) => {
+              onFileDropAt={(fileIds, x, y) => {
                 const hint = computeDropHint(x, y);
                 if (!hint) return false;
-                if (hint.kind === "pane") split.activateTab(hint.pane, fileId);
-                else if (hint.kind === "center") selectFile(fileId);
-                else split.openPaneAtEdge(panes[0].id, hint.zone, [fileId]);
+                // A whole multi-selection can be dragged out at once; the last file of
+                // the batch ends up the active one, as when tabs are dropped on a pane.
+                const last = fileIds[fileIds.length - 1];
+                if (hint.kind === "pane")
+                  split.addFilesToPane(hint.pane, fileIds);
+                else if (hint.kind === "center") selectFile(last);
+                else split.openPaneAtEdge(panes[0].id, hint.zone, fileIds);
                 return true;
               }}
             />

@@ -444,7 +444,7 @@ test.describe("split view", () => {
       .boundingBox();
     const lv = await page.locator(".logview").boundingBox();
     if (!s || !lv) throw new Error("row/logview not visible");
-    const tx = lv.x + lv.width * 0.85; // right-edge band
+    const tx = lv.x + lv.width * 0.96; // right-edge band (the outer 10%)
     const ty = lv.y + lv.height * 0.5;
     await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2);
     await page.mouse.down();
@@ -474,7 +474,7 @@ test.describe("split view", () => {
       .boundingBox();
     const lv = await page.locator(".logview").boundingBox();
     if (!s || !lv) throw new Error("row/logview not visible");
-    const tx = lv.x + lv.width * 0.1; // left-edge band
+    const tx = lv.x + lv.width * 0.04; // left-edge band (the outer 10%)
     const ty = lv.y + lv.height * 0.5;
     await page.mouse.move(s.x + s.width / 2, s.y + s.height / 2);
     await page.mouse.down();
@@ -536,7 +536,7 @@ test.describe("split view", () => {
     if (!lv) throw new Error("logview not visible");
     await tauri.drop(["/logs/c.log"], {
       x: lv.x + lv.width * 0.5,
-      y: lv.y + lv.height * 0.85, // bottom-edge band
+      y: lv.y + lv.height * 0.96, // bottom-edge band (the outer 10%)
     });
     await expect(panes(page)).toHaveCount(2);
     await expect(page.locator(".file-item")).toHaveCount(3);
