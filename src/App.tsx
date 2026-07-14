@@ -754,8 +754,10 @@ export function App() {
     openFiles,
     fileViewMode,
     setViewMode,
-    setFindOpen,
-    findOpen,
+    // Escape closes whichever bar is actually showing: the focused pane's while
+    // split, the file-backed one otherwise.
+    setFindOpen: (v) => setFindOpenFor(activePaneId)(v),
+    findOpen: findOpenFor(activePaneId),
     openScreen,
     filesCount: state.files.length,
     setOpenScreen,
@@ -775,7 +777,7 @@ export function App() {
     openFiles,
     loadPaths,
     selectAllLines,
-    setFindOpen,
+    focusFind,
     openGoto,
     toggleFilterCollapsed,
     setViewMode,
