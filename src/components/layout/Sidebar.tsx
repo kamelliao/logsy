@@ -6,13 +6,17 @@ import {
   type CSSProperties,
 } from "react";
 import {
+  ArrowDown,
+  ArrowUp,
   ChevronDown,
   ChevronRight,
   FilePlus,
   Folder,
+  FolderMinus,
   FolderPlus,
   MoreVertical,
   PanelLeft,
+  Pencil,
   Settings,
   X,
 } from "lucide-react";
@@ -547,6 +551,9 @@ function GroupSection({
                 setEditing(true);
               }}
             >
+              <span className="mi-ico">
+                <Pencil size={14} />
+              </span>{" "}
               Rename
             </div>
             {canMoveUp && (
@@ -557,6 +564,9 @@ function GroupSection({
                   onMoveUp();
                 }}
               >
+                <span className="mi-ico">
+                  <ArrowUp size={14} />
+                </span>{" "}
                 Move up
               </div>
             )}
@@ -568,6 +578,9 @@ function GroupSection({
                   onMoveDown();
                 }}
               >
+                <span className="mi-ico">
+                  <ArrowDown size={14} />
+                </span>{" "}
                 Move down
               </div>
             )}
@@ -579,6 +592,9 @@ function GroupSection({
                 onUngroup();
               }}
             >
+              <span className="mi-ico">
+                <FolderMinus size={14} />
+              </span>{" "}
               Ungroup (keep files)
             </div>
             {fileIds.length > 0 && (
@@ -589,6 +605,9 @@ function GroupSection({
                   onCloseFiles();
                 }}
               >
+                <span className="mi-ico">
+                  <X size={14} />
+                </span>{" "}
                 Close {fileIds.length} {fileIds.length === 1 ? "log" : "logs"}
               </div>
             )}
@@ -1105,10 +1124,12 @@ export function Sidebar({
         <Button
           variant="ghost"
           size="icon"
+          // 28px, like every other row/button in the sidebar (`size=icon` is 32px).
+          className="size-7"
           title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           onClick={onToggleCollapse}
         >
-          <PanelLeft size={18} />
+          <PanelLeft size={14} />
         </Button>
       </div>
 
@@ -1212,7 +1233,7 @@ export function Sidebar({
             onClick={() => setRenamingGroupId(createFileGroup())}
             title="Create a file group"
           >
-            <FolderPlus size={16} />
+            <FolderPlus size={14} />
             <span>New Group</span>
           </div>
           <div
@@ -1220,7 +1241,7 @@ export function Sidebar({
             onClick={onOpenFile}
             title="Open a log file (Ctrl O)"
           >
-            <FilePlus size={16} />
+            <FilePlus size={14} />
             <span>Open File</span>
           </div>
         </div>
@@ -1236,7 +1257,7 @@ export function Sidebar({
             if (e.key === "Enter" || e.key === " ") onOpenSettings();
           }}
         >
-          <Settings size={16} />
+          <Settings size={14} />
           <span>Settings</span>
           {!collapsed && <span className="gear" />}
         </div>
