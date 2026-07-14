@@ -272,61 +272,6 @@ button {
   color: var(--text-3);
   padding: 6px 16px;
 }
-/* Fuzzy filter box above the file list (name or path). */
-.file-filter {
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  height: 28px;
-  margin: 0 8px 4px;
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: 7px;
-  background: var(--panel-bg, #fff);
-}
-/* NB: `--accent-bg` is a 10% TINT, not the brand blue — the solid accent is the literal
-   #2c6ce6 the rest of this sheet uses. */
-.file-filter:focus-within {
-  border-color: #2c6ce6;
-}
-.file-filter .ff-ico {
-  flex: 0 0 auto;
-  color: var(--text-3);
-}
-.file-filter .ff-input {
-  flex: 1 1 auto;
-  min-width: 0;
-  border: none;
-  outline: none;
-  background: transparent;
-  font: inherit;
-  font-size: 12.5px;
-  color: var(--text);
-}
-.file-filter .ff-count {
-  flex: 0 0 auto;
-  font-size: 11px;
-  color: var(--text-3);
-  font-variant-numeric: tabular-nums;
-}
-.file-filter .ff-x {
-  flex: 0 0 auto;
-  width: 18px;
-  height: 18px;
-  display: grid;
-  place-items: center;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--text-3);
-  cursor: pointer;
-}
-.file-filter .ff-x:hover {
-  background: #d8dbdf;
-  color: var(--text);
-}
-
 .file-list {
   padding: 2px 8px;
   overflow-y: auto;
@@ -339,17 +284,25 @@ button {
 .file-item {
   display: flex;
   align-items: center;
-  gap: 9px;
+  gap: 7px;
   /* fixed height (not vertical padding) so a row is the same height whether the
      sidebar is expanded (text shown) or collapsed (icon only) */
-  height: 34px;
+  height: 28px;
   box-sizing: border-box;
-  padding: 0 8px;
-  border-radius: 7px;
+  padding: 0 7px;
+  border-radius: 6px;
   cursor: pointer;
   color: var(--text);
-  font-size: 13.5px;
+  font-size: 13px;
   position: relative;
+}
+/* Keyboard focus: the list is a tree with ONE tab stop (roving tabindex) and the
+   arrows move it, so this ring is the only thing telling you where the keys will act. */
+.file-item:focus-visible,
+.fg-header:focus-visible {
+  outline: 2px solid #2c6ce6;
+  outline-offset: -2px;
+  border-radius: 6px;
 }
 .file-item:hover {
   background: #e9ebee;
@@ -363,7 +316,6 @@ button {
 .file-item.selected:hover {
   background: #e1e4e8;
   color: #2c6ce6;
-  font-weight: 600;
 }
 /* Currently on screen in some split pane. The left edge marks it, so with the view
    split you can see which logs a pane is showing without reading the tab strips. */
@@ -371,8 +323,8 @@ button {
   content: "";
   position: absolute;
   left: 0;
-  top: 6px;
-  bottom: 6px;
+  top: 5px;
+  bottom: 5px;
   width: 2px;
   border-radius: 0 2px 2px 0;
   background: #2c6ce6;
@@ -416,8 +368,8 @@ button {
 .file-item .file-x {
   opacity: 0;
   flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
   border-radius: 4px;
   display: grid;
   place-items: center;
@@ -679,6 +631,23 @@ button {
   box-shadow: var(--shadow-pop);
   border: 1px solid var(--border-strong);
   width: 220px;
+}
+/* How many files a multi-row drag is carrying (the clone shows one name + this). */
+.file-item.drag-ghost .drag-count {
+  flex: 0 0 auto;
+  margin-left: auto;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9px;
+  background: #2c6ce6;
+  color: #fff;
+  font-size: 10.5px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
 }
 .sidebar-actions {
   margin-top: 2px;

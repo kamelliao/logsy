@@ -13,7 +13,6 @@ import {
   FolderPlus,
   MoreVertical,
   PanelLeft,
-  Search,
   Settings,
   X,
 } from "lucide-react";
@@ -39,7 +38,6 @@ import {
 import type { AppState, FileGroup, FileIcon, LogFile } from "@/types";
 import { FILE_ICONS, FileGlyph } from "@/components/widgets/fileIcons";
 import { disambiguationSuffixes } from "@/lib/path";
-import { fuzzyMatch, substringMatch } from "@/lib/fuzzy";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/store";
 import { UNGROUPED } from "@/store/slices/fileGroupSlice";
@@ -59,6 +57,14 @@ const findContainer = (id: string, map: ContainerMap): string | null => {
   return null;
 };
 
+/**
+ * One stop of the keyboard walk over the list, in render order: the group headers and
+ * the file rows of every OPEN group, then the ungrouped files. Arrow keys move between
+ * these; `key` is what a row carries as `data-nav` and what `focusKey` holds.
+ */
+type Nav = { kind: "file" | "group"; id: string };
+const navKey = (n: Nav) => (n.kind === "group" ? "grp:" + n.id : n.id);
+
 interface FileItemProps {
   file: LogFile;
   active: boolean;
@@ -67,13 +73,19 @@ interface FileItemProps {
   selected: boolean;
   /** Currently displayed in some split pane — the row gets an accent edge. */
   inPane: boolean;
-  /** Reordering is off while the list is filtered (the order shown isn't the real one). */
-  dndDisabled: boolean;
+  /** Part of a multi-row drag but not the row under the cursor — dim it like the source. */
+  dimmed: boolean;
+  /** The list's single tab stop (roving tabindex); arrow keys move it from row to row. */
+  tabbable: boolean;
+  /** 2 inside a group, 1 for a loose file — for `aria-level`. */
+  level: number;
   /** Parent-dir suffix disambiguating same-named files (VS Code style); dim. */
   suffix?: string;
   groups: FileGroup[];
   /** Click with its modifiers — the sidebar turns it into select / toggle / range. */
   onClick: (e: React.MouseEvent) => void;
+  /** However the row got focus (click, Tab, arrow key), the keyboard follows it here. */
+  onFocus: () => void;
   onDelete: () => void;
   onSetIcon: (icon: FileIcon) => void;
   onMoveToGroup: (groupId: string | null) => void;
@@ -89,10 +101,13 @@ function FileItem({
   canDelete,
   selected,
   inPane,
-  dndDisabled,
+  dimmed,
+  tabbable,
+  level,
   suffix,
   groups,
   onClick,
+  onFocus,
   onDelete,
   onSetIcon,
   onMoveToGroup,
@@ -110,12 +125,15 @@ function FileItem({
   // than starting a drag.
   const { attributes, listeners, setNodeRef, isDragging } = useSortable({
     id: file.id,
-    disabled: dndDisabled,
   });
+  // dnd-kit's attributes make the drag handle a tab stop of its own — drop that: the
+  // row's keyboard entry point is the `.file-item` below (one roving tab stop for the
+  // whole list), and two focusable boxes per row would double every Tab press.
+  const { role: _role, tabIndex: _tabIndex, ...dragAttrs } = attributes;
   // The row stays put while dragging (no transform / live reorder) — a clone in the
   // DragOverlay follows the cursor and a drop line marks the target, like the pane
-  // tab strips. Just dim the source.
-  const sortStyle: CSSProperties = isDragging ? { opacity: 0.4 } : {};
+  // tab strips. Just dim the source (and the rest of the batch, when several move).
+  const sortStyle: CSSProperties = isDragging || dimmed ? { opacity: 0.4 } : {};
 
   useEffect(() => {
     if (!menu) return;
@@ -138,7 +156,7 @@ function FileItem({
       ref={setNodeRef}
       style={sortStyle}
       className={"file-sortrow" + (isDragging ? " dragging" : "")}
-      {...attributes}
+      {...dragAttrs}
       {...listeners}
     >
       <Tooltip>
@@ -151,6 +169,14 @@ function FileItem({
                 (selected ? " selected" : "") +
                 (inPane ? " in-pane" : "")
               }
+              // Keyboard: the list is a tree with one tab stop; the arrow keys in
+              // Sidebar's onListKeyDown move it (and focus) between the rows.
+              role="treeitem"
+              aria-level={level}
+              aria-selected={selected}
+              tabIndex={tabbable ? 0 : -1}
+              data-nav={file.id}
+              onFocus={onFocus}
               onClick={onClick}
               onAuxClick={(e) => {
                 // Middle-click closes the row, like a browser / editor tab.
@@ -166,7 +192,7 @@ function FileItem({
           }
         >
           <span className="file-ico">
-            <FileGlyph icon={file.icon} size={16} />
+            <FileGlyph icon={file.icon} size={14} />
           </span>
           <span className="file-name">{file.name}</span>
           {suffix && (
@@ -318,17 +344,20 @@ function FileDropZone({
   cid,
   fileIds,
   className,
+  role,
   children,
 }: {
   cid: string;
   fileIds: string[];
   className?: string;
+  role?: string;
   children: React.ReactNode;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: CONT(cid) });
   return (
     <div
       ref={setNodeRef}
+      role={role}
       className={(className ?? "") + (isOver ? " drop-over" : "")}
     >
       <SortableContext items={fileIds} strategy={verticalListSortingStrategy}>
@@ -351,8 +380,10 @@ interface GroupSectionProps {
   onCloseFiles: () => void;
   onMoveUp: () => void;
   onMoveDown: () => void;
-  /** While the list is filtered the group is force-expanded, showing only matches. */
-  forceOpen: boolean;
+  /** The list's single tab stop (roving tabindex) currently sits on this header. */
+  tabbable: boolean;
+  /** However the header got focus (click, Tab, arrow key), the keyboard follows it. */
+  onFocus: () => void;
   startRenaming: boolean;
   onRenameHandled: () => void;
   children: React.ReactNode;
@@ -370,12 +401,13 @@ function GroupSection({
   onCloseFiles,
   onMoveUp,
   onMoveDown,
-  forceOpen,
+  tabbable,
+  onFocus,
   startRenaming,
   onRenameHandled,
   children,
 }: GroupSectionProps) {
-  const open = forceOpen || !group.collapsed;
+  const open = !group.collapsed;
   const [menu, setMenu] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(group.name);
@@ -410,10 +442,22 @@ function GroupSection({
 
   return (
     <div className="file-group">
-      <div className="fg-header">
+      {/* A tree row like the files below it: one roving tab stop, arrow keys handled
+          by the list (→ / ← expand and collapse, Enter toggles). The buttons inside
+          are taken out of the tab order so the header stays a single stop. */}
+      <div
+        className="fg-header"
+        role="treeitem"
+        aria-level={1}
+        aria-expanded={open}
+        tabIndex={tabbable ? 0 : -1}
+        data-nav={"grp:" + group.id}
+        onFocus={onFocus}
+      >
         <button
           className="fg-chevron"
           title={open ? "Collapse group" : "Expand group"}
+          tabIndex={-1}
           onClick={onToggle}
         >
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -447,6 +491,7 @@ function GroupSection({
         <button
           className="fg-kebab"
           title="Group options"
+          tabIndex={-1}
           onClick={(e) => {
             e.stopPropagation();
             setMenu((v) => !v);
@@ -516,6 +561,7 @@ function GroupSection({
         cid={group.id}
         fileIds={collapsed || !open ? [] : fileIds}
         className="fg-body"
+        role="group"
       >
         {open && children}
       </FileDropZone>
@@ -541,9 +587,10 @@ interface SidebarProps {
    *  drop indicator (a split pane, or a right/bottom edge that opens a new split).
    *  null on drag end. */
   onFileDragOver?: (pt: { x: number; y: number } | null) => void;
-  /** On drop at (x,y) CSS px, let App claim it (open in a pane / edge-split);
-   *  returns true when handled, so the sidebar skips its own reorder. */
-  onFileDropAt?: (fileId: string, x: number, y: number) => boolean;
+  /** On drop at (x,y) CSS px, let App claim the dragged files (open in a pane /
+   *  edge-split); returns true when handled, so the sidebar skips its own reorder.
+   *  `fileIds` is the whole multi-selection when the dragged row was part of one. */
+  onFileDropAt?: (fileIds: string[], x: number, y: number) => boolean;
 }
 
 export function Sidebar({
@@ -584,6 +631,9 @@ export function Sidebar({
     baseMap[c].push(f.id);
   }
   const [dragId, setDragId] = useState<string | null>(null);
+  // Every file the drag carries: the whole multi-selection when the grabbed row was
+  // part of one (the row menu's batch actions work that way too), else just that row.
+  const [dragIds, setDragIds] = useState<string[]>([]);
   // The drop target for the insertion line: which container + the file id to draw
   // the line before (null = at the container's end). Set on drag-over, no live
   // reorder — the rows stay put (like the pane tab strips).
@@ -592,34 +642,58 @@ export function Sidebar({
     beforeId: string | null;
   } | null>(null);
 
-  // ---------- filter box ----------
-  // Fuzzy-narrows the list by name or path. While it's on, every group is shown
-  // expanded (a match must never hide inside a collapsed group) and reordering is
-  // off — the order on screen isn't the document's, so a drop would be ambiguous.
-  const [query, setQuery] = useState("");
-  const filtering = query.trim().length > 0;
-  const matchIds = useMemo(() => {
-    const q = query.trim();
-    if (!q) return null;
-    const hits = new Set<string>();
-    for (const f of state.files)
-      if (fuzzyMatch(q, f.name) || (f.path && substringMatch(q, f.path)))
-        hits.add(f.id);
-    return hits;
-  }, [query, state.files]);
+  // Every file, in the order the document holds them (groups first, then the loose
+  // ones) — a multi-row drag carries its files in this order.
+  const docOrder = [
+    ...groups.flatMap((g) => baseMap[g.id]),
+    ...baseMap[UNGROUPED],
+  ];
+  // The subset of those actually on screen: a collapsed group's files are not. This is
+  // what a Shift range and Ctrl+A walk — neither may reach a row you can't see.
+  const visibleOrder = [
+    ...groups.flatMap((g) => (g.collapsed ? [] : baseMap[g.id])),
+    ...baseMap[UNGROUPED],
+  ];
 
-  const map: ContainerMap = matchIds
-    ? Object.fromEntries(
-        Object.keys(baseMap).map((k) => [
-          k,
-          baseMap[k].filter((id) => matchIds.has(id)),
-        ]),
-      )
-    : baseMap;
-  const matchCount = matchIds ? matchIds.size : state.files.length;
-  // Rows top-to-bottom as rendered (groups, then the ungrouped bucket) — the order a
-  // Shift-click range walks.
-  const visibleOrder = [...groups.flatMap((g) => map[g.id]), ...map[UNGROUPED]];
+  // ---------- keyboard walk ----------
+  // Everything the arrow keys can land on, in render order: a group header, then its
+  // files when it's open, and the loose files last. Files inside a collapsed group are
+  // NOT here — they're off screen, and focus must never leave for a row you can't see.
+  const navOrder: Nav[] = [];
+  for (const g of groups) {
+    navOrder.push({ kind: "group", id: g.id });
+    if (!g.collapsed)
+      for (const fid of baseMap[g.id]) navOrder.push({ kind: "file", id: fid });
+  }
+  for (const fid of baseMap[UNGROUPED])
+    navOrder.push({ kind: "file", id: fid });
+
+  // The row (or header) the keyboard is on. It's also the list's only tab stop — a
+  // roving tabindex, so Tab enters the list once and the arrows do the rest. When it
+  // points at nothing (nothing focused yet, row closed) the first row takes the stop.
+  const listRef = useRef<HTMLDivElement>(null);
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const rovingKey = navOrder.some((n) => navKey(n) === focusKey)
+    ? focusKey
+    : navOrder.length
+      ? navKey(navOrder[0])
+      : null;
+  // Only a keyboard move pulls DOM focus. A click already focuses the row it hit, and
+  // stealing focus on every re-render would fight the group rename input.
+  const pendingFocus = useRef(false);
+  const moveFocus = (key: string | null) => {
+    pendingFocus.current = key != null;
+    setFocusKey(key);
+  };
+  useEffect(() => {
+    if (!pendingFocus.current || !focusKey) return;
+    pendingFocus.current = false;
+    const el = listRef.current?.querySelector<HTMLElement>(
+      `[data-nav="${CSS.escape(focusKey)}"]`,
+    );
+    el?.focus();
+    el?.scrollIntoView({ block: "nearest" });
+  }, [focusKey]);
 
   // ---------- multi-selection ----------
   // A plain click selects the clicked row (and opens it); Ctrl-click toggles a row and
@@ -634,7 +708,7 @@ export function Sidebar({
   }, [selectedIds, state.files]);
 
   // Escape drops the selection, like the filter panel's select mode. Ignored inside a
-  // text field, so Escape in the filter box still clears the QUERY first.
+  // text field (a group's rename box gets its own Escape).
   useEffect(() => {
     if (!selectedIds.length) return;
     function onKey(e: KeyboardEvent) {
@@ -647,7 +721,26 @@ export function Sidebar({
     return () => window.removeEventListener("keydown", onKey);
   }, [selectedIds.length]);
 
+  /** Grow the selection from the anchor to `fid` — a Shift-click, or Shift+Arrow. */
+  const extendTo = (fid: string) => {
+    const from = anchorId && visibleOrder.includes(anchorId) ? anchorId : fid;
+    const a = visibleOrder.indexOf(from);
+    const b = visibleOrder.indexOf(fid);
+    if (a < 0 || b < 0) return;
+    const [lo, hi] = a < b ? [a, b] : [b, a];
+    setSelectedIds(visibleOrder.slice(lo, hi + 1));
+    setAnchorId(from);
+  };
+
+  /** Open a file and make it the (single-row) selection — a plain click, or Enter. */
+  const openRow = (fid: string) => {
+    setSelectedIds([fid]);
+    setAnchorId(fid);
+    onSelectFile(fid);
+  };
+
   const onRowClick = (e: React.MouseEvent, fid: string) => {
+    // (The click already focused the row, and its onFocus put the keyboard there.)
     if (e.ctrlKey || e.metaKey) {
       setSelectedIds((prev) =>
         prev.includes(fid) ? prev.filter((x) => x !== fid) : [...prev, fid],
@@ -656,20 +749,13 @@ export function Sidebar({
       return;
     }
     if (e.shiftKey && anchorId) {
-      const a = visibleOrder.indexOf(anchorId);
-      const b = visibleOrder.indexOf(fid);
-      if (a >= 0 && b >= 0) {
-        const [lo, hi] = a < b ? [a, b] : [b, a];
-        setSelectedIds(visibleOrder.slice(lo, hi + 1));
-        return;
-      }
+      extendTo(fid);
+      return;
     }
     // A plain click opens the file AND makes it the (single-row) selection — clicking
     // a row is already "selecting" it; Ctrl/Shift-click is only needed to extend that
     // selection to more files.
-    setSelectedIds([fid]);
-    setAnchorId(fid);
-    onSelectFile(fid);
+    openRow(fid);
   };
 
   /** What a row's action applies to: the whole selection when the row is in it. */
@@ -692,6 +778,100 @@ export function Sidebar({
     setSelectedIds([]);
     setRenamingGroupId(gid);
   };
+
+  // ---------- keyboard ----------
+  // One handler for the whole list (the rows bubble to it). Tree keys: ↑/↓ walk the
+  // rows, ←/→ collapse and expand a group (and ← from a file jumps up to its header),
+  // Enter opens, Delete closes, Shift+↑/↓ grows the selection, Ctrl+A takes all.
+  const onListKeyDown = (e: React.KeyboardEvent) => {
+    // Never swallow keys meant for the group's rename box.
+    const t = e.target as HTMLElement;
+    if (t.closest('input, textarea, [contenteditable="true"]')) return;
+    if (!navOrder.length) return;
+
+    const at = navOrder.findIndex((n) => navKey(n) === focusKey);
+    const cur = at >= 0 ? navOrder[at] : null;
+    const groupOf = (fid: string) => fileById.get(fid)?.groupId ?? null;
+    const isOpen = (gid: string) =>
+      !groups.find((g) => g.id === gid)?.collapsed;
+
+    switch (e.key) {
+      case "ArrowDown":
+      case "ArrowUp": {
+        e.preventDefault();
+        const step = e.key === "ArrowDown" ? 1 : -1;
+        // Nothing focused yet: the first (or last) row takes it.
+        const next =
+          at < 0
+            ? navOrder[step > 0 ? 0 : navOrder.length - 1]
+            : navOrder[Math.min(Math.max(at + step, 0), navOrder.length - 1)];
+        if (!next || navKey(next) === focusKey) return;
+        // Shift extends the selection as it goes — but only over files; stepping across
+        // a group header just moves through it.
+        if (e.shiftKey && next.kind === "file") extendTo(next.id);
+        moveFocus(navKey(next));
+        return;
+      }
+      case "Home":
+      case "End": {
+        e.preventDefault();
+        moveFocus(navKey(navOrder[e.key === "Home" ? 0 : navOrder.length - 1]));
+        return;
+      }
+      case "ArrowRight": {
+        if (cur?.kind !== "group") return;
+        e.preventDefault();
+        // Closed → open it. Already open → step into its first file.
+        if (!isOpen(cur.id)) toggleFileGroupCollapsed(cur.id);
+        else if (baseMap[cur.id].length) moveFocus(baseMap[cur.id][0]);
+        return;
+      }
+      case "ArrowLeft": {
+        if (!cur) return;
+        e.preventDefault();
+        if (cur.kind === "group") {
+          if (isOpen(cur.id)) toggleFileGroupCollapsed(cur.id);
+          return;
+        }
+        // From a file: up to the group that holds it (a loose file has none).
+        const gid = groupOf(cur.id);
+        if (gid) moveFocus("grp:" + gid);
+        return;
+      }
+      case "Enter":
+      case " ": {
+        if (!cur) return;
+        e.preventDefault();
+        if (cur.kind === "group") toggleFileGroupCollapsed(cur.id);
+        else openRow(cur.id);
+        return;
+      }
+      case "Delete":
+      case "Backspace": {
+        if (cur?.kind !== "file") return;
+        e.preventDefault();
+        // Closes the whole selection when the focused row is part of one, like the
+        // row menu does. Focus lands on the nearest row that survives.
+        const doomed = new Set(targetsOf(cur.id));
+        const alive = (n: Nav) => n.kind !== "file" || !doomed.has(n.id);
+        const next =
+          navOrder.slice(at + 1).find(alive) ??
+          navOrder.slice(0, at).reverse().find(alive) ??
+          null;
+        closeIds([...doomed]);
+        moveFocus(next && navKey(next));
+        return;
+      }
+      case "a":
+      case "A": {
+        if (!e.ctrlKey && !e.metaKey) return;
+        e.preventDefault();
+        setSelectedIds(visibleOrder);
+        return;
+      }
+    }
+  };
+
   // ---------- pane occupancy ----------
   // Files a split pane is currently SHOWING (its active tab) — the row gets an accent
   // edge, so with the view split you can see at a glance which logs are on screen.
@@ -719,7 +899,15 @@ export function Sidebar({
   const overLog = useRef(false);
   const pointerCleanup = useRef<(() => void) | null>(null);
   const onDragStart = (e: DragStartEvent) => {
-    setDragId(e.active.id as string);
+    const id = e.active.id as string;
+    setDragId(id);
+    // Grabbing a row that's in the selection drags the whole selection, in the order
+    // the rows are shown (so they land in the target in the order you see them).
+    setDragIds(
+      selected.has(id) && selected.size > 1
+        ? docOrder.filter((f) => selected.has(f))
+        : [id],
+    );
     const move = (ev: PointerEvent) => {
       lastPointer.current = { x: ev.clientX, y: ev.clientY };
       onFileDragOver?.({ x: ev.clientX, y: ev.clientY });
@@ -777,29 +965,49 @@ export function Sidebar({
     overLog.current = false;
     onFileDragOver?.(null);
     setDragId(null);
+    setDragIds([]);
     setDropTarget(null);
   };
 
   const onDragEnd = (e: DragEndEvent) => {
     const activeId = e.active.id as string;
+    const ids = dragIds.length ? dragIds : [activeId];
     const pt = lastPointer.current;
     const dt = dropTarget;
     lastPointer.current = null;
     endDrag();
-    // Dropped over the log area → let App open it in a pane / edge-split.
-    if (pt && onFileDropAt && onFileDropAt(activeId, pt.x, pt.y)) return;
-    if (!dt || dt.beforeId === activeId) return; // no target / dropped on own slot
-    const from = findContainer(activeId, baseMap);
-    if (!from) return;
-    // Rebuild the layout: pull the file out of its container, insert into the
-    // target container before `beforeId` (or at the end).
+    // Dropped over the log area → let App open them in a pane / edge-split.
+    if (pt && onFileDropAt && onFileDropAt(ids, pt.x, pt.y)) return;
+    if (!dt) return;
+
+    // Rebuild the layout: pull every dragged file out of wherever it sits, then insert
+    // the batch into the target container at the drop line.
+    const moving = new Set(ids);
+    // The line is drawn before `beforeId` — but that row may itself be on the move, so
+    // anchor on the first row at or after it that stays put (none → append at the end).
+    let anchor: string | null = null;
+    if (dt.beforeId) {
+      const arr = baseMap[dt.container];
+      for (let i = Math.max(arr.indexOf(dt.beforeId), 0); i < arr.length; i++)
+        if (!moving.has(arr[i])) {
+          anchor = arr[i];
+          break;
+        }
+    }
     const next: ContainerMap = {};
-    for (const k of Object.keys(baseMap)) next[k] = [...baseMap[k]];
-    next[from].splice(next[from].indexOf(activeId), 1);
+    for (const k of Object.keys(baseMap))
+      next[k] = baseMap[k].filter((id) => !moving.has(id));
     const toArr = next[dt.container];
-    let idx = dt.beforeId ? toArr.indexOf(dt.beforeId) : toArr.length;
-    if (idx < 0) idx = toArr.length;
-    toArr.splice(idx, 0, activeId);
+    const idx = anchor ? toArr.indexOf(anchor) : toArr.length;
+    toArr.splice(idx < 0 ? toArr.length : idx, 0, ...ids);
+
+    // Dropped back where it already was — don't churn the document.
+    const unchanged = Object.keys(baseMap).every(
+      (k) =>
+        next[k].length === baseMap[k].length &&
+        next[k].every((id, i) => baseMap[k][i] === id),
+    );
+    if (unchanged) return;
     applyFileLayout(
       next,
       groups.map((g) => g.id),
@@ -817,10 +1025,13 @@ export function Sidebar({
         canDelete={true}
         selected={selected.has(f.id)}
         inPane={!openScreen && shownInPane.has(f.id)}
-        dndDisabled={filtering}
+        dimmed={dragIds.length > 1 && dragIds.includes(f.id)}
+        tabbable={rovingKey === f.id}
+        level={f.groupId ? 2 : 1}
         suffix={dirSuffixes[f.id]}
         groups={groups}
         onClick={(e) => onRowClick(e, f.id)}
+        onFocus={() => setFocusKey(f.id)}
         onDelete={() => onDeleteFile(f.id)}
         onSetIcon={(icon) => onSetFileIcon(f.id, icon)}
         onMoveToGroup={(gid) => moveToGroup(f.id, gid)}
@@ -831,27 +1042,18 @@ export function Sidebar({
     );
   };
 
-  // Render a container's file rows with the drop line inserted at the target slot
-  // (no drop line while filtering — reordering is off).
+  // Render a container's file rows with the drop line inserted at the target slot.
   const renderFiles = (fileIds: string[], cid: string): React.ReactNode[] => {
     const line = (key: string) => (
       <div key={key} className="file-drop-line" aria-hidden />
     );
     const out: React.ReactNode[] = [];
     for (const fid of fileIds) {
-      if (
-        !filtering &&
-        dropTarget?.container === cid &&
-        dropTarget.beforeId === fid
-      )
+      if (dropTarget?.container === cid && dropTarget.beforeId === fid)
         out.push(line("dl-" + fid));
       out.push(renderFile(fid));
     }
-    if (
-      !filtering &&
-      dropTarget?.container === cid &&
-      dropTarget.beforeId === null
-    )
+    if (dropTarget?.container === cid && dropTarget.beforeId === null)
       out.push(line("dl-end"));
     return out;
   };
@@ -871,43 +1073,16 @@ export function Sidebar({
         </Button>
       </div>
 
-      {/* The filter box sits ABOVE the scroll box, so it stays put while the list
-          scrolls. It's meaningless in the icon-only rail. */}
-      {!collapsed && state.files.length > 0 && (
-        <div className="file-filter">
-          <Search size={13} className="ff-ico" />
-          <input
-            className="ff-input"
-            placeholder="Filter files…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") {
-                e.preventDefault();
-                setQuery("");
-              }
-            }}
-          />
-          {filtering && (
-            <>
-              <span className="ff-count">{matchCount}</span>
-              <button
-                className="ff-x"
-                title="Clear filter"
-                onClick={() => setQuery("")}
-              >
-                <X size={13} />
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
       {/* Clicking the empty space around the rows drops the selection (a file explorer's
           "click away to deselect"). Rows, group headers and the row menus handle their
           own clicks, so they're excluded. */}
       <div
+        ref={listRef}
         className="file-list scroll"
+        role="tree"
+        aria-label="Open logs"
+        aria-multiselectable
+        onKeyDown={onListKeyDown}
         onClick={(e) => {
           if (!selectedIds.length) return;
           const t = e.target as HTMLElement;
@@ -926,67 +1101,67 @@ export function Sidebar({
           onDragCancel={endDrag}
         >
           {/* Groups first (like a file explorer's folders), then the loose
-              ungrouped files below them. A group with no match drops out of a
-              filtered list entirely. */}
-          {groups.map((g, i) =>
-            filtering && !map[g.id].length ? null : (
-              <GroupSection
-                key={g.id}
-                group={g}
-                fileIds={map[g.id]}
-                collapsed={collapsed}
-                canMoveUp={i > 0}
-                canMoveDown={i < groups.length - 1}
-                onToggle={() => toggleFileGroupCollapsed(g.id)}
-                onRename={(name) => renameFileGroup(g.id, name)}
-                onUngroup={() => deleteFileGroup(g.id)}
-                onCloseFiles={() => closeIds(baseMap[g.id])}
-                // The layout must always be rebuilt from the FULL map — `map` is the
-                // filtered view, and passing it would drop every unmatched file.
-                onMoveUp={() =>
-                  applyFileLayout(
-                    baseMap,
-                    arrayMove(
-                      groups.map((x) => x.id),
-                      i,
-                      i - 1,
-                    ),
-                  )
-                }
-                onMoveDown={() =>
-                  applyFileLayout(
-                    baseMap,
-                    arrayMove(
-                      groups.map((x) => x.id),
-                      i,
-                      i + 1,
-                    ),
-                  )
-                }
-                forceOpen={filtering}
-                startRenaming={renamingGroupId === g.id}
-                onRenameHandled={() => setRenamingGroupId(null)}
-              >
-                {renderFiles(map[g.id], g.id)}
-              </GroupSection>
-            ),
-          )}
+              ungrouped files below them. */}
+          {groups.map((g, i) => (
+            <GroupSection
+              key={g.id}
+              group={g}
+              fileIds={baseMap[g.id]}
+              collapsed={collapsed}
+              canMoveUp={i > 0}
+              canMoveDown={i < groups.length - 1}
+              onToggle={() => toggleFileGroupCollapsed(g.id)}
+              onRename={(name) => renameFileGroup(g.id, name)}
+              onUngroup={() => deleteFileGroup(g.id)}
+              onCloseFiles={() => closeIds(baseMap[g.id])}
+              onMoveUp={() =>
+                applyFileLayout(
+                  baseMap,
+                  arrayMove(
+                    groups.map((x) => x.id),
+                    i,
+                    i - 1,
+                  ),
+                )
+              }
+              onMoveDown={() =>
+                applyFileLayout(
+                  baseMap,
+                  arrayMove(
+                    groups.map((x) => x.id),
+                    i,
+                    i + 1,
+                  ),
+                )
+              }
+              tabbable={rovingKey === "grp:" + g.id}
+              onFocus={() => setFocusKey("grp:" + g.id)}
+              startRenaming={renamingGroupId === g.id}
+              onRenameHandled={() => setRenamingGroupId(null)}
+            >
+              {renderFiles(baseMap[g.id], g.id)}
+            </GroupSection>
+          ))}
 
           <FileDropZone
             cid={UNGROUPED}
-            fileIds={map[UNGROUPED]}
+            fileIds={baseMap[UNGROUPED]}
             className="fg-ungrouped"
           >
-            {renderFiles(map[UNGROUPED], UNGROUPED)}
+            {renderFiles(baseMap[UNGROUPED], UNGROUPED)}
           </FileDropZone>
 
           <DragOverlay dropAnimation={null}>
             {dragFile ? (
               <div className="file-item drag-ghost">
                 <span className="file-ico">
-                  <FileGlyph icon={dragFile.icon} size={16} />
+                  <FileGlyph icon={dragFile.icon} size={14} />
                 </span>
                 <span className="file-name">{dragFile.name}</span>
+                {/* Dragging a whole selection: the clone says how many come along. */}
+                {dragIds.length > 1 && (
+                  <span className="drag-count">{dragIds.length}</span>
+                )}
               </div>
             ) : null}
           </DragOverlay>

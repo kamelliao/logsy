@@ -49,20 +49,7 @@ test.describe("sidebar", () => {
     );
   });
 
-  test("the filter box narrows the list, Esc restores it", async ({
-    page,
-    tauri,
-  }) => {
-    await openMany(page, tauri, ["boot.log", "wifi.log", "sensor.log"]);
-    const box = page.locator(".ff-input");
-    await box.fill("wifi");
-    await expect(page.locator(".file-item")).toHaveCount(1);
-    await expect(page.locator(".file-item .file-name")).toHaveText("wifi.log");
-    await box.press("Escape");
-    await expect(page.locator(".file-item")).toHaveCount(3);
-  });
-
-  test("Ctrl-click selects several files and the bar closes them at once", async ({
+  test("Ctrl-click selects several files and the row menu closes them at once", async ({
     page,
     tauri,
   }) => {
@@ -71,11 +58,10 @@ test.describe("sidebar", () => {
       page.locator(".file-item").filter({ hasText: name });
     await row("boot.log").click({ modifiers: ["Control"] });
     await row("sensor.log").click({ modifiers: ["Control"] });
-    await expect(page.locator(".file-selbar .fs-count")).toHaveText(
-      "2 selected",
-    );
+    await expect(page.locator(".file-item.selected")).toHaveCount(2);
 
-    await page.locator(".file-selbar .fs-btn", { hasText: "Close" }).click();
+    await row("boot.log").click({ button: "right" });
+    await page.locator(".file-menu .menu-item", { hasText: "Close 2" }).click();
     // One confirm for the whole batch, not one per file.
     await confirmDialog(page, "Close");
     await expect(page.locator(".file-item")).toHaveCount(1);
@@ -93,13 +79,92 @@ test.describe("sidebar", () => {
     await expect(page.locator(".file-item.selected")).toHaveCount(1);
     await page.keyboard.press("Escape");
     await expect(page.locator(".file-item.selected")).toHaveCount(0);
-    await expect(page.locator(".file-selbar")).toHaveCount(0);
 
     await boot.click({ modifiers: ["Control"] });
     await expect(page.locator(".file-item.selected")).toHaveCount(1);
-    // The empty drop zone below the last row.
-    await page.locator(".fg-ungrouped").click({ position: { x: 10, y: 10 } });
+    // The empty space BELOW the last row (the ungrouped zone stretches to fill it) —
+    // clicking a row would just select that row instead.
+    const zone = await page.locator(".fg-ungrouped").boundingBox();
+    await page
+      .locator(".fg-ungrouped")
+      .click({ position: { x: 10, y: zone!.height - 6 } });
     await expect(page.locator(".file-item.selected")).toHaveCount(0);
+  });
+
+  test("the arrow keys walk the list, Enter opens, Shift extends", async ({
+    page,
+    tauri,
+  }) => {
+    await openMany(page, tauri, ["boot.log", "wifi.log", "sensor.log"]);
+    const rows = page.locator(".file-item");
+    // A click puts the keyboard on the row it hit; the arrows take it from there.
+    await rows.first().click();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("ArrowDown");
+    await expect(rows.nth(2)).toBeFocused();
+
+    await page.keyboard.press("Enter");
+    await expect(page.locator(".file-item.active .file-name")).toHaveText(
+      "sensor.log",
+    );
+
+    // Shift+Arrow grows the selection from the row Enter just opened.
+    await page.keyboard.press("Shift+ArrowUp");
+    await expect(page.locator(".file-item.selected")).toHaveCount(2);
+
+    // Delete closes the whole selection behind one confirm.
+    await page.keyboard.press("Delete");
+    await confirmDialog(page, "Close");
+    await expect(rows).toHaveCount(1);
+    await expect(rows.locator(".file-name")).toHaveText("boot.log");
+  });
+
+  test("a group header expands and collapses from the keyboard", async ({
+    page,
+    tauri,
+  }) => {
+    await openMany(page, tauri, ["boot.log", "wifi.log"]);
+    // Put boot.log in a group of its own via its row menu.
+    const boot = page.locator(".file-item").filter({ hasText: "boot.log" });
+    await boot.click({ button: "right" });
+    await page
+      .locator(".file-menu .menu-item", { hasText: "New group" })
+      .click();
+    const header = page.locator(".fg-header");
+    await page.locator(".fg-name-input").press("Enter");
+    await expect(page.locator(".file-group .file-item")).toHaveCount(1);
+
+    await header.click(); // focuses the header (and toggles it shut)
+    await expect(page.locator(".file-group .file-item")).toHaveCount(0);
+    await page.keyboard.press("ArrowRight"); // → opens a collapsed group
+    await expect(page.locator(".file-group .file-item")).toHaveCount(1);
+    await page.keyboard.press("ArrowRight"); // → again steps onto its first file
+    await expect(page.locator(".file-group .file-item").first()).toBeFocused();
+    await page.keyboard.press("ArrowLeft"); // ← back up to the header
+    await expect(header).toBeFocused();
+    await page.keyboard.press("ArrowLeft"); // ← collapses it
+    await expect(page.locator(".file-group .file-item")).toHaveCount(0);
+  });
+
+  test("dragging one row of a selection carries the whole selection", async ({
+    page,
+    tauri,
+  }) => {
+    await openMany(page, tauri, ["boot.log", "wifi.log", "sensor.log"]);
+    const row = (name: string) =>
+      page.locator(".file-item").filter({ hasText: name });
+    await page.keyboard.press("Control+\\"); // two panes, both on sensor.log
+    await expect(page.locator(".pane-group")).toHaveCount(2);
+
+    await row("boot.log").click({ modifiers: ["Control"] });
+    await row("wifi.log").click({ modifiers: ["Control"] });
+    // Grabbing boot.log drags wifi.log along — the pane gets both, not just the row
+    // under the cursor.
+    await dragTo(page, row("boot.log"), page.locator(".pane-group").nth(1));
+    const tabs = page.locator(".pane-group").nth(1).locator(".pane-tab");
+    await expect(tabs).toHaveCount(3); // sensor.log was already there
+    await expect(tabs.filter({ hasText: "boot.log" })).toBeVisible();
+    await expect(tabs.filter({ hasText: "wifi.log" })).toBeVisible();
   });
 
   test("a row's context menu moves the whole selection to a group", async ({
