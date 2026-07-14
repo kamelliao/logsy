@@ -622,9 +622,9 @@ export function Sidebar({
   const visibleOrder = [...groups.flatMap((g) => map[g.id]), ...map[UNGROUPED]];
 
   // ---------- multi-selection ----------
-  // Ctrl-click toggles a row, Shift-click takes the range from the last anchor. The
-  // selection is what the batch actions (close, group) operate on; it's independent
-  // of the ACTIVE file, which only a plain click moves.
+  // A plain click selects the clicked row (and opens it); Ctrl-click toggles a row and
+  // Shift-click takes the range from the last anchor, so a selection can grow past one
+  // file. The selection is what the row menu's batch actions (close, group) act on.
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [anchorId, setAnchorId] = useState<string | null>(null);
   // Closing a file leaves its id behind — resolve against the live document.
@@ -664,8 +664,10 @@ export function Sidebar({
         return;
       }
     }
-    // A plain click is the old behaviour: drop the selection and open the file.
-    setSelectedIds([]);
+    // A plain click opens the file AND makes it the (single-row) selection — clicking
+    // a row is already "selecting" it; Ctrl/Shift-click is only needed to extend that
+    // selection to more files.
+    setSelectedIds([fid]);
     setAnchorId(fid);
     onSelectFile(fid);
   };
@@ -690,15 +692,6 @@ export function Sidebar({
     setSelectedIds([]);
     setRenamingGroupId(gid);
   };
-  const groupSelected = () => {
-    const ids = [...selected];
-    if (!ids.length) return;
-    const gid = createFileGroup();
-    for (const id of ids) moveFileToGroup(id, gid);
-    setSelectedIds([]);
-    setRenamingGroupId(gid);
-  };
-
   // ---------- pane occupancy ----------
   // Files a split pane is currently SHOWING (its active tab) — the row gets an accent
   // edge, so with the view split you can see at a glance which logs are on screen.
@@ -878,8 +871,8 @@ export function Sidebar({
         </Button>
       </div>
 
-      {/* Filter box + selection bar sit ABOVE the scroll box, so they stay put while
-          the list scrolls. Both are meaningless in the icon-only rail. */}
+      {/* The filter box sits ABOVE the scroll box, so it stays put while the list
+          scrolls. It's meaningless in the icon-only rail. */}
       {!collapsed && state.files.length > 0 && (
         <div className="file-filter">
           <Search size={13} className="ff-ico" />
@@ -904,38 +897,6 @@ export function Sidebar({
                 onClick={() => setQuery("")}
               >
                 <X size={13} />
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {!collapsed && (selected.size > 0 || filtering) && (
-        <div className="file-selbar">
-          {selected.size > 0 ? (
-            <>
-              <span className="fs-count">{selected.size} selected</span>
-              <button className="fs-btn" onClick={groupSelected}>
-                Group
-              </button>
-              <button className="fs-btn danger" onClick={closeSelected}>
-                Close
-              </button>
-              <button className="fs-btn" onClick={() => setSelectedIds([])}>
-                Clear
-              </button>
-            </>
-          ) : (
-            <>
-              <span className="fs-count">
-                {matchCount} {matchCount === 1 ? "match" : "matches"}
-              </span>
-              <button
-                className="fs-btn"
-                disabled={!matchCount}
-                onClick={() => setSelectedIds(visibleOrder)}
-              >
-                Select all
               </button>
             </>
           )}
