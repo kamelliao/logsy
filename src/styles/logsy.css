@@ -46,6 +46,11 @@
   --error: #b42318;
 
   /* metrics */
+  /* Height a collapsed dock folds down to (its head strip). The sidebar's bottom
+     bar is pinned to it, so the Settings row's top border continues the collapsed
+     bottom dock's top line straight across the window.
+     Keep in sync with MAIN_COLLAPSED in src/hooks/useDockLayout.ts. */
+  --dock-strip: 34px;
   --radius: 0.625rem;
   --radius-sm: 5px;
   --radius-lg: 11px;
@@ -240,8 +245,9 @@ button {
   align-items: center;
   justify-content: flex-start;
   /* left pad puts the toggle's icon on the same 24px column as the file /
-     settings icons below (so the whole left rail of icons lines up) */
-  padding: 0 8px;
+     settings icons below (so the whole left rail of icons lines up) — 10px for
+     the 28px button, which is 2px narrower than shadcn's `size=icon`. */
+  padding: 0 10px;
 }
 .icon-btn {
   width: 30px;
@@ -438,36 +444,48 @@ button {
 .new-tab {
   display: flex;
   align-items: center;
-  gap: 9px;
-  height: 34px;
+  gap: 7px;
+  /* A file row's box: same 28px height, 9px pad (which puts the 14px glyph on the
+     shared 24px column) and radius — the actions read as more rows of the list. */
+  height: 28px;
   box-sizing: border-box;
-  padding: 0 8px;
+  padding: 0 9px;
   margin: 2px 0;
-  border-radius: 7px;
+  border-radius: 6px;
   cursor: pointer;
   color: var(--text-2);
-  font-size: 13.5px;
+  font-size: 13px;
 }
 .new-tab:hover {
   background: #e9ebee;
   color: var(--text);
 }
 
+/* As tall as a collapsed dock's strip, so its top border and the collapsed bottom
+   dock's top line are the same line running across the window. The Settings row is
+   centred in what's left of it rather than padded, so the two can't drift apart. */
 .sidebar-bottom {
-  border-top: 1px solid var(--border);
-  padding: 6px 8px;
-}
-.sidebar-bottom .settings-row {
+  flex: 0 0 auto;
+  height: var(--dock-strip);
+  box-sizing: border-box;
   display: flex;
   align-items: center;
-  gap: 9px;
-  height: 34px;
-  box-sizing: border-box;
+  border-top: 1px solid var(--border);
   padding: 0 8px;
-  border-radius: 7px;
+}
+.sidebar-bottom .settings-row {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  /* A file row's box, like `.new-tab` — 9px pad keeps the glyph on the 24px column. */
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 9px;
+  border-radius: 6px;
   cursor: pointer;
   color: var(--text-2);
-  font-size: 13.5px;
+  font-size: 13px;
 }
 .sidebar-bottom .settings-row:hover {
   background: #e9ebee;
