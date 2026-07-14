@@ -165,7 +165,7 @@ function SortablePackCard({
 /**
  * The filter-pack library as a NON-modal side panel: it coexists with the filter
  * panel (no backdrop, no focus trap) so you can scroll and edit your filters while
- * browsing packs. It docks on the side opposite the filter panel, and its width is
+ * browsing packs. It docks on the left (beside the sidebar) and its width is
  * draggable + persisted. Clicking a card inserts that pack into the active set.
  */
 export function PacksDrawer({
@@ -176,7 +176,6 @@ export function PacksDrawer({
   onOpenChange: (open: boolean) => void;
 }) {
   const packs = useStore((s) => s.doc.filterPacks ?? NO_PACKS);
-  const panelPos = useStore((s) => s.doc.panelPos);
   const width = useStore((s) => s.doc.packsDrawerW ?? DEFAULT_W);
   const insertPack = useStore((s) => s.insertPack);
   const insertPackFilter = useStore((s) => s.insertPackFilter);
@@ -258,8 +257,10 @@ export function PacksDrawer({
         )
     : [];
 
-  // Dock on the side the filter panel isn't, so the panel stays fully visible.
-  const side = panelPos === "right" ? "left" : "right";
+  // Always docked LEFT, beside the sidebar. It used to dock "opposite the filter
+  // panel", which slid it in from the RIGHT whenever the panel sat at the bottom —
+  // the drawer appeared to change sides for no reason the user could see.
+  const side = "left";
 
   // Esc closes (we own dismissal — there's no modal layer to do it for us). While
   // the filter editor is open it owns Esc, so we stand down — otherwise one press
