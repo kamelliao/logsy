@@ -13,7 +13,10 @@ interface Deps {
   openFiles: () => void | Promise<void>;
   loadPaths: (paths: string[]) => void | Promise<void>;
   selectAllLines: () => void;
-  setFindOpen: (v: boolean) => void;
+  // Same handler as Ctrl+F — it routes to the FOCUSED pane's find bar, which a
+  // plain `setFindOpen(true)` would miss (that flag only drives the single-pane,
+  // file-backed bar).
+  focusFind: () => void;
   openGoto: () => void;
   toggleFilterCollapsed: () => void;
   setViewMode: (m: "all" | "matches") => void;
@@ -155,7 +158,7 @@ export function useMenuDefs(deps: Deps): Record<string, MenuItem[]> {
         label: "Find…",
         key: "Ctrl F",
         disabled: !file,
-        action: () => deps.setFindOpen(true),
+        action: deps.focusFind,
       },
       {
         label: "Go to…",
