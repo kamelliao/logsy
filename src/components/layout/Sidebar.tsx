@@ -345,15 +345,19 @@ function FileDropZone({
   fileIds,
   className,
   role,
+  disabled,
   children,
 }: {
   cid: string;
   fileIds: string[];
   className?: string;
   role?: string;
+  /** A collapsed group has no body to drop into — its HEADER takes the drop instead,
+   *  so the (empty) body must not register the same droppable id twice. */
+  disabled?: boolean;
   children: React.ReactNode;
 }) {
-  const { setNodeRef, isOver } = useDroppable({ id: CONT(cid) });
+  const { setNodeRef, isOver } = useDroppable({ id: CONT(cid), disabled });
   return (
     <div
       ref={setNodeRef}
@@ -408,10 +412,17 @@ function GroupSection({
   children,
 }: GroupSectionProps) {
   const open = !group.collapsed;
-  const [menu, setMenu] = useState(false);
+  // Options menu, anchored at the cursor (right-click) or under the kebab.
+  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(group.name);
   const inputRef = useRef<HTMLInputElement>(null);
+  // While the group is folded shut its body is gone, so the header stands in as the
+  // drop target — a file can be filed away into a collapsed group without opening it.
+  const { setNodeRef: setHeaderDropRef, isOver: headerOver } = useDroppable({
+    id: CONT(group.id),
+    disabled: open,
+  });
 
   useEffect(() => {
     if (startRenaming) {
@@ -428,10 +439,17 @@ function GroupSection({
   useEffect(() => {
     if (!menu) return;
     function down(e: MouseEvent) {
-      if (!(e.target as HTMLElement).closest(".fg-menu")) setMenu(false);
+      if (!(e.target as HTMLElement).closest(".fg-menu")) setMenu(null);
+    }
+    function esc(e: KeyboardEvent) {
+      if (e.key === "Escape") setMenu(null);
     }
     document.addEventListener("mousedown", down);
-    return () => document.removeEventListener("mousedown", down);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("mousedown", down);
+      document.removeEventListener("keydown", esc);
+    };
   }, [menu]);
 
   const commit = () => {
@@ -446,13 +464,18 @@ function GroupSection({
           by the list (→ / ← expand and collapse, Enter toggles). The buttons inside
           are taken out of the tab order so the header stays a single stop. */}
       <div
-        className="fg-header"
+        ref={setHeaderDropRef}
+        className={"fg-header" + (headerOver ? " drop-over" : "")}
         role="treeitem"
         aria-level={1}
         aria-expanded={open}
         tabIndex={tabbable ? 0 : -1}
         data-nav={"grp:" + group.id}
         onFocus={onFocus}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY });
+        }}
       >
         <button
           className="fg-chevron"
@@ -494,17 +517,27 @@ function GroupSection({
           tabIndex={-1}
           onClick={(e) => {
             e.stopPropagation();
-            setMenu((v) => !v);
+            if (menu) {
+              setMenu(null);
+              return;
+            }
+            // Under the kebab, right-aligned with it (168px = `.menu-pop`'s min-width)
+            // — the same menu a right-click on the header opens at the cursor.
+            const r = e.currentTarget.getBoundingClientRect();
+            setMenu({ x: r.right - 168, y: r.bottom + 2 });
           }}
         >
           <MoreVertical size={14} />
         </button>
         {menu && (
-          <div className="menu-pop fg-menu">
+          <div
+            className="menu-pop fg-menu"
+            style={{ left: menu.x, top: menu.y }}
+          >
             <div
               className="menu-item"
               onClick={() => {
-                setMenu(false);
+                setMenu(null);
                 setDraft(group.name);
                 setEditing(true);
               }}
@@ -515,7 +548,7 @@ function GroupSection({
               <div
                 className="menu-item"
                 onClick={() => {
-                  setMenu(false);
+                  setMenu(null);
                   onMoveUp();
                 }}
               >
@@ -526,7 +559,7 @@ function GroupSection({
               <div
                 className="menu-item"
                 onClick={() => {
-                  setMenu(false);
+                  setMenu(null);
                   onMoveDown();
                 }}
               >
@@ -537,7 +570,7 @@ function GroupSection({
             <div
               className="menu-item"
               onClick={() => {
-                setMenu(false);
+                setMenu(null);
                 onUngroup();
               }}
             >
@@ -547,7 +580,7 @@ function GroupSection({
               <div
                 className="menu-item danger"
                 onClick={() => {
-                  setMenu(false);
+                  setMenu(null);
                   onCloseFiles();
                 }}
               >
@@ -562,6 +595,7 @@ function GroupSection({
         fileIds={collapsed || !open ? [] : fileIds}
         className="fg-body"
         role="group"
+        disabled={!open}
       >
         {open && children}
       </FileDropZone>

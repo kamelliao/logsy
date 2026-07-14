@@ -146,6 +146,54 @@ test.describe("sidebar", () => {
     await expect(page.locator(".file-group .file-item")).toHaveCount(0);
   });
 
+  test("a group's options open from a right-click on its header", async ({
+    page,
+    tauri,
+  }) => {
+    await openMany(page, tauri, ["boot.log", "wifi.log"]);
+    await page
+      .locator(".file-item")
+      .filter({ hasText: "boot.log" })
+      .click({ button: "right" });
+    await page
+      .locator(".file-menu .menu-item", { hasText: "New group" })
+      .click();
+    await page.locator(".fg-name-input").press("Enter");
+
+    // The kebab is hover-only; a right-click anywhere on the header opens the same menu.
+    await page.locator(".fg-header").click({ button: "right" });
+    const menu = page.locator(".fg-menu");
+    await expect(menu).toBeVisible();
+    await menu.getByText("Ungroup (keep files)").click();
+    await expect(page.locator(".file-group")).toHaveCount(0);
+    await expect(page.locator(".file-item")).toHaveCount(2); // files survive
+  });
+
+  test("a file can be dropped into a collapsed group", async ({
+    page,
+    tauri,
+  }) => {
+    await openMany(page, tauri, ["boot.log", "wifi.log"]);
+    const row = (name: string) =>
+      page.locator(".file-item").filter({ hasText: name });
+    await row("boot.log").click({ button: "right" });
+    await page
+      .locator(".file-menu .menu-item", { hasText: "New group" })
+      .click();
+    await page.locator(".fg-name-input").press("Enter");
+
+    const header = page.locator(".fg-header");
+    await header.locator(".fg-chevron").click(); // fold it shut
+    await expect(page.locator(".file-group .file-item")).toHaveCount(0);
+
+    // With no body to aim at, the header itself takes the drop.
+    await dragTo(page, row("wifi.log"), header);
+    await expect(page.locator(".fg-count")).toHaveText("2");
+    await expect(page.locator(".fg-ungrouped .file-item")).toHaveCount(0);
+    // Still collapsed — the file was filed away, not opened up.
+    await expect(page.locator(".file-group .file-item")).toHaveCount(0);
+  });
+
   test("dragging one row of a selection carries the whole selection", async ({
     page,
     tauri,

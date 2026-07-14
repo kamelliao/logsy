@@ -83,7 +83,7 @@ test.describe("Notebook", () => {
     await expect(title).toHaveValue("Untitled");
     await title.click();
     await title.fill("Crash triage");
-    await expect(page.locator("[data-slot='select-trigger']")).toContainText(
+    await expect(page.locator(".nb-combo-trigger")).toContainText(
       "Crash triage",
     );
     // Enter drops the caret into the document (wait for focus to land before
@@ -130,9 +130,9 @@ test.describe("Notebook", () => {
     await page.locator(".nb-bar-actions button[title='New notebook']").click();
     await page.locator(".nb-prosemirror .ProseMirror").click();
     await page.keyboard.type("second notebook");
-    // Switch back via the shadcn select.
-    await page.locator("[data-slot='select-trigger']").click();
-    await page.locator("[data-slot='select-item']").first().click();
+    // Switch back via the notebook combobox.
+    await page.locator(".nb-combo-trigger").click();
+    await page.locator(".nb-combo-item").first().click();
     await expect(page.locator(".nb-prosemirror .ProseMirror")).toContainText(
       "first notebook",
     );
