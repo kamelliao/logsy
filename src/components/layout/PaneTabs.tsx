@@ -87,6 +87,20 @@ function PaneTab({
             // tab in a strip is a tab.
             role="tab"
             aria-selected={active}
+            // Middle-click closes the tab, like a browser / editor (the sidebar's
+            // file rows do the same). It has to be handled on POINTERDOWN, not on
+            // auxclick: the strip scrolls horizontally, so a middle press puts the
+            // webview into autoscroll mode and no auxclick is ever delivered.
+            // preventDefault() is what suppresses that. dnd-kit's own pointerdown
+            // (its drag activator) is chained on for every other button.
+            onPointerDown={(e) => {
+              if (e.button === 1) {
+                e.preventDefault();
+                onClose();
+                return;
+              }
+              listeners?.onPointerDown?.(e);
+            }}
           />
         }
       >

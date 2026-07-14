@@ -225,6 +225,19 @@ test.describe("split view", () => {
     await expect(page.locator(".gtab-shared")).toHaveCount(0);
   });
 
+  test("middle-clicking a tab closes it", async ({ page, tauri }) => {
+    await openTwo(page, tauri);
+    await splitTwoFiles(page, tauri); // pane 0: b.log, pane 1: a.log
+    // Give pane 0 a second tab so closing one doesn't collapse the pane.
+    await dropOnPane(page, tauri, 0, "/logs/a.log");
+    const tabs = pane(page, 0).locator(".pane-tab");
+    await expect(tabs).toHaveCount(2);
+
+    await tabs.filter({ hasText: "b.log" }).click({ button: "middle" });
+    await expect(tabs).toHaveCount(1);
+    await expect(tabs).toContainText("a.log");
+  });
+
   test("a log dropped on a pane opens on THAT pane's filter set", async ({
     page,
     tauri,
