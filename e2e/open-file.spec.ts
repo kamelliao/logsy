@@ -4,7 +4,6 @@ import {
   openLog,
   addFilter,
   filterRow,
-  confirmDialog,
   SAMPLE_LOG,
 } from "./support/fixtures";
 
@@ -62,7 +61,7 @@ test.describe("opening logs", () => {
     await expect(page.locator(".log-row")).toHaveCount(8);
   });
 
-  test("dropping onto an open log replaces it (after confirm), keeping filters", async ({
+  test("dropping onto an open log opens it alongside, never replacing it", async ({
     page,
     tauri,
   }) => {
@@ -71,14 +70,14 @@ test.describe("opening logs", () => {
 
     await tauri.setFile("/logs/next.log", "alpha\nbeta\ngamma\n");
     await tauri.drop(["/logs/next.log"]);
-    // A log is already open → confirm before replacing.
-    await confirmDialog(page, "Replace");
 
-    // Same workspace slot now shows the new file, and the filter is preserved.
+    // No confirm, and nothing is thrown away: the dropped log just opens, the one it
+    // landed on stays in the sidebar, and the filter set (global) still applies.
     await expect(page.locator(".file-item.active .file-name")).toHaveText(
       "next.log",
     );
     await expect(page.locator(".log-row")).toHaveCount(3);
+    await expect(page.locator(".file-item")).toHaveCount(2);
     await expect(filterRow(page, "wifi")).toBeVisible();
   });
 
