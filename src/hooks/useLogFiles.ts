@@ -37,7 +37,7 @@ interface Deps {
   paneFileIds: string[];
   /** Optional hook: an OS file drop at (x,y) physical px — return true to claim it
    *  (e.g. the split view routing it to the pane under the cursor), skipping the
-   *  default "replace the active file" behaviour. */
+   *  default "just open the files" behaviour. */
   osDropRef?: React.MutableRefObject<
     ((paths: string[], x: number, y: number) => boolean) | null
   >;
@@ -90,8 +90,6 @@ export function useLogFiles({
   // When set, the center shows a blank "open a file" drop screen instead of the
   // active workspace (triggered by the sidebar's Open File button).
   const [openScreen, setOpenScreen] = useState(false);
-  const openScreenRef = useRef(false);
-  openScreenRef.current = openScreen;
 
   const lines = useMemo(
     () => (file ? (linesStore[file.id] ?? EMPTY_LINES) : EMPTY_LINES),
@@ -231,78 +229,10 @@ export function useLogFiles({
     setOpenScreen(false); // a file is now active — leave the open screen
   }, [loadPaths]);
 
-  // Replace the active file's contents in place (same workspace slot, keeping its
-  // filters/groups) with a file from disk — used by drag-and-drop so a dropped
-  // log loads into the current workspace instead of spawning a new file entry.
-  const replaceActiveFile = useCallback(
-    async (path: string) => {
-      const cur = getDoc();
-      const active =
-        cur.files.find((f) => f.id === cur.activeFileId) ??
-        cur.files[0] ??
-        null;
-      if (!active) {
-        await loadPaths([path]);
-        return;
-      }
-      let text: string;
-      let encoding: string;
-      setBusy({ name: baseName(path) });
-      // Like loadPaths: the user may switch files while the overlay is up.
-      const selectAtStart = selectNonceRef.current;
-      await nextPaint(); // let the overlay paint before the read/split blocks
-      try {
-        const res = await invoke<{ text: string; encoding: string }>(
-          "read_text_file",
-          { path },
-        );
-        text = res.text;
-        encoding = res.encoding;
-      } catch (e) {
-        setBusy(null);
-        toast.error(
-          "Could not open file: " + baseName(path) + " — " + String(e),
-        );
-        return;
-      }
-      const lns = splitLines(text);
-      linesStore[active.id] = lns;
-      patchState(
-        (s) => {
-          const f = s.files.find((x) => x.id === active.id);
-          if (!f) return;
-          f.path = path;
-          f.name = baseName(path);
-          f.lineCount = lns.length;
-          f.encoding = encoding;
-          f.detectedEncoding = encoding;
-          // The read above auto-detected — a leftover override from the slot's
-          // previous contents no longer describes how this text was decoded.
-          f.encodingOverride = undefined;
-          if (selectNonceRef.current === selectAtStart) s.activeFileId = f.id;
-        },
-        { undoable: false },
-      );
-      pushRecent("recentFiles", path);
-      // The slot keeps its file id but gets new contents, so its old line numbers
-      // are stale — drop this file's compare lines (timeline does the same on reload).
-      setState((s) => ({
-        ...s,
-        compareLinesByFile: {
-          ...(s.compareLinesByFile ?? {}),
-          [active.id]: [],
-        },
-      }));
-      setLinesVersion((v) => v + 1);
-      setBusy(null);
-    },
-    [loadPaths, patchState, pushRecent, setState],
-  );
-
   // Re-decode a file with a user-forced encoding (the escape hatch for files
   // auto-detection gets wrong). The override is persisted on the file so a
   // reopen re-decodes the same way. Re-splitting changes line contents/numbers,
-  // so the file's compare selection is dropped (like replaceActiveFile).
+  // so the file's compare selection is dropped (as a reload does).
   const setFileEncoding = useCallback(
     async (fid: string, label: string | null) => {
       const f = getDoc().files.find((x) => x.id === fid);
@@ -441,8 +371,6 @@ export function useLogFiles({
   // OS drag-and-drop of files onto the window (Tauri handles this natively).
   const loadPathsRef = useRef(loadPaths);
   loadPathsRef.current = loadPaths;
-  const replaceActiveFileRef = useRef(replaceActiveFile);
-  replaceActiveFileRef.current = replaceActiveFile;
   // True while a genuine file drag is in flight. Tauri's `over` events carry a
   // position but NOT `paths` (only `enter`/`drop` do), so we latch "this is a file
   // drag" on enter and keep updating the pane highlight on every over — without
@@ -483,32 +411,13 @@ export function useLogFiles({
               osDropRef.current(paths, pos.x, pos.y)
             )
               return;
+            // Anywhere else in the window (the open screen, the docks, the sidebar):
+            // a drop always OPENS the files. Landing a few px off the log view must
+            // not mean something else — it used to offer to replace the open log,
+            // which the tab/pane model has made both redundant and destructive.
             void (async () => {
-              // Dropped onto the "open a file" screen: always open as new files.
-              if (openScreenRef.current) {
-                await loadPathsRef.current(paths);
-                setOpenScreen(false);
-                return;
-              }
-              // A log is already open: confirm, then load into the current
-              // workspace (replace the active file in place, keeping its filters)
-              // rather than spawning a new file entry.
-              if (getDoc().files.length > 0) {
-                const ok = await useStore.getState().confirm({
-                  title: "Replace current log?",
-                  message: `A log is already open. Replace it with the dropped file${paths.length > 1 ? "s" : ""}?`,
-                  okLabel: "Replace",
-                  cancelLabel: "Cancel",
-                  danger: true,
-                });
-                if (!ok) return;
-                await replaceActiveFileRef.current(paths[0]);
-                // Any extra dropped files open as additional entries.
-                if (paths.length > 1)
-                  await loadPathsRef.current(paths.slice(1));
-              } else {
-                await loadPathsRef.current(paths);
-              }
+              await loadPathsRef.current(paths);
+              setOpenScreen(false);
             })();
           } else {
             // leave / cancel
