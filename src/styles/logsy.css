@@ -289,7 +289,10 @@ button {
      sidebar is expanded (text shown) or collapsed (icon only) */
   height: 28px;
   box-sizing: border-box;
-  padding: 0 7px;
+  /* 9px left pad puts the glyph's centre on the same 24px column as the sidebar's
+     toggle, "Open File" and Settings icons — and as the rail's centred icons, so
+     collapsing the sidebar doesn't shift a row's icon sideways. */
+  padding: 0 9px;
   border-radius: 6px;
   cursor: pointer;
   color: var(--text);
@@ -510,7 +513,8 @@ button {
   align-items: center;
   gap: 4px;
   height: 24px;
-  padding: 0 4px 0 2px;
+  /* Chevron centred on the same 24px column as the file glyphs below it. */
+  padding: 0 4px 0 6px;
   border-radius: 6px;
   color: var(--text-3);
   user-select: none;
@@ -600,10 +604,10 @@ button {
    The body carries a left rail (like the filter group's `.fsection-body`) that
    descends from under the header chevron to show which files belong together. */
 .fg-body {
-  /* The rail sits under the header's chevron; the rows then start just clear of it —
-     a group's files stay nearly as far left as the loose ones. */
-  margin-left: 11px;
-  padding-left: 4px;
+  /* The rail runs down the left of a group's rows; keep it and the indent shallow so
+     a grouped file sits nearly as far left as a loose one. */
+  margin-left: 8px;
+  padding-left: 2px;
   border-left: 1px solid var(--border);
   border-radius: 0 6px 6px 0;
   min-height: 4px;
