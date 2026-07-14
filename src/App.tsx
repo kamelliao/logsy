@@ -662,8 +662,11 @@ export function App() {
     const hint = computeDropHint(x / dpr, y / dpr);
     if (!hint) return false; // not over the log area → default (open screen path)
     void (async () => {
-      // loadPaths dedupes by path + activates the last; resolve each to its id.
-      await loadPaths(paths);
+      // A pane/edge drop places the file itself, so loadPaths must NOT activate it
+      // on the way in — an activated file is pulled into the focused pane, and the
+      // drop would land it in two panes. Only a center drop wants the default.
+      await loadPaths(paths, { activate: hint.kind === "center" });
+      // loadPaths dedupes by path; resolve each back to its id.
       const files = useStore.getState().doc.files;
       const ids = paths
         .map((p) => files.find((f) => f.path === p)?.id)
