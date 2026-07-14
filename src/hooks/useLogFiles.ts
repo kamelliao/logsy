@@ -62,7 +62,7 @@ export interface LogFilesApi {
   selectFile: (fid: string) => void;
   deleteFile: (fid: string) => Promise<void>;
   openFiles: () => Promise<void>;
-  loadPaths: (paths: string[]) => Promise<void>;
+  loadPaths: (paths: string[], opts?: { activate?: boolean }) => Promise<void>;
   /** Re-decode a file with a forced encoding label (null = back to auto-detect). */
   setFileEncoding: (fid: string, label: string | null) => Promise<void>;
 }
@@ -148,8 +148,15 @@ export function useLogFiles({
   // opened more than once — each open is a separate entry (duplicates get a
   // "(n)" suffix so the sidebar stays readable). Filter sets are global (shared by
   // every file), so a new file needs none of its own — it shows the same sets.
+  //
+  // `activate: false` opens the files WITHOUT touching the active file. A caller
+  // that will place the file itself (a drop routed to a specific split pane) must
+  // pass it: activating here would first pull the file into whichever pane is
+  // focused — useSplitView syncs the active file into the focused pane — and it
+  // would end up in two panes at once.
   const loadPaths = useCallback(
-    async (paths: string[]) => {
+    async (paths: string[], opts?: { activate?: boolean }) => {
+      const activate = opts?.activate ?? true;
       let lastErr = "";
       try {
         for (const path of paths) {
@@ -160,7 +167,7 @@ export function useLogFiles({
           // reference the existing id by path) — no duplicate entry, no re-read.
           const already = getDoc().files.find((f) => f.path === path);
           if (already) {
-            setState((s) => ({ ...s, activeFileId: already.id }));
+            if (activate) setState((s) => ({ ...s, activeFileId: already.id }));
             continue;
           }
           setBusy({ name: baseName(path) });
@@ -199,9 +206,10 @@ export function useLogFiles({
                 activeSetId: cur?.activeSetId ?? s.filterSets[0]?.id ?? null,
               };
               s.files.push(f);
-              // Auto-activate the freshly opened file — unless the user selected
-              // a file mid-read, in which case don't yank them away.
-              if (selectNonceRef.current === selectAtStart)
+              // Auto-activate the freshly opened file — unless the caller places
+              // it itself, or the user selected a file mid-read (don't yank them
+              // away).
+              if (activate && selectNonceRef.current === selectAtStart)
                 s.activeFileId = f.id;
             },
             { undoable: false },
