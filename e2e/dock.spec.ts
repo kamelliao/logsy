@@ -6,7 +6,7 @@ import {
   type Page,
 } from "./support/fixtures";
 
-// The dock: the tabbed panel (Filters / Bookmarks / Timeline / Compare / Notebook)
+// The dock: the tabbed panel (Filters / Timeline / Compare / Notebook)
 // and the shared side dock panels can be POPPED OUT into, so two can be read at
 // once. Any panel can be popped — the main dock just always keeps at least one.
 //
@@ -39,7 +39,6 @@ test.describe("dock — popping panels out", () => {
     await expect(page.locator(".panel-dock")).toHaveCount(2);
     expect(await tabsOf(popDock(page))).toEqual(["Filters"]);
     expect(await tabsOf(mainDock(page))).toEqual([
-      "Bookmarks",
       "Timeline",
       "Compare",
       "Notebook",
@@ -47,29 +46,22 @@ test.describe("dock — popping panels out", () => {
     // The panel's real body moved with it — not just the tab.
     await expect(popDock(page).locator(".filter-panel")).toBeVisible();
     // …and the main dock fell back to a tab that is actually still on it.
-    await expect(mainDock(page).locator(".ptab.active")).toHaveText(
-      "Bookmarks",
-    );
+    await expect(mainDock(page).locator(".ptab.active")).toHaveText("Timeline");
   });
 
-  test("Bookmarks and Notebook can be popped out too", async ({ page }) => {
-    await popOut(page, "Bookmarks");
+  test("Timeline and Notebook can be popped out too", async ({ page }) => {
+    await popOut(page, "Timeline");
     await popOut(page, "Notebook");
 
-    expect(await tabsOf(popDock(page))).toEqual(["Bookmarks", "Notebook"]);
-    expect(await tabsOf(mainDock(page))).toEqual([
-      "Filters",
-      "Timeline",
-      "Compare",
-    ]);
+    expect(await tabsOf(popDock(page))).toEqual(["Timeline", "Notebook"]);
+    expect(await tabsOf(mainDock(page))).toEqual(["Filters", "Compare"]);
     // The side dock is a tab strip like any other: switch between what's on it.
-    await popDock(page).locator(".ptab", { hasText: "Bookmarks" }).click();
-    await expect(popDock(page).getByText("No bookmarks yet")).toBeVisible();
+    await popDock(page).locator(".ptab", { hasText: "Timeline" }).click();
+    await expect(popDock(page).locator(".ptab.active")).toHaveText("Timeline");
   });
 
   test("the main dock always keeps at least one tab", async ({ page }) => {
     await popOut(page, "Filters");
-    await popOut(page, "Bookmarks");
     await popOut(page, "Notebook");
     await popOut(page, "Timeline");
 
@@ -94,7 +86,6 @@ test.describe("dock — popping panels out", () => {
     // Back on the main dock, in canonical order, and focused there.
     expect(await tabsOf(mainDock(page))).toEqual([
       "Filters",
-      "Bookmarks",
       "Compare",
       "Notebook",
     ]);

@@ -2920,6 +2920,61 @@ button {
   color: var(--error);
 }
 
+/* Bookmarks header pill (replaces the old Bookmarks dock tab): a bookmark icon
+   with a live count that opens the list as a dropdown. Overrides .dock-btn's
+   fixed square so the count can sit beside the glyph. */
+.lv-actions .dock-btn.bm-pill {
+  width: auto;
+  min-width: 22px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+.bm-pill-n {
+  font-family: var(--ui-font);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* The dropdown body: a bounded, self-scrolling panel. .menu-pop.bm-pop beats the
+   .settings-pop padding/min-width the shared PopoverContent layers on. */
+.menu-pop.bm-pop {
+  padding: 0;
+  width: 360px;
+  max-width: min(360px, calc(100vw - 24px));
+  max-height: min(60vh, 460px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.bm-pop .bm-wrap {
+  min-height: 0;
+}
+.bm-pop-empty {
+  padding: 22px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  text-align: center;
+  color: var(--text-3);
+}
+.bm-pop-empty-title {
+  font-family: var(--ui-font);
+  font-weight: 600;
+  color: var(--text-2);
+  margin-top: 2px;
+}
+.bm-pop-empty p {
+  margin: 0;
+  font-size: calc(var(--log-font-size, 12.5px) * 0.92);
+  line-height: 1.4;
+}
+
 /* Sonner toast overrides (light theme) */
 .logsy-toast {
   background: #fff !important;

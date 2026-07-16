@@ -32,7 +32,6 @@ interface Props {
   logview: ReactNode;
   filterBody: ReactNode;
   compareBody: ReactNode;
-  bookmarksBody: ReactNode;
   timelineBody: ReactNode;
   notebookBody: ReactNode;
 
@@ -51,7 +50,6 @@ interface Props {
 
   // Tab badge counts.
   compareCount: number;
-  markerCount: number;
   markCount: number;
   showCompare: boolean;
 
@@ -62,7 +60,6 @@ interface Props {
 
 const PANEL_LABEL: Record<PanelTab, string> = {
   filters: "Filters",
-  bookmarks: "Bookmarks",
   timeline: "Timeline",
   compare: "Compare",
   notebook: "Notebook",
@@ -101,7 +98,6 @@ export function Workspace({
   logview,
   filterBody,
   compareBody,
-  bookmarksBody,
   timelineBody,
   notebookBody,
   dock,
@@ -111,7 +107,6 @@ export function Workspace({
   poppedCollapsed,
   docChip,
   compareCount,
-  markerCount,
   markCount,
   showCompare,
   clearCompare,
@@ -143,22 +138,19 @@ export function Workspace({
 
   const bodyOf: Record<PanelTab, ReactNode> = {
     filters: filterBody,
-    bookmarks: bookmarksBody,
     timeline: timelineBody,
     compare: compareBody,
     notebook: notebookBody,
   };
   // The count a tab shows as its badge; null = this panel has no count concept.
   const countOf = (t: PanelTab): number | null =>
-    t === "bookmarks"
-      ? markerCount
-      : t === "timeline"
-        ? markCount
-        : t === "compare"
-          ? showCompare
-            ? compareCount
-            : 0
-          : null;
+    t === "timeline"
+      ? markCount
+      : t === "compare"
+        ? showCompare
+          ? compareCount
+          : 0
+        : null;
   // The label a collapsed right-hand dock shows on its vertical strip.
   const stripTitle = (t: PanelTab): string => {
     const n = countOf(t);
