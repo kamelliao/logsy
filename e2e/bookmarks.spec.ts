@@ -29,8 +29,10 @@ async function addBookmark(
   await expect(pop).toBeHidden();
 }
 
-const openBookmarksTab = (page: Page) =>
-  page.getByRole("button", { name: "Bookmarks" }).click();
+// The bookmarks list now lives behind the log header's pill (icon + count), which
+// opens it as a dropdown instead of a dock tab.
+const openBookmarksMenu = (page: Page) =>
+  page.getByRole("button", { name: /^Bookmarks/ }).click();
 
 const bmRows = (page: Page) => page.locator(".bm-row");
 
@@ -40,7 +42,7 @@ test.describe("Bookmarks", () => {
   });
 
   test("the panel is empty until a bookmark is added", async ({ page }) => {
-    await openBookmarksTab(page);
+    await openBookmarksMenu(page);
     await expect(page.getByText("No bookmarks yet")).toBeVisible();
   });
 
@@ -52,7 +54,7 @@ test.describe("Bookmarks", () => {
     // The gutter marker becomes active on the bookmarked row.
     await expect(logRow(page, 3).locator(".log-mark.on")).toBeVisible();
 
-    await openBookmarksTab(page);
+    await openBookmarksMenu(page);
     await expect(bmRows(page)).toHaveCount(1);
     await expect(page.locator(".bm-line")).toHaveText("3");
   });
@@ -62,7 +64,7 @@ test.describe("Bookmarks", () => {
   }) => {
     await addBookmark(page, 4, { note: "look here" });
 
-    await openBookmarksTab(page);
+    await openBookmarksMenu(page);
     await expect(page.locator(".bm-title")).toHaveText("look here");
     await expect(page.locator(".bm-preview")).toContainText(
       "ERROR sensor timeout",
@@ -71,18 +73,20 @@ test.describe("Bookmarks", () => {
 
   test("jumping from the panel selects the line", async ({ page }) => {
     await addBookmark(page, 6);
-    await openBookmarksTab(page);
+    await openBookmarksMenu(page);
 
     await page.locator(".bm-jump").click();
 
     const selected = page.locator(".log-row.selected");
     await expect(selected).toHaveCount(1);
     await expect(selected.locator(".log-gut")).toHaveText("6");
+    // The dropdown stays open after a jump, so you can step through bookmarks.
+    await expect(bmRows(page)).toBeVisible();
   });
 
   test("removing from the panel clears the row marker", async ({ page }) => {
     await addBookmark(page, 3);
-    await openBookmarksTab(page);
+    await openBookmarksMenu(page);
 
     await page.locator(".bm-del").click();
 
@@ -104,7 +108,7 @@ test.describe("Bookmarks", () => {
   test("clear all empties the panel", async ({ page }) => {
     await addBookmark(page, 2);
     await addBookmark(page, 5);
-    await openBookmarksTab(page);
+    await openBookmarksMenu(page);
     await expect(bmRows(page)).toHaveCount(2);
 
     await page.getByRole("button", { name: "Clear all" }).click();
@@ -114,7 +118,7 @@ test.describe("Bookmarks", () => {
   test("icon filter chips narrow the list by glyph", async ({ page }) => {
     await addBookmark(page, 2); // default "bookmark" icon
     await addBookmark(page, 5, { icon: "Star" });
-    await openBookmarksTab(page);
+    await openBookmarksMenu(page);
 
     const chips = page.locator(".bm-chip");
     // All + the two distinct icons in use.

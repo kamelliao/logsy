@@ -45,6 +45,7 @@ import {
   markerColor,
 } from "@/components/widgets/markers";
 import { SelectionLinesIcon } from "@/components/widgets/icons";
+import { BookmarksMenu } from "@/components/BookmarksMenu";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -191,10 +192,14 @@ interface LogViewProps {
   gotoSignal?: { n: number; nonce: number } | null;
   /** Save the filtered view text via a native dialog (provided by App). */
   onExportView?: (defaultName: string, text: string) => void;
-  /** Bookmarks for the active file (one per line number). */
+  /** Bookmarks for this pane's file (one per line number). */
   markers: Marker[];
-  /** Set by the Bookmarks tab to scroll/select a marked line (nonce re-triggers). */
+  /** Set by the bookmarks menu to scroll/select a marked line (nonce re-triggers). */
   markerJump?: { n: number; nonce: number } | null;
+  /** Jump to a bookmarked line (routes through App so a hidden line reveals first). */
+  onJumpMarker: (n: number) => void;
+  /** Resolves a line number to its raw text, for the bookmark menu's preview. */
+  lineText: (n: number) => string;
   onSetMarker: (n: number, icon: MarkerIcon, note: string) => void;
   onRemoveMarker: (n: number) => void;
   onToggleViewMode: (m: "all" | "matches") => void;
@@ -257,6 +262,8 @@ export function LogView({
   onExportView,
   markers,
   markerJump,
+  onJumpMarker,
+  lineText,
   onSetMarker,
   onRemoveMarker,
   onToggleViewMode,
@@ -1472,6 +1479,11 @@ export function LogView({
           )}
         </div>
         <div className="lv-actions">
+          <BookmarksMenu
+            markers={markers}
+            lineText={lineText}
+            onJump={onJumpMarker}
+          />
           <Tooltip>
             <TooltipTrigger
               render={

@@ -6,7 +6,7 @@ import { useStore, selectActiveMarkers } from "@/store";
  * Persisted with the active file (in `file.markers`) but kept off the undo stack.
  * Navigation to a bookmark (`jumpToMarker`) lives in App since it also touches the
  * log view's mode. Components that only need bookmarks can subscribe to the store
- * directly (see BookmarksPanel) instead of receiving these as props.
+ * directly (see BookmarksMenu) instead of receiving these as props.
  */
 export function useBookmarks(): {
   markers: Marker[];

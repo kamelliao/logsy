@@ -43,7 +43,6 @@ import { FilterPanel } from "@/components/FilterPanel";
 import { EditModal } from "@/components/dialogs/EditModal";
 import { CompareTable } from "@/components/CompareTable";
 import { useCompareCollapse } from "@/hooks/useCompareCollapse";
-import { BookmarksPanel } from "@/components/BookmarksPanel";
 import { TimelinePanel } from "@/components/TimelinePanel";
 import { MenuPopup } from "@/components/layout/MenuPopup";
 import { AboutModal } from "@/components/dialogs/AboutModal";
@@ -906,6 +905,8 @@ export function App() {
                 onExportView={exportFilteredView}
                 markers={b.markers}
                 markerJump={isFocused ? markerJump : undefined}
+                onJumpMarker={jumpToMarker}
+                lineText={(n) => b.view.rows[n - 1]?.text ?? ""}
                 onSetMarker={setMarker}
                 onRemoveMarker={removeMarker}
                 onSetEncoding={(label) => setFileEncoding(b.file.id, label)}
@@ -1096,13 +1097,6 @@ export function App() {
         }}
       />
     );
-    const bookmarksBody = (
-      <BookmarksPanel
-        lineText={(n) => view.rows[n - 1]?.text ?? ""}
-        onJump={jumpToMarker}
-      />
-    );
-
     const timelineBody = (
       <TimelinePanel
         tracks={tracks}
@@ -1145,7 +1139,6 @@ export function App() {
         logview={logview}
         filterBody={filterBody}
         compareBody={compareBody}
-        bookmarksBody={bookmarksBody}
         timelineBody={timelineBody}
         notebookBody={notebookBody}
         dock={dock}
@@ -1157,7 +1150,6 @@ export function App() {
         filterCollapsed={state.filterCollapsed}
         poppedCollapsed={!!state.poppedCollapsed}
         compareCount={compareRows.length}
-        markerCount={markers.length}
         markCount={marks.length}
         showCompare={showCompare}
         clearCompare={clearCompare}

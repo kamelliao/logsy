@@ -5,7 +5,6 @@
  */
 export const PANEL_TABS = [
   "filters",
-  "bookmarks",
   "timeline",
   "compare",
   "notebook",
