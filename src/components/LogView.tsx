@@ -1170,7 +1170,7 @@ export function LogView({
     return () => window.removeEventListener("mousemove", onMove);
   }, []);
 
-  function handleMouseUp() {
+  function handleMouseUp(e: React.MouseEvent) {
     const sel = window.getSelection();
     const text = sel?.toString().trim() ?? "";
     if (!text || !sel?.rangeCount) {
@@ -1181,8 +1181,11 @@ export function LogView({
       setSelMenu(null);
       return;
     }
-    const rect = sel.getRangeAt(0).getBoundingClientRect();
-    setSelMenu({ x: Math.max(4, rect.left), y: rect.top, text });
+    // Anchor the menu at the mouse-up point (where the cursor actually is), not
+    // the selection's bounding box — otherwise selecting a full line snaps the
+    // menu to the line's far-left edge. The WebView measures a collapsed caret
+    // range unreliably, so the pointer position is the robust source.
+    setSelMenu({ x: Math.max(4, e.clientX), y: e.clientY, text });
   }
 
   useEffect(() => {
