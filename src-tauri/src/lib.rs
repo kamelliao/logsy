@@ -1,3 +1,6 @@
+#[cfg(target_os = "windows")]
+mod jumplist;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
   // Startup escape hatches for when persisted state makes the app freeze/crash on
@@ -38,6 +41,10 @@ pub fn run() {
             .build(),
         )?;
       }
+      // Register the taskbar-icon Jump List ("New Empty Window" → relaunch with
+      // --safe). Windows-only, best-effort — never fail startup over it.
+      #[cfg(target_os = "windows")]
+      jumplist::register();
       Ok(())
     })
     .invoke_handler(tauri::generate_handler![window_controls, read_text_file, write_text_file, open_url])
