@@ -79,27 +79,41 @@ fn read_text_file_blocking(path: &str, forced: Option<&str>) -> Result<ReadResul
   Ok(decode_bytes(&bytes, forced))
 }
 
+// chardetng scans byte-by-byte, so feeding it a huge log (firmware dumps run to
+// hundreds of MB) is what made a mis-sniffed open drag on for seconds. A prefix
+// this size is more than enough to recognize any legacy single/multi-byte
+// encoding, and bounds detection cost regardless of file size.
+const SNIFF_LIMIT: usize = 1 << 20; // 1 MiB
+
 // Decode raw file bytes to text, reporting the encoding actually used. Split out
 // from the disk read so it can be unit-tested. A user override wins outright;
 // an unknown override label falls back to auto-detection rather than failing.
 fn decode_bytes(bytes: &[u8], forced: Option<&str>) -> ReadResult {
   // Pick an encoding. A user override wins outright. Otherwise an explicit BOM
-  // wins; failing that, sniff BOM-less UTF-16 ourselves before falling back to
-  // chardetng: chardetng never guesses UTF-16 (the Encoding Standard only
-  // recognizes it via a BOM), so without this a BOM-less UTF-16 log decodes as
-  // a single-byte encoding — the NUL high bytes survive and the stray CR/LF low
-  // bytes split lines apart, producing the broken / blank-line output. Finally
-  // fall back to chardetng for the legacy single-byte and multi-byte encodings
-  // it does handle.
+  // wins; failing that, sniff BOM-less UTF-16 ourselves (chardetng never guesses
+  // UTF-16 — the Encoding Standard only recognizes it via a BOM — so without this
+  // a BOM-less UTF-16 log decodes as a single-byte encoding: the NUL high bytes
+  // survive and the stray CR/LF low bytes split lines apart). Then take the fast
+  // path for valid UTF-8: chardetng labels a pure-ASCII/UTF-8 file "windows-1252"
+  // (harmless to decode but a wrong badge) AND scanning the whole file for the
+  // guess is the slow part — a UTF-8 validity check is SIMD-fast and settles the
+  // common case outright. Only genuine legacy encodings reach chardetng, and even
+  // then we sniff a bounded prefix, not the whole file.
+  //
+  // Order matters: BOM-less UTF-16 of ASCII (e.g. "A" -> 41 00) is itself valid
+  // UTF-8 with embedded NULs, so the UTF-16 sniff must run before the UTF-8 check.
   let forced_enc = forced.and_then(|label| encoding_rs::Encoding::for_label(label.as_bytes()));
   let encoding = forced_enc.unwrap_or_else(|| {
     match encoding_rs::Encoding::for_bom(bytes) {
       Some((enc, _bom_len)) => enc,
-      None => sniff_bomless_utf16(bytes).unwrap_or_else(|| {
-        let mut detector = chardetng::EncodingDetector::new();
-        detector.feed(bytes, true);
-        detector.guess(None, true)
-      }),
+      None => sniff_bomless_utf16(bytes)
+        .or_else(|| std::str::from_utf8(bytes).is_ok().then_some(encoding_rs::UTF_8))
+        .unwrap_or_else(|| {
+          let sample = &bytes[..bytes.len().min(SNIFF_LIMIT)];
+          let mut detector = chardetng::EncodingDetector::new();
+          detector.feed(sample, sample.len() == bytes.len());
+          detector.guess(None, true)
+        }),
     }
   });
 
@@ -186,6 +200,58 @@ mod tests {
     let forced = decode_bytes(BIG5_TEST, Some("big5"));
     assert_eq!(forced.text, "測試");
     assert_eq!(forced.encoding, "Big5");
+  }
+
+  // A longer, realistic CJK log line so detection has enough signal to chew on.
+  const CJK: &str = "2026-07-21 12:00:00 [INFO] 系統啟動完成，載入韌體模組 firmware v1.2.3\n韌體初始化：測試通道 0x1A2B，狀態正常，繼續執行後續流程與自我檢測程序\n";
+
+  #[test]
+  fn utf8_with_bom() {
+    let mut b = vec![0xEF, 0xBB, 0xBF];
+    b.extend_from_slice(CJK.as_bytes());
+    let r = decode_bytes(&b, None);
+    assert_eq!(r.encoding, "UTF-8");
+    assert_eq!(r.text, CJK); // BOM stripped
+  }
+
+  #[test]
+  fn utf16le_with_bom() {
+    let mut b = vec![0xFF, 0xFE];
+    b.extend_from_slice(&utf16le(CJK));
+    let r = decode_bytes(&b, None);
+    assert_eq!(r.encoding, "UTF-16LE");
+    assert_eq!(r.text, CJK);
+  }
+
+  #[test]
+  fn utf16be_with_bom() {
+    let mut b = vec![0xFE, 0xFF];
+    b.extend_from_slice(&utf16be(CJK));
+    let r = decode_bytes(&b, None);
+    assert_eq!(r.encoding, "UTF-16BE");
+    assert_eq!(r.text, CJK);
+  }
+
+  #[test]
+  fn utf8_cjk_no_bom() {
+    // No BOM, non-ASCII UTF-8: the validity fast path must claim it as UTF-8,
+    // never mojibake it through a single-byte guess.
+    let r = decode_bytes(CJK.as_bytes(), None);
+    assert_eq!(r.encoding, "UTF-8");
+    assert_eq!(r.text, CJK);
+  }
+
+  #[test]
+  fn valid_utf8_detected_as_utf8_not_windows() {
+    // A UTF-8 file with non-ASCII content must report UTF-8, not the windows-1252
+    // chardetng would otherwise land on — and it takes the fast path, not the scan.
+    let res = decode_bytes("héllo wörld — log line\n".as_bytes(), None);
+    assert_eq!(res.encoding, "UTF-8");
+
+    // Pure ASCII is valid UTF-8 too: it should read UTF-8, not "windows-1252".
+    let ascii = decode_bytes(KLOG.as_bytes(), None);
+    assert_eq!(ascii.encoding, "UTF-8");
+    assert_eq!(ascii.text, KLOG);
   }
 
   #[test]

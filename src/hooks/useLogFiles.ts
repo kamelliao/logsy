@@ -64,6 +64,9 @@ export interface LogFilesApi {
   /** Close several logs at once, behind a single confirm. */
   deleteFiles: (fids: string[]) => Promise<void>;
   openFiles: () => Promise<void>;
+  /** Abandon the in-flight file open: the disk read can't be killed, but its
+   *  result is dropped (no file added) and the loading overlay clears. */
+  cancelOpen: () => void;
   /** `setId`: the filter set the new documents open on (a pane drop passes that
    *  pane's set); defaults to the active file's. */
   loadPaths: (
@@ -117,6 +120,17 @@ export function useLogFiles({
   // by the time the file lands, the user navigated mid-read — comparing
   // activeFileId alone can't see a re-click of the already-active file.
   const selectNonceRef = useRef(0);
+
+  // Bumped when the user cancels an in-flight open. A read can't be killed
+  // (`read_text_file` runs on a spawn_blocking worker), so every read snapshots
+  // this before its await and drops its result if it moved — the file is never
+  // added and the overlay clears immediately, freeing the UI from a stuck /
+  // super-slow read.
+  const openCancelRef = useRef(0);
+  const cancelOpen = useCallback(() => {
+    openCancelRef.current++;
+    setBusy(null);
+  }, []);
 
   const selectFile = (fid: string) => {
     setOpenScreen(false);
@@ -193,8 +207,10 @@ export function useLogFiles({
           }
           setBusy({ name: baseName(path) });
           // The busy overlay is non-blocking, so the user may switch files while
-          // this one reads — snapshot the selection nonce to detect it.
+          // this one reads — snapshot the selection nonce to detect it. The cancel
+          // nonce is snapshotted too: the Cancel button bumps it to abandon the open.
           const selectAtStart = selectNonceRef.current;
+          const cancelAtStart = openCancelRef.current;
           await nextPaint(); // let the overlay paint before the read/split blocks
           try {
             const res = await invoke<{ text: string; encoding: string }>(
@@ -207,6 +223,9 @@ export function useLogFiles({
             lastErr = `${baseName(path)} — ${String(e)}`;
             continue;
           }
+          // Aborted while this file read: drop the result and stop — don't add it,
+          // and don't churn through any remaining paths in the batch.
+          if (openCancelRef.current !== cancelAtStart) return;
           pushRecent("recentFiles", path);
           await nextPaint(); // yield again so the overlay stays visible before the synchronous line-split
           const lns = splitLines(text);
@@ -480,6 +499,7 @@ export function useLogFiles({
     deleteFile,
     deleteFiles,
     openFiles,
+    cancelOpen,
     loadPaths,
     setFileEncoding,
   };

@@ -44,6 +44,7 @@ import { FILE_ICONS, FileGlyph } from "@/components/widgets/fileIcons";
 import { disambiguationSuffixes } from "@/lib/path";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/store";
+import { useClampedPopup } from "@/hooks/useClampedPopup";
 import { UNGROUPED } from "@/store/slices/fileGroupSlice";
 import {
   Tooltip,
@@ -119,8 +120,10 @@ function FileItem({
   selectedCount,
   onCloseSelected,
 }: FileItemProps) {
-  // Right-click context menu, anchored at the cursor.
+  // Right-click context menu, anchored at the cursor but clamped to the viewport
+  // so a long "Move to group" list can't run off the bottom edge and get cut off.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuPos = useClampedPopup(menu);
   // The row is part of a multi-selection → its menu acts on the batch, not on it alone.
   const batch = selected && selectedCount > 1;
 
@@ -245,8 +248,14 @@ function FileItem({
 
       {menu && (
         <div
+          ref={menuPos.ref}
           className="menu-pop file-menu"
-          style={{ position: "fixed", left: menu.x, top: menu.y, zIndex: 200 }}
+          style={{
+            position: "fixed",
+            left: menuPos.left,
+            top: menuPos.top,
+            zIndex: 200,
+          }}
         >
           <div className="menu-section">Icon</div>
           <div className="file-icon-grid">
@@ -421,8 +430,10 @@ function GroupSection({
   children,
 }: GroupSectionProps) {
   const open = !group.collapsed;
-  // Options menu, anchored at the cursor (right-click) or under the kebab.
+  // Options menu, anchored at the cursor (right-click) or under the kebab, and
+  // clamped to the viewport so it can't be cut off near the bottom of the list.
   const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const menuPos = useClampedPopup(menu);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(group.name);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -540,8 +551,9 @@ function GroupSection({
         </button>
         {menu && (
           <div
+            ref={menuPos.ref}
             className="menu-pop fg-menu"
-            style={{ left: menu.x, top: menu.y }}
+            style={{ left: menuPos.left, top: menuPos.top }}
           >
             <div
               className="menu-item"
