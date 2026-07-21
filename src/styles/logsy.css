@@ -614,6 +614,14 @@ button {
   position: fixed;
   z-index: 200;
 }
+/* The sidebar's cursor-anchored menus are clamped to the viewport by JS, but a
+   menu with many groups can still be taller than the screen — cap it and let the
+   contents scroll instead of spilling past the top/bottom edge. */
+.file-menu,
+.fg-menu {
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+}
 .menu-item.on {
   font-weight: 600;
 }
@@ -6048,8 +6056,25 @@ button {
 .busy-overlay.passive .busy-card {
   flex-direction: row;
   gap: 12px;
-  padding: 12px 20px;
+  padding: 12px 12px 12px 20px;
   border: 1px solid var(--border-strong);
+  /* The overlay is click-through, but the card holds the Cancel button — let it
+     take pointer input again. */
+  pointer-events: auto;
+}
+/* Cancel button on the passive open-file card — abandons a slow/stuck read. */
+.busy-cancel {
+  padding: 4px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--panel-bg);
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.busy-cancel:hover {
+  background: var(--row-hover);
 }
 .busy-overlay.passive .busy-spinner {
   width: 18px;

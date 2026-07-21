@@ -3,6 +3,9 @@ import type { ReactNode } from "react";
 interface Props {
   // The file currently being read from disk, or null.
   busy: { name: string } | null;
+  // Abandon the in-flight file open (the disk read can't be killed, but its
+  // result is dropped and this overlay clears).
+  onCancelBusy: () => void;
   // A filter/pack file being read from disk (store-driven), or null.
   loadingLabel: string | null;
   // True while React computes the view for a freshly selected large file.
@@ -17,6 +20,7 @@ interface Props {
  */
 export function Overlays({
   busy,
+  onCancelBusy,
   loadingLabel,
   isSwitchingFile,
 }: Props): ReactNode {
@@ -24,12 +28,21 @@ export function Overlays({
     <>
       {/* loading indicator — shown while a log file is read from disk. Passive
           (click-through) so the app stays usable: the user can keep working in,
-          or switch to, another open file while a slow read is in flight. */}
+          or switch to, another open file while a slow read is in flight. The
+          Cancel button (which must take clicks, hence pointer-events on the card)
+          abandons a read that's dragging on — e.g. a large / stuck file. */}
       {busy && (
         <div className="busy-overlay passive">
           <div className="busy-card">
             <div className="busy-spinner" />
             <div className="busy-text">Opening {busy.name}…</div>
+            <button
+              type="button"
+              className="busy-cancel"
+              onClick={onCancelBusy}
+            >
+              Cancel
+            </button>
           </div>
         </div>
       )}

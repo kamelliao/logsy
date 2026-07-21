@@ -310,6 +310,7 @@ export function App() {
     deleteFile,
     deleteFiles,
     openFiles,
+    cancelOpen,
     loadPaths,
     setFileEncoding,
   } = useLogFiles({ file, paneFileIds, osDropRef, osDragRef });
@@ -1275,6 +1276,7 @@ export function App() {
 
           <Overlays
             busy={busy}
+            onCancelBusy={cancelOpen}
             loadingLabel={loadingLabel}
             isSwitchingFile={isSwitchingFile}
           />
