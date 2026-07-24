@@ -67,6 +67,7 @@ import { ImagePaste } from "@/components/notebook/ImagePaste";
 import { CompareCardNode } from "@/components/notebook/CompareCardNode";
 import { TimelineCardNode } from "@/components/notebook/TimelineCardNode";
 import { CodeBlockNode } from "@/components/notebook/CodeBlockNode";
+import { TocNode } from "@/components/notebook/TocNode";
 import { SlashCommand } from "@/components/notebook/SlashCommand";
 import { useStore } from "@/store";
 
@@ -180,6 +181,7 @@ function NotebookEditorManager({ notebookId, onEditor }: ManagerProps) {
       CompareCardNode,
       TimelineCardNode,
       CodeBlockNode,
+      TocNode,
       SlashCommand,
     ],
     content: (initialDoc as object | null) ?? "",

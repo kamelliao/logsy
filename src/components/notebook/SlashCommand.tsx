@@ -19,6 +19,7 @@ import {
   SquareCode,
   Minus,
   Table as TableIcon,
+  ListTree,
   type LucideIcon,
 } from "lucide-react";
 
@@ -112,6 +113,19 @@ const ITEMS: SlashItem[] = [
     icon: Minus,
     keywords: ["hr", "horizontal", "rule"],
     run: (e, r) => e.chain().focus().deleteRange(r).setHorizontalRule().run(),
+  },
+  {
+    title: "Table of contents",
+    hint: "Live outline of headings",
+    icon: ListTree,
+    keywords: ["toc", "outline", "contents", "mulu"],
+    run: (e, r) =>
+      e
+        .chain()
+        .focus()
+        .deleteRange(r)
+        .insertContent({ type: "tableOfContents" })
+        .run(),
   },
 ];
 

@@ -17,7 +17,10 @@ function buildHtmlFromLines(lines: LineEntry[]): string {
   return lines
     .map(
       (l) =>
-        `<span class="pl-row"><span class="pl-num">${l.n}</span><span class="pl-text">${escapeHtml(l.text)}</span></span>`,
+        // `contenteditable="false"` makes the line number a non-editable atomic
+        // island: the text caret can't land in it (no blinking `|`) and, with
+        // `user-select:none`, a multi-line drag-selection skips it entirely.
+        `<span class="pl-row"><span class="pl-num" contenteditable="false">${l.n}</span><span class="pl-text">${escapeHtml(l.text)}</span></span>`,
     )
     .join("");
 }
@@ -50,6 +53,12 @@ export function PinnedLinesView({ node, updateAttributes }: NodeViewProps) {
   useEffect(() => {
     if (preRef.current && !initialized.current) {
       preRef.current.innerHTML = richContent || buildHtmlFromLines(lines);
+      // Older cards were saved before line numbers were marked non-editable;
+      // normalise on restore so the caret never lands in a number and drag
+      // selections skip them (see buildHtmlFromLines).
+      preRef.current.querySelectorAll(".pl-num").forEach((el) => {
+        (el as HTMLElement).contentEditable = "false";
+      });
       initialized.current = true;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

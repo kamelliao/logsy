@@ -25,6 +25,7 @@ import {
   GripVertical,
   Plus,
   Trash2,
+  CopyPlus,
   PaintBucket,
 } from "lucide-react";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -39,7 +40,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { useNotebookEditor } from "@/context/NotebookContext";
 import { triggerPLSave } from "@/components/notebook/PinnedLinesNode";
-import { lowlight } from "@/components/notebook/lowlight";
+import { lowlight, CODE_LANGUAGES } from "@/components/notebook/lowlight";
 import type { Editor } from "@tiptap/react";
 
 // ── PinnedLines detection ────────────────────────────────────────────────────
@@ -274,6 +275,10 @@ type HastNode =
       children: HastNode[];
     };
 
+const EXPORT_LANG_LABELS = new Map(
+  CODE_LANGUAGES.map((l) => [l.value, l.label] as const),
+);
+
 /** getHTML() emits plain `<pre><code>` — highlighting lives in editor
  *  decorations, not the document model — so re-run lowlight over the exported
  *  markup (reusing the editor's instance, only our registered languages). */
@@ -288,7 +293,100 @@ function highlightExportedCode(html: string): string {
       code.innerHTML = hastToHtml(lowlight.highlight(lang, text) as HastNode);
       code.classList.add("hljs");
     }
+
+    // Line numbers / highlighted lines round-trip on the <pre> as data attrs.
+    // Rebuild the same gutter + absolute highlight layer the editor uses (a
+    // static copy — no clicks). We do NOT split the highlighted markup per line
+    // (hljs spans can straddle newlines); instead the highlight rows and gutter
+    // ride an absolute layer aligned to the code's fixed line grid.
+    const pre = code.parentElement;
+    if (!pre) return;
+    const showLn = pre.getAttribute("data-line-numbers") === "true";
+    let hlLines: number[] = [];
+    try {
+      const raw = JSON.parse(pre.getAttribute("data-highlight") || "[]");
+      if (Array.isArray(raw)) hlLines = raw as number[];
+    } catch {
+      /* ignore */
+    }
+    const hasLang = !!lang && lang !== "plaintext";
+    // Wrap when the block carries line numbers, highlights, or a real language
+    // (the language badge). A bare plaintext block stays a plain <pre>.
+    if (!showLn && hlLines.length === 0 && !hasLang) return;
+
+    const lineCount = Math.max(1, text.split("\n").length);
+    const hlSet = new Set(hlLines);
+    const nums = Array.from({ length: lineCount }, (_, i) => i + 1);
+    const escLabel = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const hlLayer =
+      `<div class="cbx-hl" aria-hidden="true">` +
+      nums
+        .map(
+          (n) => `<div class="cbx-hl-row${hlSet.has(n) ? " on" : ""}"></div>`,
+        )
+        .join("") +
+      `</div>`;
+    const gutter = showLn
+      ? `<div class="cbx-gutter">` +
+        nums.map((n) => `<span>${n}</span>`).join("") +
+        `</div>`
+      : "";
+    // Language badge, top-right — mirrors the editor's language dropdown spot.
+    const badge = hasLang
+      ? `<div class="cbx-lang">${escLabel(EXPORT_LANG_LABELS.get(lang!) ?? lang!)}</div>`
+      : "";
+
+    const wrapper = doc.createElement("div");
+    wrapper.className = "cbx";
+    if (showLn) wrapper.setAttribute("data-ln", "true");
+    pre.parentNode?.replaceChild(wrapper, pre);
+    wrapper.innerHTML = badge + hlLayer + gutter;
+    pre.removeAttribute("data-line-numbers");
+    pre.removeAttribute("data-highlight");
+    pre.className = "cbx-pre";
+    wrapper.appendChild(pre);
   });
+  return doc.body.innerHTML;
+}
+
+const escHtml = (s: string) =>
+  s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+/** Turn each `tableOfContents` placeholder into a static anchor list built from
+ *  the exported headings (getHTML emits an empty div — the live outline is
+ *  NodeView-only). Headings get ids so the links resolve. */
+function renderExportedToc(html: string): string {
+  if (!/data-type="table-of-contents"/.test(html)) return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const headings = Array.from(doc.querySelectorAll("h1, h2, h3"));
+  headings.forEach((h, i) => {
+    if (!h.id) {
+      const slug = (h.textContent || "")
+        .toLowerCase()
+        .trim()
+        .replace(/[^\w一-鿿]+/g, "-")
+        .replace(/^-+|-+$/g, "");
+      h.id = `h-${i}-${slug || "section"}`;
+    }
+  });
+  doc
+    .querySelectorAll('div[data-type="table-of-contents"]')
+    .forEach((holder) => {
+      holder.className = "toc-export";
+      holder.removeAttribute("data-type");
+      if (!headings.length) {
+        holder.innerHTML = `<div class="toc-empty">No headings</div>`;
+        return;
+      }
+      holder.innerHTML = headings
+        .map((h) => {
+          const level = h.tagName === "H1" ? 1 : h.tagName === "H2" ? 2 : 3;
+          const text = (h.textContent || "").trim() || "Untitled heading";
+          return `<a class="toc-item toc-l${level}" href="#${h.id}">${escHtml(text)}</a>`;
+        })
+        .join("");
+    });
   return doc.body.innerHTML;
 }
 
@@ -298,7 +396,7 @@ async function exportHTML(editor: Editor, title: string) {
     filters: [{ name: "HTML", extensions: ["html"] }],
   });
   if (typeof path !== "string") return;
-  const body = highlightExportedCode(editor.getHTML());
+  const body = renderExportedToc(highlightExportedCode(editor.getHTML()));
   const esc = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   const html = `<!doctype html>
@@ -309,7 +407,14 @@ async function exportHTML(editor: Editor, title: string) {
 <title>${esc(title)}</title>
 <style>
   body{max-width:820px;margin:2rem auto;padding:0 1rem;font-family:-apple-system,"Noto Sans TC",sans-serif;line-height:1.7}
-  h1,h2,h3{line-height:1.3}
+  h1,h2,h3{line-height:1.3;scroll-margin-top:1rem}
+  .toc-export{margin:1rem 0}
+  .toc-export .toc-item{display:block;padding:3px 6px;border-radius:4px;color:#337ea9;text-decoration:underline;text-underline-offset:2px;font-size:13px}
+  .toc-export .toc-item:hover{background:#f0f2f4}
+  .toc-export .toc-l1{font-weight:600;color:#1c1f23}
+  .toc-export .toc-l2{padding-left:20px}
+  .toc-export .toc-l3{padding-left:34px;font-size:12.5px}
+  .toc-export .toc-empty{color:#8b949e;font-size:12.5px}
   figure{margin:1.5rem 0}
   figure img{max-width:100%;border:1px solid #ddd;border-radius:6px}
   img{max-width:100%;height:auto;border:1px solid #ddd;border-radius:6px;display:block;margin:.8rem 0}
@@ -320,6 +425,17 @@ async function exportHTML(editor: Editor, title: string) {
   th{background:#f5f5f5;font-weight:600;text-align:left}
   pre{background:#f6f8fa;padding:1rem;border-radius:6px;overflow-x:auto;font-family:ui-monospace,monospace;font-size:.85rem}
   pre code{background:none;padding:0}
+  /* code block with a language badge / line numbers / highlighted lines */
+  .cbx{position:relative;display:flex;margin:1rem 0;background:#f6f8fa;border-radius:6px}
+  .cbx-lang{position:absolute;top:0;right:0;z-index:2;padding:2px 8px;font-family:-apple-system,"Noto Sans TC",sans-serif;font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;color:#8b949e;background:#eef1f4;border-bottom-left-radius:6px;border-top-right-radius:6px}
+  .cbx-hl{position:absolute;inset:0;z-index:0;padding:1rem 0;font-size:.85rem;line-height:1.6;pointer-events:none}
+  .cbx-hl-row{height:calc(1.6 * 1em)}
+  .cbx-hl-row.on{background:rgba(255,196,0,.13);box-shadow:inset 2px 0 0 rgba(255,196,0,.75)}
+  .cbx-gutter{position:relative;z-index:1;flex:0 0 auto;padding:1rem 0;font-family:ui-monospace,monospace;font-size:.85rem;line-height:1.6;text-align:right;user-select:none;color:#9b9a97}
+  .cbx-gutter span{display:block;height:calc(1.6 * 1em);padding:0 .7em 0 .9em;min-width:2.2em}
+  .cbx-pre{position:relative;z-index:1;flex:1 1 auto;min-width:0;margin:0;padding:1rem 1em;background:transparent;border-radius:0;overflow-x:auto;line-height:1.6;font-size:.85rem}
+  .cbx[data-ln] .cbx-pre{padding-left:.4em}
+  .cbx-pre code{background:none;padding:0}
   blockquote{border-left:3px solid #ccc;margin:0;padding-left:1rem;color:#555}
   .hljs-comment,.hljs-quote{color:#6e7781;font-style:italic}
   .hljs-keyword,.hljs-selector-tag,.hljs-literal,.hljs-type{color:#cf222e}
@@ -334,13 +450,20 @@ async function exportHTML(editor: Editor, title: string) {
   .hljs-strong{font-weight:600}
   [data-type="pinned-lines"]{border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin:1rem 0}
   [data-type="compare-card"]{border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin:1rem 0}
-  [data-type="timeline-card"]{margin:1rem 0}
+  /* timeline-card: same bordered "log block" frame as pinned-lines — caption as a
+     TOP header bar (like .pl-source-bar), image flush below. The figcaption is
+     after the img in the DOM, so flex order lifts it above without reordering
+     the exported markup. */
+  [data-type="timeline-card"]{display:flex;flex-direction:column;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden;margin:1rem 0}
+  [data-type="timeline-card"] img{order:2;display:block;width:100%;max-width:100%;margin:0;border:none;border-radius:0}
+  [data-type="timeline-card"] figcaption{order:1;margin:0;padding:5px 10px;border-bottom:1px solid #e2e8f0;background:#f8f9fa;font-size:12px;color:#555}
+  [data-type="timeline-card"] figcaption::before{content:"📊 "}
   .pl-source-bar{display:flex;align-items:center;gap:6px;padding:5px 10px;background:#f8f9fa;border-bottom:1px solid #e2e8f0;font-size:12px;color:#555}
   pre.pl-body{margin:0;padding:6px 10px 8px;line-height:1.55;font-family:ui-monospace,monospace;font-size:12.5px;white-space:pre-wrap}
   .pl-row{display:flex;gap:10px}
   .pl-num{min-width:4ch;text-align:right;color:#9b9a97;flex-shrink:0;user-select:none}
   .pl-text{color:#1c1f23;min-width:0;overflow-wrap:anywhere;word-break:break-word}
-  strong,b{font-weight:800}
+  strong{font-weight:700}
   /* compare-card: same bordered "log block" chrome as pinned-lines (header bar +
      a borderless, mono, horizontally-ruled table) instead of the generic full
      table styling above. */
@@ -681,6 +804,13 @@ function FloatingBubble({ editor }: { editor: Editor }) {
         setColorOpen(null);
         return;
       }
+    }
+    // No inline-formatting bubble inside a code block — its marks don't apply to
+    // code, and a text selection there is for reading/copying, not styling.
+    if (psel.$from.parent.type.spec.code) {
+      setAnchor(null);
+      setColorOpen(null);
+      return;
     }
     const sel = window.getSelection();
     if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
@@ -1024,6 +1154,38 @@ function useBlockDrag(editor: Editor, onGripClick: (pos: number) => void) {
     [editor],
   );
 
+  const duplicateAt = useCallback(
+    (pos: number) => {
+      const view = editor.view;
+      const node = view.state.doc.nodeAt(pos);
+      if (!node) return;
+      const insertPos = pos + node.nodeSize;
+      // Insert a DISTINCT copy (fresh object, equal value), NOT the same `node`
+      // reference: prosemirror-view's ViewTreeUpdater has a `desc.node === node`
+      // identity fast-path, so re-using one reference at two positions makes it
+      // match the copy to the original's DOM desc — the selection highlight then
+      // lands on the wrong block (both/neither turn blue). `node.copy()` sidesteps
+      // that while carrying over attrs/marks/content.
+      const tr = view.state.tr.insert(insertPos, node.copy(node.content));
+      // Select the fresh copy so it's visibly the new block (blue rect).
+      try {
+        tr.setSelection(NodeSelection.create(tr.doc, insertPos));
+      } catch {
+        /* copy not selectable — leave the selection as-is */
+      }
+      // Hide the gutter handle for this edit. The drag-handle plugin otherwise
+      // maps its tracked position through the insertion (which lands back on the
+      // ORIGINAL, since the copy went in after it) and re-pins the grip there —
+      // so a follow-up Delete without moving the pointer would hit the original.
+      // Hiding it clears that stale target; moving the pointer re-resolves the
+      // handle onto whatever block is actually under it.
+      tr.setMeta("hideDragHandle", true);
+      view.dispatch(tr.scrollIntoView());
+      view.focus();
+    },
+    [editor],
+  );
+
   const startDrag = useCallback(
     (e: React.PointerEvent) => {
       const src = hovered.current;
@@ -1144,7 +1306,7 @@ function useBlockDrag(editor: Editor, onGripClick: (pos: number) => void) {
     [editor, selectBlock, onGripClick],
   );
 
-  return { onNodeChange, startDrag, addBelow, deleteAt };
+  return { onNodeChange, startDrag, addBelow, deleteAt, duplicateAt };
 }
 
 // ── table toolbar (add / remove rows & columns) ──────────────────────────────
@@ -1510,10 +1672,8 @@ function NoteEditorInner({
     setMenuOpen(true);
   }, []);
 
-  const { onNodeChange, startDrag, addBelow, deleteAt } = useBlockDrag(
-    editor,
-    onGripClick,
-  );
+  const { onNodeChange, startDrag, addBelow, deleteAt, duplicateAt } =
+    useBlockDrag(editor, onGripClick);
 
   return (
     <div className="nb-editor-wrap">
@@ -1558,7 +1718,16 @@ function NoteEditorInner({
             sideOffset={4}
           >
             <DropdownMenuItem
-              variant="destructive"
+              onClick={() => {
+                if (menuPosRef.current >= 0) duplicateAt(menuPosRef.current);
+                setMenuOpen(false);
+              }}
+            >
+              <CopyPlus size={14} />
+              Duplicate
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              className="nb-block-del"
               onClick={() => {
                 if (menuPosRef.current >= 0) deleteAt(menuPosRef.current);
                 setMenuOpen(false);

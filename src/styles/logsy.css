@@ -4368,6 +4368,12 @@ button {
 .menu-item.danger:hover {
   background: #fdecec;
 }
+/* Notebook block "Delete": neutral by default, turns danger only on hover (the
+   icon follows via currentColor). */
+.menu-item.nb-block-del:hover {
+  color: var(--error);
+  background: #fdecec;
+}
 /* "Remove from compare/timeline" — reversible un-staging, NOT data loss, so it
    gets a soft amber (between neutral and the red reserved for real deletes). The
    Minus glyph carries the add/remove direction; amber reinforces it. */
@@ -7648,6 +7654,10 @@ button {
   position: relative;
   display: flex;
   flex-direction: column;
+  /* width source for the container query below: once the panel is narrower than
+     the centred column, the auto-margins vanish and the horizontal padding is
+     the only room the left gutter ("+" / grip) has — so widen it when narrow. */
+  container: nbdoc / inline-size;
 }
 /* Notion-style page title: app chrome above the document, bound to the
    notebook's name. Same column width as the editor body. */
@@ -7693,6 +7703,19 @@ button {
   line-height: 1.7;
   color: var(--text);
   min-height: 100%;
+}
+/* Narrow panel: reserve more left/right padding so the block gutter ("+" / grip)
+   that overhangs the text column's left edge stays fully visible instead of
+   being clipped by .nb-content's overflow. Applies to the title too. */
+@container nbdoc (max-width: 760px) {
+  .nb-prosemirror .ProseMirror {
+    padding-left: 64px;
+    padding-right: 64px;
+  }
+  .nb-title-wrap {
+    padding-left: 64px;
+    padding-right: 64px;
+  }
 }
 .nb-prosemirror .ProseMirror p.is-editor-empty:first-child::before {
   content: attr(data-placeholder);
@@ -7765,8 +7788,10 @@ button {
 }
 /* bold: use the heaviest face (Segoe UI Black on Windows) so it reads clearly
    bolder — 800 has no dedicated face and snaps back down to 700. */
+/* Prose (rich-text) bold: a normal bold weight. The pinned-log-line Bold is
+   emphasised separately (`.pl-body b` below) so it reads heavier than prose. */
 .nb-prosemirror .ProseMirror strong {
-  font-weight: 900;
+  font-weight: 600;
 }
 /* highlight mark: the bg hues are pastel and assume dark text, so pin the text
    dark even in the dark theme (where body text is light) — otherwise light text
@@ -8026,7 +8051,7 @@ body.nb-img-resizing * {
 /* ── slash command menu ("/" to insert a block) ────────────────────────────── */
 .nb-slash-menu {
   min-width: 230px;
-  max-height: 320px;
+  max-height: 240px;
   overflow-y: auto;
   padding: 4px;
   background: var(--app-bg);
@@ -8177,6 +8202,11 @@ body.nb-block-dragging * {
   border: none;
   border-radius: 6px;
   background: var(--panel-bg-2);
+  /* Shared line metric: the gutter, highlight layer and code all use these so a
+     numbered / highlighted row lines up with its logical code line. */
+  --cb-fs: 12.5px;
+  --cb-lh: 1.6;
+  --cb-pad-y: 1.25em;
 }
 /* floating controls, top-right, surfaced on hover (overlay the code) */
 .cb-toolbar {
@@ -8281,17 +8311,82 @@ body.nb-block-dragging * {
   display: inline-flex;
   color: var(--accent);
 }
+/* Row: [gutter] [code]. Highlight layer is absolutely stacked behind both. */
+.nb-prosemirror .ProseMirror .cb-card .cb-body {
+  position: relative;
+  display: flex;
+  align-items: stretch;
+}
+/* Full-width highlight rows behind the code, aligned to the code's line grid. */
+.nb-prosemirror .ProseMirror .cb-card .cb-hl-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  padding: var(--cb-pad-y) 0;
+  font-size: var(--cb-fs);
+  line-height: var(--cb-lh);
+  pointer-events: none;
+}
+.nb-prosemirror .ProseMirror .cb-card .cb-hl-row {
+  height: calc(var(--cb-lh) * 1em);
+}
+.nb-prosemirror .ProseMirror .cb-card .cb-hl-row.on {
+  background: rgba(255, 196, 0, 0.13);
+  box-shadow: inset 2px 0 0 rgba(255, 196, 0, 0.75);
+}
+/* Left gutter of clickable line numbers. */
+.nb-prosemirror .ProseMirror .cb-card .cb-gutter {
+  position: relative;
+  z-index: 1;
+  flex: 0 0 auto;
+  padding: var(--cb-pad-y) 0;
+  font-family: var(--mono-font);
+  font-size: var(--cb-fs);
+  line-height: var(--cb-lh);
+  user-select: none;
+  text-align: right;
+}
+.nb-prosemirror .ProseMirror .cb-card .cb-ln {
+  display: block;
+  width: 100%;
+  height: calc(var(--cb-lh) * 1em);
+  line-height: calc(var(--cb-lh) * 1em);
+  padding: 0 0.7em 0 0.9em;
+  min-width: 2.6em;
+  border: none;
+  background: transparent;
+  font: inherit;
+  text-align: right;
+  color: var(--text-3);
+  cursor: pointer;
+}
+.nb-prosemirror .ProseMirror .cb-card .cb-ln:hover {
+  color: var(--text);
+}
+.nb-prosemirror .ProseMirror .cb-card .cb-ln.on {
+  color: #b57e00;
+  font-weight: 600;
+}
 .nb-prosemirror .ProseMirror .cb-card pre.cb-pre {
+  position: relative;
+  z-index: 1;
+  flex: 1 1 auto;
+  min-width: 0;
   margin: 0;
   border: none;
   border-radius: 0;
   background: transparent;
-  padding: 1.25em 1em;
+  padding: var(--cb-pad-y) 1em;
   font-family: var(--mono-font);
-  font-size: 12.5px;
-  line-height: 1.6;
+  font-size: var(--cb-fs);
+  line-height: var(--cb-lh);
   overflow-x: auto;
   tab-size: 4;
+}
+/* With a gutter the numbers already supply the left inset, so drop the pre's
+   own left padding to a small gap. */
+.nb-prosemirror .ProseMirror .cb-card[data-line-numbers] pre.cb-pre {
+  padding-left: 0.4em;
 }
 .nb-prosemirror .ProseMirror .cb-card pre.cb-pre code {
   background: transparent;
@@ -8299,6 +8394,61 @@ body.nb-block-dragging * {
   padding: 0;
   font-size: inherit;
   font-family: inherit;
+}
+
+/* ── table of contents block (bare: just the heading list, no frame/title) ──── */
+.nb-prosemirror .ProseMirror .toc-card {
+  margin: 0.95em 0;
+  user-select: none;
+}
+.nb-prosemirror .ProseMirror .toc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.nb-prosemirror .ProseMirror .toc-item {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  padding: 3px 6px;
+  border-radius: 4px;
+  font-family: var(--ui-font);
+  font-size: 13px;
+  color: var(--text-2);
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  /* underline the label so a TOC reads as a TOC (link-like) at a glance */
+  text-decoration: underline;
+  text-decoration-color: var(--border-strong);
+  text-underline-offset: 2px;
+}
+.nb-prosemirror .ProseMirror .toc-item:hover {
+  background: var(--row-hover);
+  color: var(--text);
+  text-decoration-color: currentColor;
+}
+.nb-prosemirror .ProseMirror .toc-l1 {
+  padding-left: 6px;
+  font-weight: 500;
+  color: var(--text);
+}
+.nb-prosemirror .ProseMirror .toc-l2 {
+  padding-left: 20px;
+}
+.nb-prosemirror .ProseMirror .toc-l3 {
+  padding-left: 34px;
+  font-size: 12.5px;
+  color: var(--text-3);
+}
+.nb-prosemirror .ProseMirror .toc-empty {
+  font-family: var(--ui-font);
+  font-size: 12.5px;
+  color: var(--text-3);
+  padding: 2px 6px;
 }
 
 /* highlight.js token palette (GitHub-light, tuned for the notebook surface) */
