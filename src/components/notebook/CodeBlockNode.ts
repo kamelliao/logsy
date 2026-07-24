@@ -51,11 +51,55 @@ function changeIndent(editor: Editor, outdent: boolean): boolean {
 }
 
 export const CodeBlockNode = CodeBlockLowlight.extend({
+  addAttributes() {
+    return {
+      ...this.parent?.(),
+      // Show a left gutter of line numbers. Off by default so short snippets
+      // stay clean; toggled per-block from the floating toolbar.
+      showLineNumbers: {
+        default: false,
+        parseHTML: (el) => el.getAttribute("data-line-numbers") === "true",
+        renderHTML: (attrs) =>
+          attrs.showLineNumbers ? { "data-line-numbers": "true" } : {},
+      },
+      // 1-based line numbers to highlight. Stored as a JSON array so it
+      // round-trips through getHTML()/export and the autosaved node JSON.
+      highlightLines: {
+        default: [] as number[],
+        parseHTML: (el) => {
+          try {
+            const raw = JSON.parse(el.getAttribute("data-highlight") || "[]");
+            return Array.isArray(raw) ? raw : [];
+          } catch {
+            return [];
+          }
+        },
+        renderHTML: (attrs) =>
+          Array.isArray(attrs.highlightLines) && attrs.highlightLines.length
+            ? { "data-highlight": JSON.stringify(attrs.highlightLines) }
+            : {},
+      },
+    };
+  },
+
   addKeyboardShortcuts() {
     return {
       ...this.parent?.(),
       Tab: ({ editor }) => changeIndent(editor, false),
       "Shift-Tab": ({ editor }) => changeIndent(editor, true),
+      // Ctrl/Cmd+A inside a code block selects only that block's text, not the
+      // whole notebook (ProseMirror's default selectAll).
+      "Mod-a": ({ editor }) => {
+        const { state } = editor;
+        const { $from } = state.selection;
+        if ($from.parent.type.name !== "codeBlock") return false;
+        editor.view.dispatch(
+          state.tr.setSelection(
+            TextSelection.create(state.doc, $from.start(), $from.end()),
+          ),
+        );
+        return true;
+      },
       // Keep an empty code block sticky: swallow Backspace so it isn't deleted
       // (or merged into the previous block) once there's nothing left to remove.
       Backspace: ({ editor }) => {
