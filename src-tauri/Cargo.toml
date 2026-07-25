@@ -26,6 +26,10 @@ tauri-plugin-log = "2"
 tauri-plugin-dialog = "2"
 encoding_rs = "0.8"
 chardetng = "0.1"
+# Match scanning for the frontend's filter engine (see `scan_lines`): one RegexSet
+# pass over the log instead of one automaton per filter, spread across rayon workers.
+regex = "1"
+rayon = "1"
 
 # Windows Jump List (taskbar-icon right-click tasks). Aligned to the version
 # Tauri already pulls so it's the same compiled crate, not a second copy.

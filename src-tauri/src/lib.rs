@@ -34,20 +34,37 @@ pub fn run() {
 
   builder
     .setup(|app| {
+      // Logging runs in RELEASE too, not just debug. The frontend writes one
+      // open-performance line per file open (see src/lib/openTiming.ts), and the
+      // point of it is to come back from users who hit a slow open — a release build
+      // has no devtools console to read it from. Written to the OS log dir; stdout
+      // only when there's a terminal attached to see it.
+      //
+      // The plugin's defaults are far too small for that (40 KB, keep one file), so
+      // a couple of slow opens would rotate the interesting ones away.
+      let mut targets = vec![tauri_plugin_log::Target::new(
+        tauri_plugin_log::TargetKind::LogDir { file_name: None },
+      )];
       if cfg!(debug_assertions) {
-        app.handle().plugin(
-          tauri_plugin_log::Builder::default()
-            .level(log::LevelFilter::Info)
-            .build(),
-        )?;
+        targets.push(tauri_plugin_log::Target::new(
+          tauri_plugin_log::TargetKind::Stdout,
+        ));
       }
+      app.handle().plugin(
+        tauri_plugin_log::Builder::default()
+          .level(log::LevelFilter::Info)
+          .targets(targets)
+          .max_file_size(2_000_000)
+          .rotation_strategy(tauri_plugin_log::RotationStrategy::KeepSome(3))
+          .build(),
+      )?;
       // Register the taskbar-icon Jump List ("New Empty Window" → relaunch with
       // --safe). Windows-only, best-effort — never fail startup over it.
       #[cfg(target_os = "windows")]
       jumplist::register();
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![window_controls, read_text_file, write_text_file, open_url, reveal_in_dir])
+    .invoke_handler(tauri::generate_handler![window_controls, read_text_file, write_text_file, scan_lines, open_url, reveal_in_dir])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
@@ -180,6 +197,36 @@ fn sniff_bomless_utf16(bytes: &[u8]) -> Option<&'static encoding_rs::Encoding> {
   } else {
     None
   }
+}
+
+mod scan;
+use scan::{scan_text, ScanSpec};
+
+/// Scan a file's lines against `patterns` and return the packed match bit sets.
+///
+/// Re-reads and re-decodes the file rather than taking the text back over IPC: the
+/// read is a few ms off a warm page cache, and shipping the text in the other
+/// direction would cost more than the scan itself. `encoding` must be whatever the
+/// caller passed to `read_text_file` so both sides split the same lines.
+///
+/// Returns raw bytes (`ipc::Response`), not JSON — the blob is ~2.5 MB for 200k
+/// lines × 100 patterns, and JSON would escape and re-parse every byte of it.
+#[tauri::command]
+async fn scan_lines(
+  path: String,
+  encoding: Option<String>,
+  patterns: Vec<ScanSpec>,
+) -> Result<tauri::ipc::Response, String> {
+  tauri::async_runtime::spawn_blocking(move || {
+    let t_read = std::time::Instant::now();
+    let res = read_text_file_blocking(&path, encoding.as_deref())?;
+    let read_us = t_read.elapsed().as_micros() as u32;
+    Ok(tauri::ipc::Response::new(scan_text(
+      &res.text, &patterns, read_us,
+    )))
+  })
+  .await
+  .map_err(|e| e.to_string())?
 }
 
 #[cfg(test)]
