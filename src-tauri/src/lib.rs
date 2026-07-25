@@ -57,6 +57,11 @@ struct ReadResult {
   text: String,
   /// The encoding label the file was decoded with (e.g. "UTF-8", "Big5").
   encoding: String,
+  /// Raw on-disk size in bytes (before decoding), for display in the UI.
+  size: u64,
+  /// File's last-modified time (epoch ms). None if the platform/FS can't report
+  /// it; set by `read_text_file_blocking` since it needs the path, not the bytes.
+  mtime: Option<u64>,
 }
 
 /// Read a text file, transparently handling non-UTF-8 encodings. A leading BOM
@@ -83,7 +88,15 @@ async fn read_text_file(path: String, encoding: Option<String>) -> Result<ReadRe
 // unknown label falls back to auto-detection rather than failing the open.
 fn read_text_file_blocking(path: &str, forced: Option<&str>) -> Result<ReadResult, String> {
   let bytes = std::fs::read(path).map_err(|e| e.to_string())?;
-  Ok(decode_bytes(&bytes, forced))
+  let mut res = decode_bytes(&bytes, forced);
+  // The file's mtime as epoch ms — the log's "data recency". Best-effort: any
+  // step failing (unsupported FS, pre-1970 clock) just leaves it None.
+  res.mtime = std::fs::metadata(path)
+    .and_then(|m| m.modified())
+    .ok()
+    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+    .map(|d| d.as_millis() as u64);
+  Ok(res)
 }
 
 // chardetng scans byte-by-byte, so feeding it a huge log (firmware dumps run to
@@ -126,7 +139,14 @@ fn decode_bytes(bytes: &[u8], forced: Option<&str>) -> ReadResult {
 
   // `decode` re-sniffs any BOM and reports the encoding actually used.
   let (text, used, _had_errors) = encoding.decode(bytes);
-  ReadResult { text: text.into_owned(), encoding: used.name().to_string() }
+  ReadResult {
+    text: text.into_owned(),
+    encoding: used.name().to_string(),
+    size: bytes.len() as u64,
+    // Filled by `read_text_file_blocking`, which has the path; the byte decoder
+    // (and its tests) can't stat a file, so it reports None here.
+    mtime: None,
+  }
 }
 
 /// Detect BOM-less UTF-16 from its tell-tale NUL pattern. Mostly-ASCII text

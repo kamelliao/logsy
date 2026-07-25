@@ -131,6 +131,11 @@ export interface LogFile {
   /** Absolute path on disk the log was loaded from (used to reload on restart). */
   path: string | null;
   lineCount: number;
+  /** File's last-modified time on disk (epoch ms), captured at load — the log's
+   *  "data recency". Undefined if the platform couldn't report it. Persisted. */
+  mtimeMs?: number;
+  /** Raw on-disk size in bytes at load time (from the decoder). Persisted for display. */
+  sizeBytes?: number;
   /** Character encoding the file was decoded with (e.g. "UTF-8", "Big5"). */
   encoding?: string;
   /**

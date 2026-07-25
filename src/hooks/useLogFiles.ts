@@ -197,6 +197,8 @@ export function useLogFiles({
         for (const path of paths) {
           let text: string;
           let encoding: string;
+          let sizeBytes: number;
+          let mtimeMs: number | undefined;
           // VS Code behaviour: never open the same file twice. If it's already
           // open, just activate it (callers that want it in a specific split pane
           // reference the existing id by path) — no duplicate entry, no re-read.
@@ -213,12 +215,16 @@ export function useLogFiles({
           const cancelAtStart = openCancelRef.current;
           await nextPaint(); // let the overlay paint before the read/split blocks
           try {
-            const res = await invoke<{ text: string; encoding: string }>(
-              "read_text_file",
-              { path },
-            );
+            const res = await invoke<{
+              text: string;
+              encoding: string;
+              size: number;
+              mtime: number | null;
+            }>("read_text_file", { path });
             text = res.text;
             encoding = res.encoding;
+            sizeBytes = res.size;
+            mtimeMs = res.mtime ?? undefined;
           } catch (e) {
             lastErr = `${baseName(path)} — ${String(e)}`;
             continue;
@@ -241,6 +247,8 @@ export function useLogFiles({
                 name: baseName(path),
                 path,
                 lineCount: lns.length,
+                mtimeMs,
+                sizeBytes,
                 encoding,
                 detectedEncoding: encoding,
                 activeSetId:

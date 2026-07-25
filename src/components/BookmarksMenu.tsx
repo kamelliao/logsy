@@ -11,6 +11,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useStore } from "@/store";
 
 interface BookmarksMenuProps {
@@ -62,20 +67,28 @@ export function BookmarksMenu({
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        render={
-          <button
-            className={"dock-btn lv-toggle bm-pill" + (open ? " active" : "")}
-            title="Bookmarks"
-            aria-label={`Bookmarks (${markers.length})`}
-          />
-        }
-      >
-        <Bookmark size={14} />
-        {markers.length > 0 && (
-          <span className="bm-pill-n">{markers.length}</span>
-        )}
-      </PopoverTrigger>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={
+                <button
+                  className={
+                    "dock-btn lv-toggle bm-pill" + (open ? " active" : "")
+                  }
+                  aria-label={`Bookmarks (${markers.length})`}
+                />
+              }
+            />
+          }
+        >
+          <Bookmark size={14} />
+          {markers.length > 0 && (
+            <span className="bm-pill-n">{markers.length}</span>
+          )}
+        </TooltipTrigger>
+        <TooltipContent>Bookmarks</TooltipContent>
+      </Tooltip>
       <PopoverContent side="bottom" align="end" className="bm-pop">
         {markers.length === 0 ? (
           <div className="bm-pop-empty">
