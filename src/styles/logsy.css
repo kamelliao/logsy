@@ -35,6 +35,17 @@
   --accent: oklch(0.97 0 0);
   --accent-bg: rgba(44, 108, 230, 0.1);
   --accent-bg-strong: rgba(44, 108, 230, 0.16);
+  /* The light-blue accent shown on a resize edge (sidebar / dock / pane) while
+     hovered or dragging — one width + one colour so all three stay identical.
+     The colour is OPAQUE on purpose: a translucent bar let the grey divider show
+     through underneath. It's the opaque equivalent of the old faint accent
+     (rgba(44,108,230,0.16) composited over a light background) — same soft blue,
+     just solid so nothing shows through. */
+  --resize-accent-w: 6px;
+  --resize-accent: #dde7fb;
+  /* Small delay before the accent appears on hover, so brushing past an edge doesn't
+     flash it. Only the hover-in is delayed — leaving and dragging are immediate. */
+  --resize-accent-delay: 150ms;
 
   /* primary button */
   --btn: #1c1f23;
@@ -245,23 +256,60 @@ button {
   right: -3px;
   width: 6px;
   height: 100%;
-  cursor: col-resize;
+  /* plain ↔ (ew-resize), not the barred col-resize (↔ with bars) */
+  cursor: ew-resize;
   z-index: 5;
 }
 .sidebar-resizer::after {
   content: "";
   position: absolute;
   top: 0;
-  right: 3px;
-  width: 2px;
+  /* centre the band on the sidebar's right border (the 6px strip sits at right:-3px) */
+  right: calc(3px - var(--resize-accent-w) / 2);
+  width: var(--resize-accent-w);
   height: 100%;
-  background: var(--accent-bg);
+  background: var(--resize-accent);
   opacity: 0;
   transition: opacity 0.12s ease;
 }
-.sidebar-resizer:hover::after,
+.sidebar-resizer:hover::after {
+  opacity: 1;
+  transition-delay: var(--resize-accent-delay);
+}
+/* Dragging is immediate (declared last so it wins the tie while also hovering). */
 .sidebar-resizer.dragging::after {
   opacity: 1;
+  transition-delay: 0s;
+}
+/* Resize handles (bottom/right docks + split-view panes): no painted grip — just the
+   divider, which thickens into a light-blue accent on hover / drag, matching the
+   sidebar's resize edge. `data-separator` is set by react-resizable-panels (inactive
+   → hover → active while dragging). NOTE: deliberately not `focus` — a click leaves
+   the separator focused, which would keep the accent stuck on until you click away;
+   keyboard focus is already covered by the base `focus-visible` ring. */
+/* The accent thickens the 1px divider via box-shadow (spread grows it symmetrically
+   to --resize-accent-w) — it tracks the element's FULL length automatically and works
+   for both a vertical divider (side-by-side panels) and a horizontal one (stacked),
+   with no layout shift. `z-index` lifts it above the neighbouring panels, which have
+   their own opaque backgrounds and would otherwise paint over the band's overflow. */
+.resize-handle {
+  transition:
+    background-color 0.12s ease,
+    box-shadow 0.12s ease;
+}
+.resize-handle[data-separator="hover"],
+.resize-handle[data-separator="active"] {
+  z-index: 10;
+  background-color: var(--resize-accent);
+  box-shadow: 0 0 0 calc((var(--resize-accent-w) - 1px) / 2)
+    var(--resize-accent);
+}
+/* Delay only the hover-in; dragging (active) shows immediately. */
+.resize-handle[data-separator="hover"] {
+  transition-delay: var(--resize-accent-delay);
+}
+.resize-handle[data-separator="active"] {
+  transition-delay: 0s;
 }
 .sidebar.collapsed {
   flex-basis: 48px;

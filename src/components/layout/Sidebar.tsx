@@ -1210,7 +1210,7 @@ export function Sidebar({
 
   // ---------- width drag-resize ----------
   // No visible splitter — a thin invisible strip on the right edge is the grab
-  // target (col-resize cursor is the only affordance). `dragW` is the RAW dragged
+  // target (the ew-resize cursor is the only affordance). `dragW` is the RAW dragged
   // width (unclamped) so the collapse threshold can be tested against it: below
   // SIDEBAR_COLLAPSE_AT the rail collapses, above it re-opens. It also lets the whole
   // drag be previewed live without re-rendering App on every pointer move — the
@@ -1226,7 +1226,7 @@ export function Sidebar({
     // Grow from the current visible edge: the 48px rail when collapsed, else the width.
     const startW = collapsed ? SIDEBAR_COLLAPSED_PX : width;
     const raw = (x: number) => startW + (x - startX);
-    document.body.style.cursor = "col-resize";
+    document.body.style.cursor = "ew-resize";
     document.body.style.userSelect = "none";
     const move = (ev: PointerEvent) => setDragW(raw(ev.clientX));
     const up = (ev: PointerEvent) => {
@@ -1399,7 +1399,7 @@ export function Sidebar({
         </div>
       </div>
 
-      {/* Invisible right-edge grab strip — no rendered splitter, just a col-resize
+      {/* Invisible right-edge grab strip — no rendered splitter, just an ew-resize
           hit area. Present even when collapsed: dragging it right past the threshold
           re-opens the rail (and dragging left past it collapses an open sidebar). */}
       <div
