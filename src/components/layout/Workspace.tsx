@@ -1,5 +1,5 @@
 import { Fragment, type ReactNode } from "react";
-import type { PanelImperativeHandle } from "react-resizable-panels";
+import type { PanelImperativeHandle, PanelSize } from "react-resizable-panels";
 import {
   ChevronDown,
   ChevronLeft,
@@ -86,6 +86,8 @@ type PanelDesc = {
   collapsedSize?: string;
   minSize?: string;
   ref?: React.RefObject<PanelImperativeHandle | null>;
+  /** Sync a drag-driven native collapse/expand back into app state. */
+  onResize?: (size: PanelSize) => void;
 };
 
 /**
@@ -132,6 +134,8 @@ export function Workspace({
     poppedPos,
     layoutFor,
     onLayoutFor,
+    onFpResize,
+    onPopResize,
     MAIN_COLLAPSED,
     POP_COLLAPSED,
   } = dock;
@@ -360,26 +364,29 @@ export function Workspace({
       >
         {panels.map((p, i) => {
           const cs = p.collapsedSize ?? "26px";
+          // A collapsible dock uses the library's NATIVE collapse: `minSize` is both
+          // its expanded floor AND the drag threshold — dragged below it, the panel
+          // snaps to `collapsedSize`; dragged back out, it re-expands. `onResize`
+          // reads that back into app state so the dock chrome (strip vs. tabs)
+          // follows. Non-collapsible panels (the log view) keep a plain floor.
+          const floor = p.minSize ?? (p.collapsible ? "8%" : "15%");
           return (
             <Fragment key={p.id}>
               <ResizablePanel
                 id={p.id}
                 defaultSize={p.collapsed ? cs : `${dl[p.id]}%`}
-                // A collapsed dock is pinned to the strip height (min == max) so
-                // neither dragging nor a sibling's collapse can grow it back.
-                // A side dock carries a px floor (p.minSize) so it can't be
-                // dragged into an unusably narrow sliver.
-                minSize={
-                  p.collapsed
-                    ? cs
-                    : (p.minSize ?? (p.collapsible ? "8%" : "15%"))
-                }
-                maxSize={p.collapsed ? cs : "100%"}
+                collapsible={p.collapsible}
+                collapsedSize={p.collapsible ? cs : undefined}
+                minSize={floor}
+                maxSize="100%"
+                onResize={p.onResize}
                 panelRef={p.ref}
               >
                 {p.node}
               </ResizablePanel>
-              {i < panels.length - 1 && <ResizableHandle withHandle />}
+              {i < panels.length - 1 && (
+                <ResizableHandle className="resize-handle" />
+              )}
             </Fragment>
           );
         })}
@@ -407,25 +414,32 @@ export function Workspace({
     ref: d.ref,
     collapsed: d.id === "fp" ? filterCollapsed : poppedCollapsed,
     collapsedSize: d.id === "fp" ? MAIN_COLLAPSED : POP_COLLAPSED,
+    onResize: d.id === "fp" ? onFpResize : onPopResize,
   });
+
+  // The expanded floor for each dock, which also serves as the drag-to-collapse
+  // threshold (native collapsible snaps below it). Px floors keep the content
+  // usable — room for the tab strip plus a pattern + hit count.
+  const BOTTOM_DOCK_MIN = "140px";
+  const RIGHT_DOCK_MIN = "240px";
 
   let center: ReactNode = logview;
   if (bottomDocks.length) {
     center = buildGroup("vertical", "grp-v", [
       { id: "lv", node: logview },
-      ...bottomDocks.map(dockPanel),
+      ...bottomDocks.map(dockPanel).map((p) => ({
+        ...p,
+        minSize: BOTTOM_DOCK_MIN,
+      })),
     ]);
   }
   if (rightDocks.length) {
-    // Side docks get a px floor so a drag can't shrink them into an unusable
-    // sliver (the content needs room for a pattern + hit count). When collapsed
-    // they stay pinned to their strip width instead.
-    const RIGHT_DOCK_MIN = "240px";
     return buildGroup("horizontal", "grp-h", [
       { id: bottomDocks.length ? "center" : "lv", node: center },
-      ...rightDocks
-        .map(dockPanel)
-        .map((p) => (p.collapsed ? p : { ...p, minSize: RIGHT_DOCK_MIN })),
+      ...rightDocks.map(dockPanel).map((p) => ({
+        ...p,
+        minSize: RIGHT_DOCK_MIN,
+      })),
     ]);
   }
   return center;

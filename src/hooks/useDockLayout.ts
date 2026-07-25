@@ -1,5 +1,5 @@
 import { useEffect, useRef, useDeferredValue } from "react";
-import type { PanelImperativeHandle } from "react-resizable-panels";
+import type { PanelImperativeHandle, PanelSize } from "react-resizable-panels";
 import type { AppState, PanelTab } from "@/types";
 import { PANEL_TABS } from "@/types";
 import { useStore } from "@/store";
@@ -11,6 +11,10 @@ export type { PanelTab };
 // same tab-bar strip as the main one.
 const MAIN_COLLAPSED = "34px";
 const POP_COLLAPSED = MAIN_COLLAPSED;
+// A dock at (or near) its collapsed strip size — used to read collapse back OUT of a
+// drag. Well below either dock's expanded floor (140px / 240px) and above the 34px
+// strip, so it can't be confused with a small-but-open dock.
+const COLLAPSE_DETECT_PX = 70;
 // The popped dock opens larger than the filter dock — its tables/canvas benefit.
 const EXPAND_FP = "30%";
 const EXPAND_POP = "30%";
@@ -220,27 +224,41 @@ export function useDockLayout() {
       };
     });
 
-  // Drive collapse/expand by resizing the panel directly (the library's own
-  // collapse() records the pre-collapse size, which our maxSize pin corrupts).
-  // Resize only on the actual collapse↔expand transition; the panel's
-  // defaultSize handles fresh mounts. Expanded → a generous height.
-  const prevFp = useRef(state.filterCollapsed);
-  const prevPop = useRef(state.poppedCollapsed);
+  // Collapse/expand is a two-way binding between the persisted boolean (which drives
+  // the dock CHROME: strip vs. tab-bar) and the panel's own collapsible behavior:
+  //
+  //  • Button toggle → flips the boolean → this effect drives the panel imperatively.
+  //  • Drag past the threshold → the library collapses/expands the panel natively →
+  //    onDockResize below reads that back into the boolean.
+  //
+  // The effect only acts when the panel DISAGREES with the desired state, so a
+  // drag-driven change (where the panel already matches the freshly-synced boolean)
+  // never triggers an imperative resize that would fight the ongoing drag.
   useEffect(() => {
     const p = fpRef.current;
-    if (!p) return;
-    if (state.filterCollapsed) p.resize(MAIN_COLLAPSED);
-    // Defer expand so the maxSize pin (strip → 100%) settles before resizing.
-    else if (prevFp.current) requestAnimationFrame(() => p.resize(EXPAND_FP));
-    prevFp.current = state.filterCollapsed;
+    if (!p || p.isCollapsed() === state.filterCollapsed) return;
+    if (state.filterCollapsed) p.collapse();
+    // Defer expand a frame so the panel settles before we size it generously.
+    else requestAnimationFrame(() => p.resize(EXPAND_FP));
   }, [state.filterCollapsed]);
   useEffect(() => {
     const p = popRef.current;
-    if (!p) return;
-    if (state.poppedCollapsed) p.resize(POP_COLLAPSED);
-    else if (prevPop.current) requestAnimationFrame(() => p.resize(EXPAND_POP));
-    prevPop.current = state.poppedCollapsed;
+    if (!p || p.isCollapsed() === state.poppedCollapsed) return;
+    if (state.poppedCollapsed) p.collapse();
+    else requestAnimationFrame(() => p.resize(EXPAND_POP));
   }, [state.poppedCollapsed]);
+
+  // Read a drag-driven collapse/expand back into the persisted boolean. Attached to
+  // each dock panel's onResize; a no-op unless the panel just crossed the strip line
+  // (guarded so the effect above and this handler can't ping-pong).
+  const onDockResize =
+    (key: "filterCollapsed" | "poppedCollapsed") => (size: PanelSize) => {
+      const collapsed = size.inPixels <= COLLAPSE_DETECT_PX;
+      if (getDoc()[key] === collapsed) return;
+      setState((s) => ({ ...s, [key]: collapsed }));
+    };
+  const onFpResize = onDockResize("filterCollapsed");
+  const onPopResize = onDockResize("poppedCollapsed");
 
   return {
     isPanelPending,
@@ -263,6 +281,8 @@ export function useDockLayout() {
     poppedPos,
     layoutFor,
     onLayoutFor,
+    onFpResize,
+    onPopResize,
     MAIN_COLLAPSED,
     POP_COLLAPSED,
   };

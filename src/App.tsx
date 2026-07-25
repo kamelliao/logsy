@@ -1050,7 +1050,9 @@ export function App() {
                 >
                   {logViewFor(p)}
                 </ResizablePanel>
-                {i < panes.length - 1 && <ResizableHandle withHandle />}
+                {i < panes.length - 1 && (
+                  <ResizableHandle className="resize-handle" />
+                )}
               </Fragment>
             ))}
           </ResizablePanelGroup>
