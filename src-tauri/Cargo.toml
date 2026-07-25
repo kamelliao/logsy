@@ -14,6 +14,17 @@ rust-version = "1.77.2"
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Dev-only helper for `scripts/crosscheck.ts` (verifies the Rust scanner agrees with
+# JS regex semantics). Behind a feature so a normal build — and `tauri build` — never
+# compiles it.
+[features]
+crosscheck = []
+
+[[bin]]
+name = "crosscheck"
+path = "src/bin/crosscheck.rs"
+required-features = ["crosscheck"]
+
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }
 
