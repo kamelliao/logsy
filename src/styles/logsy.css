@@ -8577,6 +8577,99 @@ body.nb-block-dragging * {
   --cb-lh: 1.6;
   --cb-pad-y: 1.25em;
 }
+/* Persistent meta header (filename + line range). Unlike the hover toolbar this
+   stays visible — it's source metadata meant to be read. Only rendered when
+   there's a filename or a non-1 start line. */
+.nb-prosemirror .ProseMirror .cb-card .cb-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 10px 5px 12px;
+  /* clear the hover toolbar overlaying top-right: it stays mounted (and click-
+     catching) even while transparent, so the filename input must not run under
+     it. Reserve for the widest toolbar (line-numbers on adds a button). */
+  padding-right: 176px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--ui-font);
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-3);
+  user-select: none;
+}
+.cb-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.cb-file-icon {
+  flex: 0 0 auto;
+  color: var(--text-3);
+}
+.cb-file-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: none;
+  background: transparent;
+  padding: 1px 3px;
+  border-radius: 3px;
+  font-family: var(--mono-font);
+  font-size: 11px;
+  color: var(--text-2);
+  outline: none;
+}
+.cb-file-input::placeholder {
+  color: var(--text-3);
+  opacity: 0.7;
+}
+.cb-file-input:hover,
+.cb-file-input:focus {
+  background: var(--row-hover);
+  color: var(--text);
+}
+/* Start-line popover launched from the toolbar's list-ordered button. */
+.cb-startline-popup {
+  padding: 5px 9px;
+  background: var(--panel-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-pop);
+  font-family: var(--ui-font);
+  outline: none;
+}
+.cb-startline-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-2);
+  white-space: nowrap;
+}
+.cb-startline-input {
+  width: 5em;
+  border: 1px solid var(--border);
+  background: var(--app-bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-family: var(--mono-font);
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+  /* no spinner arrows on the number field */
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+.cb-startline-input::-webkit-outer-spin-button,
+.cb-startline-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.cb-startline-input:focus {
+  border-color: var(--accent-bg);
+}
+
 /* floating controls, top-right, surfaced on hover (overlay the code) */
 .cb-toolbar {
   position: absolute;
@@ -8620,6 +8713,15 @@ body.nb-block-dragging * {
 .cb-tool-btn:hover {
   background: var(--row-hover);
   color: var(--text);
+}
+/* Toggled-on state (filename / line numbers / non-default start line). */
+.cb-tool-btn.active {
+  background: var(--accent-bg);
+  color: #2c6ce6;
+}
+.cb-tool-btn.active:hover {
+  background: var(--accent-bg-strong);
+  color: #2c6ce6;
 }
 .cb-lang-trigger {
   display: inline-flex;

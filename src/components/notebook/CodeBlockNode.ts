@@ -62,8 +62,31 @@ export const CodeBlockNode = CodeBlockLowlight.extend({
         renderHTML: (attrs) =>
           attrs.showLineNumbers ? { "data-line-numbers": "true" } : {},
       },
-      // 1-based line numbers to highlight. Stored as a JSON array so it
-      // round-trips through getHTML()/export and the autosaved node JSON.
+      // Optional source filename shown in the block's meta header (e.g.
+      // "drivers/uart.c"). Empty string = no header line for it.
+      fileName: {
+        default: "",
+        parseHTML: (el) => el.getAttribute("data-filename") || "",
+        renderHTML: (attrs) =>
+          attrs.fileName ? { "data-filename": attrs.fileName } : {},
+      },
+      // First gutter number. 1 by default; set higher when the snippet is an
+      // excerpt starting partway through a file. Only rendered when != 1.
+      startLine: {
+        default: 1,
+        parseHTML: (el) => {
+          const n = parseInt(el.getAttribute("data-start-line") || "1", 10);
+          return Number.isFinite(n) && n > 0 ? n : 1;
+        },
+        renderHTML: (attrs) =>
+          attrs.startLine && attrs.startLine !== 1
+            ? { "data-start-line": String(attrs.startLine) }
+            : {},
+      },
+      // 1-based line numbers to highlight, relative to the block (independent of
+      // startLine, so changing startLine never shifts existing highlights).
+      // Stored as a JSON array so it round-trips through getHTML()/export and
+      // the autosaved node JSON.
       highlightLines: {
         default: [] as number[],
         parseHTML: (el) => {

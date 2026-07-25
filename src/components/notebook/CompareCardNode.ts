@@ -47,7 +47,36 @@ export const CompareCardNode = Node.create({
         { "data-type": "compare-card", "data-label": label },
         HTMLAttributes,
       ),
-      ["div", { class: "cc-source-bar" }, `▦ ${escHtml(label)}`],
+      // Source bar mirrors the editor's CompareCardView header: a lucide
+      // "TableProperties" glyph (drawn here as inline SVG since export is
+      // React-less) followed by the label.
+      [
+        "div",
+        { class: "cc-source-bar" },
+        [
+          "span",
+          { class: "cc-source-icon" },
+          [
+            "svg",
+            {
+              width: "13",
+              height: "13",
+              viewBox: "0 0 24 24",
+              fill: "none",
+              stroke: "currentColor",
+              "stroke-width": "2",
+              "stroke-linecap": "round",
+              "stroke-linejoin": "round",
+              "aria-hidden": "true",
+            },
+            ["path", { d: "M15 3v18" }],
+            ["rect", { width: "18", height: "18", x: "3", y: "3", rx: "2" }],
+            ["path", { d: "M21 9H3" }],
+            ["path", { d: "M21 15H3" }],
+          ],
+        ],
+        ["span", { class: "cc-source-name" }, label],
+      ] as never,
       [
         "table",
         { class: "cc-table" },
@@ -85,7 +114,3 @@ export const CompareCardNode = Node.create({
     return ReactNodeViewRenderer(CompareCardView);
   },
 });
-
-function escHtml(s: string) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
