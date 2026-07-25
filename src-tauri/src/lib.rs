@@ -47,7 +47,7 @@ pub fn run() {
       jumplist::register();
       Ok(())
     })
-    .invoke_handler(tauri::generate_handler![window_controls, read_text_file, write_text_file, open_url])
+    .invoke_handler(tauri::generate_handler![window_controls, read_text_file, write_text_file, open_url, reveal_in_dir])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
@@ -295,6 +295,39 @@ fn open_url(url: String) -> Result<(), String> {
   #[cfg(all(unix, not(target_os = "macos")))]
   let r = std::process::Command::new("xdg-open").arg(&url).spawn();
   r.map(|_| ()).map_err(|e| e.to_string())
+}
+
+/// Reveal a file in the OS file manager, selecting it (Windows Explorer / Finder
+/// / the Linux default). Best-effort: launches the manager and returns, never
+/// waits — Explorer in particular exits non-zero even on success.
+#[tauri::command]
+fn reveal_in_dir(path: String) -> Result<(), String> {
+  #[cfg(target_os = "windows")]
+  {
+    // `explorer /select,"C:\dir\file"` opens the folder with the file highlighted.
+    // The quotes must sit INSIDE the `/select,` argument, not wrap the whole thing,
+    // so use raw_arg — std's normal quoting would produce `"/select,..."` and break it.
+    use std::os::windows::process::CommandExt;
+    let r = std::process::Command::new("explorer")
+      .raw_arg(format!("/select,\"{}\"", path))
+      .spawn();
+    return r.map(|_| ()).map_err(|e| e.to_string());
+  }
+  #[cfg(target_os = "macos")]
+  {
+    let r = std::process::Command::new("open").args(["-R", &path]).spawn();
+    return r.map(|_| ()).map_err(|e| e.to_string());
+  }
+  #[cfg(all(unix, not(target_os = "macos")))]
+  {
+    // No portable "select this file" on Linux — open the containing directory.
+    let dir = std::path::Path::new(&path)
+      .parent()
+      .map(|p| p.to_path_buf())
+      .unwrap_or_else(|| std::path::PathBuf::from(&path));
+    let r = std::process::Command::new("xdg-open").arg(dir).spawn();
+    return r.map(|_| ()).map_err(|e| e.to_string());
+  }
 }
 
 #[tauri::command]

@@ -153,6 +153,7 @@ function makeAppState(over: Partial<AppState> = {}): AppState {
     recentFiles: [],
     recentFilterFiles: [],
     sidebarCollapsed: true,
+    sidebarWidth: 250,
     panelPos: "right",
     mapColorMode: "bg",
     mapWidth: 16,

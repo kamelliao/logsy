@@ -91,6 +91,7 @@ export function initialState(): AppState {
     recentFiles: [],
     recentFilterFiles: [],
     sidebarCollapsed: true,
+    sidebarWidth: 250,
     splitView: initialSplitView(),
     panelPos: "right",
     mapColorMode: "bg",
@@ -356,6 +357,7 @@ export function normalizeState(state: AppState): AppState {
   if (!Array.isArray(state.recentFilterFiles)) state.recentFilterFiles = [];
   if (!state.mapColorMode) state.mapColorMode = "bg";
   if (!state.mapWidth) state.mapWidth = 16;
+  if (!state.sidebarWidth) state.sidebarWidth = 250;
   if (!state.fontSize) state.fontSize = FONT_DEFAULT;
   if (!state.fontWeight) state.fontWeight = 400;
   if (state.showLineNumbers === undefined) state.showLineNumbers = true;

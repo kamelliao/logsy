@@ -1189,6 +1189,15 @@ export function App() {
             <Sidebar
               state={state}
               collapsed={state.sidebarCollapsed}
+              width={state.sidebarWidth ?? 250}
+              onResize={(next) =>
+                setState((s) => ({
+                  ...s,
+                  sidebarCollapsed: next.collapsed,
+                  // Keep the last open width when collapsing so toggling back restores it.
+                  sidebarWidth: next.width ?? s.sidebarWidth,
+                }))
+              }
               openScreen={openScreen}
               onToggleCollapse={toggleSidebar}
               onSelectFile={selectFile}
