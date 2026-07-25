@@ -521,6 +521,14 @@ button {
   opacity: 0.75;
   font-variant-numeric: tabular-nums;
 }
+.file-tip-mtime {
+  margin-top: 3px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  opacity: 0.6;
+  font-variant-numeric: tabular-nums;
+}
 
 .new-tab {
   display: flex;

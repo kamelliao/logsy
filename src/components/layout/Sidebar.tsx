@@ -45,6 +45,8 @@ import {
 import type { AppState, FileGroup, FileIcon, LogFile } from "@/types";
 import { FILE_ICONS, FileGlyph } from "@/components/widgets/fileIcons";
 import { disambiguationSuffixes } from "@/lib/path";
+import { formatBytes } from "@/lib/utils";
+import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { useStore } from "@/store";
 import { useClampedPopup } from "@/hooks/useClampedPopup";
@@ -257,8 +259,25 @@ function FileItem({
             {file.path && <div className="file-tip-path">{file.path}</div>}
             <div className="file-tip-meta">
               {file.lineCount.toLocaleString()} lines
+              {file.sizeBytes != null
+                ? ` · ${formatBytes(file.sizeBytes)}`
+                : ""}
               {file.encoding ? ` · ${file.encoding}` : ""}
+              {file.markers && file.markers.length > 0
+                ? ` · ${file.markers.length} ${
+                    file.markers.length === 1 ? "bookmark" : "bookmarks"
+                  }`
+                : ""}
             </div>
+            {file.mtimeMs != null && (
+              <div className="file-tip-mtime">
+                Modified{" "}
+                {new Date(file.mtimeMs).toLocaleString("sv-SE", {
+                  hourCycle: "h23",
+                })}{" "}
+                · {formatDistanceToNow(file.mtimeMs, { addSuffix: true })}
+              </div>
+            )}
           </div>
         </TooltipContent>
       </Tooltip>
