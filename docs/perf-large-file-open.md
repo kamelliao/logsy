@@ -193,10 +193,21 @@ re-checked against the real JS `RegExp` on 48 evenly spread lines plus the first
 on a low-match pattern). Costs ~3 ms for 100 patterns. Any disagreement drops that
 pattern, and `computeView` scans it itself.
 
-**3. Cross-check harness.** A tool compiles the app's own `scan.rs` and compares
-bitsets against JS `RegExp` line by line — 357,843 (line × pattern) bits, zero
-disagreements, covering CRLF/CR/LF mixes, blank lines, multi-byte text, emoji,
-full-width digits, Unicode case folding, and chunk boundaries.
+**3. Cross-check harness** — `bun run test:crosscheck`. `scripts/crosscheck.ts`
+generates randomised logs and patterns, runs them through the app's own `scan.rs`
+(via `src-tauri/src/bin/crosscheck.rs`, which `#[path]`-includes it rather than
+copying it), and compares every bit against real JS `RegExp` results. ~340k
+(line × pattern) bits per run, plus pinned cases for CRLF/CR/LF mixes, blank
+lines, multi-byte text, emoji, full-width digits, Unicode case folding, and chunk
+boundaries — and an assertion that lookaround/backreference/`\w.*` are _refused_
+rather than guessed at, so the protection is shown to fire rather than merely to
+exist. Exits non-zero on any disagreement.
+
+The helper binary sits behind the `crosscheck` cargo feature, so a normal build —
+and therefore `tauri build` — never compiles it.
+
+**Run this after touching `scan.rs`.** The runtime spot-check only downgrades
+quietly on a user's machine; this is the only thing that fails loudly.
 
 Every failure mode is a **downgrade, never an error**: no Tauri shell, line-count
 mismatch, unsupported syntax, or a failed spot-check all just leave those patterns
@@ -353,9 +364,8 @@ even in debug builds — the loading overlay stays responsive.
   run it in `--release` against a real file.
 - Frontend numbers: bundle an entry importing `engine.ts` and run it in Chromium
   through Playwright; warm the JIT with a smaller input first.
-- Semantics: cross-check Rust bitsets against JS `RegExp` line by line over
-  randomised logs, and assert that lookaround/backref/`\w.*` land in the fallback
-  list (the protection must be shown to fire, not just to exist).
+- Semantics: `bun run test:crosscheck` (see §6). `--seeds=40 --lines=20000` for a
+  heavier run before a release.
 
 ## 12. Not done
 

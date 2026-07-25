@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "bun test ./src",
+    "test:crosscheck": "bun run scripts/crosscheck.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "bump": "node scripts/bump.mjs",
