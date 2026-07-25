@@ -233,6 +233,35 @@ button {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  /* anchor for the right-edge resize strip */
+  position: relative;
+}
+/* Drag-to-resize: an invisible strip straddling the right border. No painted
+   handle — the col-resize cursor is the only cue — but it glows faintly on hover
+   or while dragging so the edge feels grabbable. */
+.sidebar-resizer {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 6px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 5;
+}
+.sidebar-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 3px;
+  width: 2px;
+  height: 100%;
+  background: var(--accent-bg);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.sidebar-resizer:hover::after,
+.sidebar-resizer.dragging::after {
+  opacity: 1;
 }
 .sidebar.collapsed {
   flex-basis: 48px;
@@ -286,6 +315,10 @@ button {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* Rows are click/select/drag targets, not text — a Shift-click across files must
+     extend the selection, never sweep-highlight the text between the two rows. */
+  -webkit-user-select: none;
+  user-select: none;
 }
 .file-item {
   display: flex;
@@ -629,8 +662,13 @@ button {
    menu stays compact and the actions below it never get pushed off screen. Kept a bit
    short so the menu reads squat-and-balanced rather than a tall thin column. */
 .menu-grouplist {
-  max-height: 160px;
+  max-height: 120px;
   overflow-y: auto;
+}
+/* The file row's context menu carries longer labels ("Show in File Explorer") than
+   the shared 168px `.menu-pop` min-width — give it a touch more room so nothing wraps. */
+.file-menu {
+  min-width: 208px;
 }
 .menu-item.on {
   font-weight: 600;

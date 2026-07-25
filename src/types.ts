@@ -238,6 +238,8 @@ export interface AppState {
   /** Most-recently-used filter file paths (newest first), for Recent Filter Files. */
   recentFilterFiles: string[];
   sidebarCollapsed: boolean;
+  /** Sidebar width in CSS px when expanded (drag-resizable right edge). */
+  sidebarWidth: number;
   panelPos: "bottom" | "right";
   mapColorMode: "bg" | "text";
   mapWidth: number;

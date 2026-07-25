@@ -10,9 +10,11 @@ import {
   ArrowUp,
   ChevronDown,
   ChevronRight,
+  Copy,
   FilePlus,
   Folder,
   FolderMinus,
+  FolderOpen,
   FolderPlus,
   MoreVertical,
   PanelLeft,
@@ -20,6 +22,7 @@ import {
   Settings,
   X,
 } from "lucide-react";
+import { invoke } from "@tauri-apps/api/core";
 import {
   DndContext,
   DragOverlay,
@@ -103,6 +106,10 @@ interface FileItemProps {
   onSetIcon: (icon: FileIcon) => void;
   onMoveToGroup: (groupId: string | null) => void;
   onNewGroupWith: () => void;
+  /** Open the OS file manager with this file selected. */
+  onReveal: () => void;
+  /** Copy this file's absolute path to the clipboard. */
+  onCopyPath: () => void;
   /** Batch close, offered by the context menu when the row is part of a selection. */
   selectedCount: number;
   onCloseSelected: () => void;
@@ -125,6 +132,8 @@ function FileItem({
   onSetIcon,
   onMoveToGroup,
   onNewGroupWith,
+  onReveal,
+  onCopyPath,
   selectedCount,
   onCloseSelected,
 }: FileItemProps) {
@@ -284,6 +293,37 @@ function FileItem({
             ))}
           </div>
           <div className="menu-sep" />
+          {/* File-level actions — always the single row (a path is per-file), never
+              the batch, so they sit apart from the group/close actions below. */}
+          {file.path && (
+            <>
+              <div
+                className="menu-item"
+                onClick={() => {
+                  setMenu(null);
+                  onReveal();
+                }}
+              >
+                <span className="mi-ico">
+                  <FolderOpen size={14} />
+                </span>{" "}
+                Show in File Explorer
+              </div>
+              <div
+                className="menu-item"
+                onClick={() => {
+                  setMenu(null);
+                  onCopyPath();
+                }}
+              >
+                <span className="mi-ico">
+                  <Copy size={14} />
+                </span>{" "}
+                Copy path
+              </div>
+              <div className="menu-sep" />
+            </>
+          )}
           {/* Every action below acts on the whole selection when this row is part of
               one — the row's own id alone otherwise. */}
           <div className="menu-section">
@@ -652,9 +692,24 @@ function GroupSection({
   );
 }
 
+/** Expanded-sidebar width bounds (CSS px) the drag-resize clamps to. */
+const SIDEBAR_MIN = 180;
+const SIDEBAR_MAX = 480;
+/** The collapsed rail's width — the baseline a drag grows from when re-expanding. */
+const SIDEBAR_COLLAPSED_PX = 48;
+/** Drag the edge narrower than this and the sidebar snaps to collapsed; drag past it
+ *  (from the collapsed rail) and it snaps back open. Sits below MIN so there's a firm
+ *  gap between "smallest open" and "collapsed" rather than a flicker at the boundary. */
+const SIDEBAR_COLLAPSE_AT = 120;
+
 interface SidebarProps {
   state: AppState;
   collapsed: boolean;
+  /** Current expanded width (CSS px); ignored while collapsed. */
+  width: number;
+  /** Commit the outcome of a resize drag: whether it ended collapsed, and (when open)
+   *  the new width. Width is omitted on a collapse so the last open width is retained. */
+  onResize: (next: { collapsed: boolean; width?: number }) => void;
   /** When the center is showing the "open a file" screen, no file is active. */
   openScreen: boolean;
   onToggleCollapse: () => void;
@@ -679,6 +734,8 @@ interface SidebarProps {
 export function Sidebar({
   state,
   collapsed,
+  width,
+  onResize,
   openScreen,
   onToggleCollapse,
   onSelectFile,
@@ -1121,6 +1178,12 @@ export function Sidebar({
         onSetIcon={(icon) => onSetFileIcon(f.id, icon)}
         onMoveToGroup={(gid) => moveToGroup(f.id, gid)}
         onNewGroupWith={() => newGroupWith(f.id)}
+        onReveal={() => {
+          if (f.path) invoke("reveal_in_dir", { path: f.path }).catch(() => {});
+        }}
+        onCopyPath={() => {
+          if (f.path) navigator.clipboard.writeText(f.path).catch(() => {});
+        }}
         selectedCount={selected.size}
         onCloseSelected={closeSelected}
       />
@@ -1145,8 +1208,54 @@ export function Sidebar({
 
   const dragFile = dragId ? fileById.get(dragId) : null;
 
+  // ---------- width drag-resize ----------
+  // No visible splitter — a thin invisible strip on the right edge is the grab
+  // target (col-resize cursor is the only affordance). `dragW` is the RAW dragged
+  // width (unclamped) so the collapse threshold can be tested against it: below
+  // SIDEBAR_COLLAPSE_AT the rail collapses, above it re-opens. It also lets the whole
+  // drag be previewed live without re-rendering App on every pointer move — the
+  // outcome is committed to the document only on release. The drag works from the
+  // collapsed rail too (grow past the threshold to open). Bare `window` listeners
+  // (not pointer capture) so it keeps tracking when the cursor runs onto the log view.
+  const [dragW, setDragW] = useState<number | null>(null);
+  const clampW = (w: number) => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, w));
+  const startResize = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    const startX = e.clientX;
+    // Grow from the current visible edge: the 48px rail when collapsed, else the width.
+    const startW = collapsed ? SIDEBAR_COLLAPSED_PX : width;
+    const raw = (x: number) => startW + (x - startX);
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+    const move = (ev: PointerEvent) => setDragW(raw(ev.clientX));
+    const up = (ev: PointerEvent) => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      setDragW(null);
+      const r = raw(ev.clientX);
+      if (r < SIDEBAR_COLLAPSE_AT) onResize({ collapsed: true });
+      else onResize({ collapsed: false, width: clampW(r) });
+    };
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+  // Live preview during a drag; the stored collapsed/width otherwise. Below the
+  // threshold the row renders as the collapsed rail (CSS 48px), else at the clamped
+  // width so you see exactly where the release will land.
+  const liveCollapsed = dragW != null ? dragW < SIDEBAR_COLLAPSE_AT : collapsed;
+  const liveWidth = clampW(dragW ?? width);
+  const rootStyle: CSSProperties | undefined = liveCollapsed
+    ? undefined
+    : { width: liveWidth, flexBasis: liveWidth };
+
   return (
-    <div className={"sidebar" + (collapsed ? " collapsed" : "")}>
+    <div
+      className={"sidebar" + (liveCollapsed ? " collapsed" : "")}
+      style={rootStyle}
+    >
       <div className="sidebar-top">
         <Button
           variant="ghost"
@@ -1289,6 +1398,19 @@ export function Sidebar({
           {!collapsed && <span className="gear" />}
         </div>
       </div>
+
+      {/* Invisible right-edge grab strip — no rendered splitter, just a col-resize
+          hit area. Present even when collapsed: dragging it right past the threshold
+          re-opens the rail (and dragging left past it collapses an open sidebar). */}
+      <div
+        className={"sidebar-resizer" + (dragW != null ? " dragging" : "")}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize sidebar"
+        title="Drag to resize"
+        onPointerDown={startResize}
+        onDoubleClick={() => onResize({ collapsed: false, width: 250 })}
+      />
     </div>
   );
 }
