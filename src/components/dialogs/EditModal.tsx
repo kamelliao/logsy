@@ -49,6 +49,24 @@ const FIELD_TYPES: FieldType[] = ["string", "int", "hex", "float", "time"];
 const LIGHT_TEXT = "#e6edf3";
 const HEX6 = /^#[0-9a-fA-F]{6}$/;
 
+/**
+ * Sanitize a capture field name to a valid regex named-group identifier
+ * (`[A-Za-z_][A-Za-z0-9_]*`): strip disallowed chars, then any leading digits.
+ * `reason` is a human message when the raw input had to be altered, so callers
+ * can flash a hint instead of silently swallowing the keystroke; null = clean.
+ */
+function cleanFieldName(raw: string): { value: string; reason: string | null } {
+  const noBad = raw.replace(/[^A-Za-z0-9_]/g, "");
+  const value = noBad.replace(/^[0-9]+/, "");
+  const reason =
+    noBad !== raw
+      ? "Only letters, digits, and underscore"
+      : value !== noBad
+        ? "Name can’t start with a digit"
+        : null;
+  return { value, reason };
+}
+
 /** Relative luminance (0 dark … 1 light) of a #rrggbb color; 1 for non-hex. */
 function luminance(hex: string): number {
   if (!HEX6.test(hex)) return 1;
@@ -303,6 +321,26 @@ export function EditModal({
   // chip is in "capture" state, so we stash the index here and let the input's
   // ref callback focus itself on mount (then clear the request).
   const focusChipRef = useRef<number | null>(null);
+
+  // Transient "invalid character" hint for the capture name inputs. Rejected
+  // keystrokes flash a red-shake + a tooltip on the chip; the tooltip is
+  // debounced so a burst of bad keys shows one bubble that fades 1.5s after the
+  // last one (rather than flickering per keystroke).
+  const [nameWarn, setNameWarn] = useState<{ i: number; msg: string } | null>(
+    null,
+  );
+  const nameWarnTimer = useRef<number | null>(null);
+  const flagNameWarn = (i: number, msg: string) => {
+    setNameWarn({ i, msg });
+    if (nameWarnTimer.current) clearTimeout(nameWarnTimer.current);
+    nameWarnTimer.current = window.setTimeout(() => setNameWarn(null), 1500);
+  };
+  useEffect(
+    () => () => {
+      if (nameWarnTimer.current) clearTimeout(nameWarnTimer.current);
+    },
+    [],
+  );
 
   const applyTokens = (next: GenToken[]) => {
     setGenTokens(next);
@@ -575,38 +613,49 @@ export function EditModal({
                         {t.kind === "ws" ? "␣" : t.raw}
                       </span>
                       {t.state === "capture" && (
-                        <input
-                          className="gc-name"
-                          // Auto-focus the name input the moment this chip becomes
-                          // a capture (clicking the chip), so the user can name the
-                          // field without a second click. Cleared after focusing so
-                          // it only fires for the chip that just turned to capture.
-                          ref={(el) => {
-                            if (el && focusChipRef.current === i) {
-                              focusChipRef.current = null;
-                              el.focus();
-                              el.select();
+                        <span className="gc-name-wrap">
+                          <input
+                            className={
+                              "gc-name" +
+                              (nameWarn?.i === i ? " warn shake" : "")
                             }
-                          }}
-                          // Bind to the raw user text, not the resolved name, so
-                          // the field can be cleared and retyped; the auto name
-                          // shows as a placeholder and only lands at build time.
-                          value={t.name ?? ""}
-                          size={Math.max(
-                            2,
-                            (t.name || chipNames[i] || "").length,
+                            // Auto-focus the name input the moment this chip becomes
+                            // a capture (clicking the chip), so the user can name the
+                            // field without a second click. Cleared after focusing so
+                            // it only fires for the chip that just turned to capture.
+                            ref={(el) => {
+                              if (el && focusChipRef.current === i) {
+                                focusChipRef.current = null;
+                                el.focus();
+                                el.select();
+                              }
+                            }}
+                            // Bind to the raw user text, not the resolved name, so
+                            // the field can be cleared and retyped; the auto name
+                            // shows as a placeholder and only lands at build time.
+                            value={t.name ?? ""}
+                            size={Math.max(
+                              2,
+                              (t.name || chipNames[i] || "").length,
+                            )}
+                            placeholder={chipNames[i] ?? ""}
+                            title="Field name"
+                            disabled={!chipsActive}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              const { value, reason } = cleanFieldName(
+                                e.target.value,
+                              );
+                              renameChip(i, value);
+                              if (reason) flagNameWarn(i, reason);
+                            }}
+                          />
+                          {nameWarn?.i === i && (
+                            <span className="gc-name-tip" role="alert">
+                              {nameWarn.msg}
+                            </span>
                           )}
-                          placeholder={chipNames[i] ?? ""}
-                          title="Field name"
-                          disabled={!chipsActive}
-                          onClick={(e) => e.stopPropagation()}
-                          onChange={(e) =>
-                            renameChip(
-                              i,
-                              e.target.value.replace(/[^A-Za-z0-9_]/g, ""),
-                            )
-                          }
-                        />
+                        </span>
                       )}
                     </span>
                   );

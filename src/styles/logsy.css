@@ -5266,6 +5266,70 @@ button {
 .gc-name:focus {
   outline: 1px solid rgba(80, 161, 79, 0.5);
 }
+/* invalid-char feedback on the capture name input (see cleanFieldName) */
+.gc-name-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.gc-name.warn {
+  background: rgba(220, 38, 38, 0.12);
+  outline: 1px solid rgba(220, 38, 38, 0.6);
+}
+.gc-name.shake {
+  animation: gc-name-shake 0.28s ease;
+}
+@keyframes gc-name-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20%,
+  60% {
+    transform: translateX(-2px);
+  }
+  40%,
+  80% {
+    transform: translateX(2px);
+  }
+}
+.gc-name-tip {
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: #dc2626;
+  color: #fff;
+  font-family: var(--ui-font);
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  animation: gc-name-tip-in 0.12s ease;
+}
+/* little downward arrow */
+.gc-name-tip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 4px solid transparent;
+  border-top-color: #dc2626;
+}
+@keyframes gc-name-tip-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 3px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
 .gen-chips-off {
   display: flex;
   align-items: center;
