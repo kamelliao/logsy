@@ -721,6 +721,37 @@ button {
   max-height: 120px;
   overflow-y: auto;
 }
+/* A bottom "fog" fade hints that the list scrolls and visually separates it from the
+   "New group…" action below. It's a sticky pseudo pinned to the scroller's bottom edge,
+   with its opacity driven by the scroll position: fully on while there's more to reveal,
+   then clearing right at the bottom (fog gone = you've hit the end). When the list is
+   short enough not to scroll, the scroll timeline is inactive, so the base `opacity: 0`
+   wins and no fog shows at all. */
+.menu-grouplist::after {
+  content: "";
+  position: sticky;
+  bottom: 0;
+  display: block;
+  height: 22px;
+  /* Overlay the last row instead of adding scrollable height below it. */
+  margin-top: -22px;
+  pointer-events: none;
+  background: linear-gradient(to top, #fff 15%, transparent);
+  opacity: 0;
+  animation: menu-grouplist-fog linear;
+  animation-timeline: scroll(nearest);
+}
+@keyframes menu-grouplist-fog {
+  /* Hold the fog through the scroll, then fade it out only in the final stretch so it
+     vanishes exactly as the last row comes fully into view. */
+  0%,
+  82% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
 /* The file row's context menu carries longer labels ("Show in File Explorer") than
    the shared 168px `.menu-pop` min-width — give it a touch more room so nothing wraps. */
 .file-menu {
