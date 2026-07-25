@@ -735,6 +735,16 @@ export function trackFieldsOf(filter: Filter): FieldDef[] {
  * several tracks (a filter with several numeric fields), but only tracks bound to
  * that one first-matched filter.
  */
+/** Key for a per-lane opt-out (see `AppState.timelineExcludedByFile`): a specific
+ *  line taken off ONE (filter, time-field) lane while staying on its other lanes. */
+export function timelineExcludeKey(
+  line: number,
+  filterId: string,
+  timeField: string,
+): string {
+  return line + " " + filterId + " " + timeField;
+}
+
 export function buildTimeline(
   view: ViewResult,
   lineNumbers: Iterable<number>,
@@ -745,6 +755,10 @@ export function buildTimeline(
   // collapses the time domain and froze the canvas. Callers can surface a
   // warning from this set.
   badEndTracks?: Set<string>,
+  // Per-lane opt-outs: `timelineExcludeKey(line, filterId, timeField)` entries the
+  // user removed from one lane (keeping the line on its other lanes). A mark is
+  // skipped when its (line, filter, field) is in here.
+  excluded?: Set<string>,
 ): EventMark[] {
   const visible = tracks.filter((t) => !t.hidden);
   const out: EventMark[] = [];
@@ -759,6 +773,7 @@ export function buildTimeline(
     const text = row.text;
     for (const tr of visible) {
       if (tr.filterId !== fid) continue;
+      if (excluded?.has(timelineExcludeKey(n, fid, tr.timeField))) continue;
       const sv = fields[tr.timeField];
       if (!sv) continue;
       const t = coerceTime(sv.raw, tr.unit, tr.format);

@@ -171,6 +171,28 @@ function RowMenuItems({
         Duplicate
       </DropdownMenuItem>
       <DropdownMenuSeparator />
+      {/* Compare first, then timeline — same order as the log-line row menu. */}
+      {hasFields ? (
+        <DropdownMenuItem onClick={onCompare}>
+          <span className="mi-ico">
+            <Columns3 size={15} />
+          </span>
+          Add matching lines to compare
+        </DropdownMenuItem>
+      ) : (
+        // No parsed field → nothing to line up. Disabled with a reason, mirroring
+        // the timeline item, so the path isn't a silent dead end.
+        <DropdownMenuItem
+          disabled
+          className="disabled"
+          title="Needs a named capture field, e.g. (?<ts>\d+)"
+        >
+          <span className="mi-ico">
+            <Columns3 size={15} />
+          </span>
+          Add matching lines to compare
+        </DropdownMenuItem>
+      )}
       {timeFields.length === 0 ? (
         // No capture field → the action can't work. Show it disabled (not
         // hidden) with a one-line reason, so the path isn't a silent dead end.
@@ -209,27 +231,6 @@ function RowMenuItems({
             ))}
           </DropdownMenuSubContent>
         </DropdownMenuSub>
-      )}
-      {hasFields ? (
-        <DropdownMenuItem onClick={onCompare}>
-          <span className="mi-ico">
-            <Columns3 size={15} />
-          </span>
-          Add matching lines to compare
-        </DropdownMenuItem>
-      ) : (
-        // No parsed field → nothing to line up. Disabled with a reason, mirroring
-        // the timeline item, so the path isn't a silent dead end.
-        <DropdownMenuItem
-          disabled
-          className="disabled"
-          title="Needs a named capture field, e.g. (?<ts>\d+)"
-        >
-          <span className="mi-ico">
-            <Columns3 size={15} />
-          </span>
-          Add matching lines to compare
-        </DropdownMenuItem>
       )}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onClick={onDelete}>

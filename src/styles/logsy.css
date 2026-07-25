@@ -619,7 +619,17 @@ button {
    contents scroll instead of spilling past the top/bottom edge. */
 .file-menu,
 .fg-menu {
-  max-height: calc(100vh - 16px);
+  /* A sane cap (not the whole viewport) with the menu itself as the fallback scroller;
+     in practice the group list below scrolls first, so the fixed parts stay visible. */
+  max-height: min(70vh, 520px);
+  overflow-y: auto;
+}
+/* The "Move to group" list — the only unbounded part of the file menu. Scroll it on its
+   own (via `.scroll`, the app-wide scrollbar chrome) past a handful of groups so the
+   menu stays compact and the actions below it never get pushed off screen. Kept a bit
+   short so the menu reads squat-and-balanced rather than a tall thin column. */
+.menu-grouplist {
+  max-height: 160px;
   overflow-y: auto;
 }
 .menu-item.on {
@@ -4486,6 +4496,53 @@ button {
 .menu-item.sub-open,
 .menu-item.has-sub[data-popup-open] {
   background: var(--row-hover);
+}
+
+/* Hover flyout for the log-line menu's "Add to timeline" (its time-field picker).
+   A pure-CSS submenu (like the app's other menus, no open/close state): shown while
+   the parent row is hovered, anchored to its right edge. `position: absolute` lifts
+   it out of the parent's flex row so it isn't laid out inline with the label. */
+.row-menu .menu-item.has-sub {
+  position: relative;
+}
+/* The timeline hover submenu. It's positioned by JS (fixed left/top, clamped to the
+   viewport so a low anchor doesn't clip it — see TimelineAddSubmenu); this rule is
+   just the box + a height cap with the app scrollbar chrome (via the `scroll` class)
+   for many filters × fields. */
+.row-menu .row-submenu {
+  z-index: 61;
+  min-width: 150px;
+  max-width: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+  padding: 3px;
+}
+/* Per-filter section header inside the timeline submenu: keep a long filter
+   description/pattern on one line rather than blowing out the menu width. It's a
+   label, not an action — override the `cursor:pointer` it inherits from the enclosing
+   `.menu-item.has-sub`. */
+.row-submenu .menu-section {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+/* Divider between per-filter sections. */
+.row-subsection + .row-subsection {
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: 1px solid var(--border);
+}
+/* Per-field plotted/applicable count for a multi-line "Add to timeline" batch. */
+.row-submenu .mi-count {
+  margin-left: auto;
+  padding-left: 14px;
+  font-size: 11px;
+  opacity: 0.55;
+  font-variant-numeric: tabular-nums;
 }
 
 /* ============================================================
