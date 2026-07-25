@@ -56,8 +56,16 @@ import {
 type ContainerMap = Record<string, string[]>;
 
 const CONT = (cid: string) => "cont:" + cid;
+// A group's header is its own droppable, distinct from its body's `CONT` id (dnd-kit
+// forbids two droppables sharing an id). Dropping on the header files the batch at the
+// END of the group — this is what makes an OPEN or EMPTY group reachable, where the
+// 4px-tall body is a near-impossible target on its own.
+const HEAD = (cid: string) => "head:" + cid;
+/** A droppable id that stands for a whole container (body or group header), not a row. */
+const isContainerId = (id: string) =>
+  id.startsWith("cont:") || id.startsWith("head:");
 const findContainer = (id: string, map: ContainerMap): string | null => {
-  if (id.startsWith("cont:")) return id.slice(5);
+  if (isContainerId(id)) return id.slice(5);
   for (const k of Object.keys(map)) if (map[k].includes(id)) return k;
   return null;
 };
@@ -281,21 +289,25 @@ function FileItem({
           <div className="menu-section">
             {batch ? `Move ${selectedCount} files to group` : "Move to group"}
           </div>
-          {groups.map((g) => (
-            <div
-              key={g.id}
-              className={"menu-item" + (file.groupId === g.id ? " on" : "")}
-              onClick={() => {
-                setMenu(null);
-                onMoveToGroup(g.id);
-              }}
-            >
-              <span className="mi-ico">
-                <Folder size={14} />
-              </span>{" "}
-              {g.name}
-            </div>
-          ))}
+          {/* Only the group list scrolls once there are many groups — the icon grid
+              above and the "New group / Close" actions below stay put and reachable. */}
+          <div className="menu-grouplist scroll">
+            {groups.map((g) => (
+              <div
+                key={g.id}
+                className={"menu-item" + (file.groupId === g.id ? " on" : "")}
+                onClick={() => {
+                  setMenu(null);
+                  onMoveToGroup(g.id);
+                }}
+              >
+                <span className="mi-ico">
+                  <Folder size={14} />
+                </span>{" "}
+                {g.name}
+              </div>
+            ))}
+          </div>
           <div
             className="menu-item"
             onClick={() => {
@@ -437,11 +449,12 @@ function GroupSection({
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(group.name);
   const inputRef = useRef<HTMLInputElement>(null);
-  // While the group is folded shut its body is gone, so the header stands in as the
-  // drop target — a file can be filed away into a collapsed group without opening it.
+  // The header is always a drop target (its own `HEAD` id): a file dropped on it lands
+  // at the end of the group. This covers the cases the thin body can't — a collapsed
+  // group (no body at all) and an open but empty one (a 4px sliver) — so you can always
+  // file into a group by aiming at its name.
   const { setNodeRef: setHeaderDropRef, isOver: headerOver } = useDroppable({
-    id: CONT(group.id),
-    disabled: open,
+    id: HEAD(group.id),
   });
 
   useEffect(() => {
@@ -959,7 +972,7 @@ export function Sidebar({
   // container (e.g. the empty area below the last file) return that → drop at end.
   const collisionDetection: CollisionDetection = (args) => {
     const hits = pointerWithin(args);
-    const file = hits.find((h) => !String(h.id).startsWith("cont:"));
+    const file = hits.find((h) => !isContainerId(String(h.id)));
     return file ? [file] : hits;
   };
 
@@ -1016,7 +1029,9 @@ export function Sidebar({
       return;
     }
     const overId = over.id as string;
-    if (overId.startsWith("cont:")) {
+    // A whole-container target (a body's `CONT` or a group header's `HEAD`) → drop at
+    // the end of that container.
+    if (isContainerId(overId)) {
       setDropTarget({ container: overId.slice(5), beforeId: null });
       return;
     }

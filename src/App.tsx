@@ -365,6 +365,8 @@ export function App() {
     deleteAllTracks,
     clearAllLines,
     addLinesToTimeline,
+    timelineFieldsForLines,
+    removeTimelineField,
     toggleTimelineTrack,
   } = useTimeline({ view, file, set, selectPanelTab });
   const { markers, setMarker, removeMarker } = useBookmarks();
@@ -900,6 +902,8 @@ export function App() {
                 onRemoveFromCompare={removeFromCompare}
                 timelineLines={b.timelineLines}
                 onAddToTimeline={addLinesToTimeline}
+                timelineFieldsForLines={timelineFieldsForLines}
+                onRemoveTimelineField={removeTimelineField}
                 onRemoveFromTimeline={removeFromTimeline}
                 selectAllNonce={isFocused ? selectAllNonce : undefined}
                 gotoSignal={isFocused ? gotoSignal : undefined}

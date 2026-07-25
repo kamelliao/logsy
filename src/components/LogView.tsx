@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useEffect,
+  useLayoutEffect,
   CSSProperties,
   ReactNode,
 } from "react";
@@ -11,6 +12,7 @@ import {
   ArrowUp,
   Bookmark,
   ChartGantt,
+  Check,
   ChevronDown,
   ChevronRight,
   Columns2,
@@ -46,6 +48,7 @@ import {
 } from "@/components/widgets/markers";
 import { SelectionLinesIcon } from "@/components/widgets/icons";
 import { BookmarksMenu } from "@/components/BookmarksMenu";
+import { useClampedPopup } from "@/hooks/useClampedPopup";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -166,6 +169,155 @@ function FieldTable({ fields }: { fields: Record<string, FieldValue> }) {
   );
 }
 
+/** One (filter, field) lane the "Add to timeline" row menu can plot a selection on. */
+type TimelineLaneOption = {
+  filterId: string;
+  /** `#N description` — the section header when a selection spans filters. */
+  filterLabel: string;
+  name: string;
+  /** Every applicable selected line is plotted on this lane. */
+  on: boolean;
+  /** Of the selected lines whose filter has this field, how many currently plot. */
+  plotted: number;
+  applicable: number;
+};
+
+/**
+ * The "Add to timeline" hover submenu for the log-line row menu. A CSS `:hover`
+ * flyout can't sense the viewport, so a low anchor clipped its bottom off-screen —
+ * this measures on open and clamps itself: vertically it shifts up to fit (capped
+ * height + scroll), horizontally it flips left when there's no room right. Rows are
+ * grouped into a section per filter (header `#N description`) when the selection
+ * spans filters; each row toggles one lane (✓ = fully plotted; batch shows a count).
+ */
+function TimelineAddSubmenu({
+  fields,
+  count,
+  onToggle,
+}: {
+  fields: TimelineLaneOption[];
+  /** Number of selected (parsed) lines — pluralizes the trigger + shows per-row a/b. */
+  count: number;
+  onToggle: (f: TimelineLaneOption) => void;
+}) {
+  const showCount = count > 1;
+  const [open, setOpen] = useState(false);
+  const rowRef = useRef<HTMLDivElement>(null);
+  const flyRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{
+    left: number;
+    top: number;
+    maxHeight: number;
+  } | null>(null);
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPos(null);
+      return;
+    }
+    const row = rowRef.current;
+    const fly = flyRef.current;
+    if (!row || !fly) return;
+    const M = 8; // min gap from every viewport edge
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const r = row.getBoundingClientRect();
+    const maxHeight = Math.min(360, vh - 2 * M);
+    const h = Math.min(fly.scrollHeight, maxHeight);
+    let top = r.top - 4;
+    if (top + h > vh - M) top = vh - M - h; // shift up so the bottom fits
+    if (top < M) top = M;
+    const w = fly.offsetWidth;
+    let left = r.right - 2; // open to the right of the row
+    if (left + w > vw - M) left = r.left - w + 2; // …or flip left if no room
+    if (left < M) left = M;
+    setPos({ left, top, maxHeight });
+  }, [open]);
+
+  const groups: {
+    filterId: string;
+    filterLabel: string;
+    fields: TimelineLaneOption[];
+  }[] = [];
+  for (const f of fields) {
+    const g = groups[groups.length - 1];
+    if (g && g.filterId === f.filterId) g.fields.push(f);
+    else
+      groups.push({
+        filterId: f.filterId,
+        filterLabel: f.filterLabel,
+        fields: [f],
+      });
+  }
+  const sectioned = groups.length > 1;
+
+  const fieldRow = (fld: TimelineLaneOption) => (
+    <div
+      key={fld.filterId + ":" + fld.name}
+      className={"menu-item" + (fld.on ? " on" : "")}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle(fld);
+      }}
+    >
+      <span className="mi-ico">
+        {fld.on ? <Check size={14} /> : <ChartGantt size={14} />}
+      </span>
+      {fld.name}
+      {showCount && (
+        <span className="mi-count">
+          {fld.plotted}/{fld.applicable}
+        </span>
+      )}
+    </div>
+  );
+
+  return (
+    <div
+      className="menu-item has-sub"
+      ref={rowRef}
+      onMouseEnter={() => setOpen(true)}
+      onMouseLeave={() => setOpen(false)}
+    >
+      <span className="mi-ico">
+        <ChartGantt size={14} />
+      </span>
+      {showCount ? `Add ${count} lines to timeline` : "Add to timeline"}
+      <ChevronRight size={13} className="mi-sub" />
+      {open && (
+        <div
+          ref={flyRef}
+          className="row-submenu scroll"
+          style={{
+            position: "fixed",
+            left: pos?.left,
+            top: pos?.top,
+            maxHeight: pos?.maxHeight,
+            // Hidden for the first measuring layout pass so it never flashes at 0,0.
+            visibility: pos ? "visible" : "hidden",
+          }}
+        >
+          {sectioned ? (
+            groups.map((g) => (
+              <div className="row-subsection" key={g.filterId}>
+                <div className="menu-section" title={g.filterLabel}>
+                  {g.filterLabel}
+                </div>
+                {g.fields.map(fieldRow)}
+              </div>
+            ))
+          ) : (
+            <>
+              <div className="menu-section">Plot on time field</div>
+              {fields.map(fieldRow)}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 interface LogViewProps {
   file: LogFile;
   view: ViewResult;
@@ -215,7 +367,15 @@ interface LogViewProps {
   onAddToCompare: (ns: number[]) => void;
   onRemoveFromCompare: (ns: number[]) => void;
   timelineLines: Set<number>;
-  onAddToTimeline: (ns: number[]) => void;
+  /** Add lines to the timeline. `timeField` names WHICH time field backs the track
+   *  (from the row menu's submenu); omit it for the auto path (first candidate field). */
+  onAddToTimeline: (ns: number[], timeField?: string) => void;
+  /** The time fields the row menu may offer for a line selection (per its filters),
+   *  each flagged if it already backs a track. Empty → the plain "Add to timeline". */
+  timelineFieldsForLines?: (ns: number[]) => TimelineLaneOption[];
+  /** Un-plot a selection from ONE time field: drops that field's track (keeping the
+   *  filter's other fields), so it's a per-field remove rather than a whole-line one. */
+  onRemoveTimelineField?: (ns: number[], timeField: string) => void;
   onRemoveFromTimeline: (ns: number[]) => void;
   /** Re-decode the file with a forced encoding label (null = auto-detect). */
   onSetEncoding?: (label: string | null) => void;
@@ -276,6 +436,8 @@ export function LogView({
   onRemoveFromCompare,
   timelineLines,
   onAddToTimeline,
+  timelineFieldsForLines,
+  onRemoveTimelineField,
   onRemoveFromTimeline,
   onSetEncoding,
   onAddToNotebook,
@@ -351,6 +513,9 @@ export function LogView({
     y: number;
     n: number;
   } | null>(null);
+  // Anchor the row menu at the cursor but clamp it to the viewport so a click near the
+  // bottom/right edge can't push the menu off-screen and clip it.
+  const rowMenuPos = useClampedPopup(rowMenu);
   const [selectedLines, setSelectedLines] = useState<Set<number>>(
     () => new Set(),
   );
@@ -2003,11 +2168,12 @@ export function LogView({
           const notInTl = parsed.filter((n) => !timelineLines.has(n));
           return (
             <div
+              ref={rowMenuPos.ref}
               className="menu-pop row-menu"
               style={{
                 position: "fixed",
-                left: menu.x,
-                top: menu.y,
+                left: rowMenuPos.left,
+                top: rowMenuPos.top,
                 zIndex: 60,
               }}
             >
@@ -2109,38 +2275,101 @@ export function LogView({
                     : "Remove from compare"}
                 </div>
               )}
-              {parsed.length > 0 && notInTl.length > 0 && (
-                <div
-                  className="menu-item"
-                  onClick={() => {
-                    onAddToTimeline(notInTl);
+              {parsed.length > 0 &&
+                (() => {
+                  const fields = timelineFieldsForLines?.(parsed) ?? [];
+                  // Each entry is one (filter, field) lane. A toggle acts only on the
+                  // selected lines OF THAT FILTER (so a mixed-filter batch touches the
+                  // right lines), and always on that ONE lane: OFF opts them out of just
+                  // that lane (other fields + other lines stay), ON adds them there.
+                  type TlField = (typeof fields)[number];
+                  const toggle = (f: TlField) => {
+                    const target = parsed.filter(
+                      (n) => view.rows[n - 1]?.fieldsFromId === f.filterId,
+                    );
+                    if (f.on)
+                      (onRemoveTimelineField ?? (() => {}))(target, f.name);
+                    else onAddToTimeline(target, f.name);
                     setRowMenu(null);
-                  }}
-                >
-                  <span className="mi-ico">
-                    <ChartGantt size={14} />
-                  </span>
-                  {notInTl.length > 1
-                    ? `Add ${notInTl.length} lines to timeline`
-                    : "Add to timeline"}
-                </div>
-              )}
-              {inTl.length > 0 && (
-                <div
-                  className="menu-item mi-remove"
-                  onClick={() => {
-                    onRemoveFromTimeline(inTl);
-                    setRowMenu(null);
-                  }}
-                >
-                  <span className="mi-ico">
-                    <Minus size={14} />
-                  </span>
-                  {inTl.length > 1
-                    ? `Remove ${inTl.length} lines from timeline`
-                    : "Remove from timeline"}
-                </div>
-              )}
+                  };
+
+                  // No candidate time field (the filter parses no numeric field): fall
+                  // back to a plain per-line add/remove — there's no field to toggle.
+                  if (fields.length === 0) {
+                    if (notInTl.length > 0)
+                      return (
+                        <div
+                          className="menu-item"
+                          onClick={() => {
+                            onAddToTimeline(notInTl);
+                            setRowMenu(null);
+                          }}
+                        >
+                          <span className="mi-ico">
+                            <ChartGantt size={14} />
+                          </span>
+                          {notInTl.length > 1
+                            ? `Add ${notInTl.length} lines to timeline`
+                            : "Add to timeline"}
+                        </div>
+                      );
+                    return (
+                      <div
+                        className="menu-item mi-remove"
+                        onClick={() => {
+                          onRemoveFromTimeline(inTl);
+                          setRowMenu(null);
+                        }}
+                      >
+                        <span className="mi-ico">
+                          <Minus size={14} />
+                        </span>
+                        {inTl.length > 1
+                          ? `Remove ${inTl.length} lines from timeline`
+                          : "Remove from timeline"}
+                      </div>
+                    );
+                  }
+
+                  // Exactly one lane (one filter, one field) → a flat toggle.
+                  if (fields.length === 1) {
+                    const f = fields[0];
+                    const addN = f.applicable - f.plotted;
+                    const label = f.on
+                      ? f.applicable > 1
+                        ? `Remove ${f.applicable} lines from timeline`
+                        : "Remove from timeline"
+                      : addN > 1
+                        ? `Add ${addN} lines to timeline`
+                        : "Add to timeline";
+                    return (
+                      <div
+                        className={"menu-item" + (f.on ? " mi-remove" : "")}
+                        onClick={() => toggle(f)}
+                      >
+                        <span className="mi-ico">
+                          {f.on ? (
+                            <Minus size={14} />
+                          ) : (
+                            <ChartGantt size={14} />
+                          )}
+                        </span>
+                        {label}
+                      </div>
+                    );
+                  }
+
+                  // Several lanes → a hover submenu of per-lane toggles (see
+                  // TimelineAddSubmenu: it groups by filter and clamps itself to the
+                  // viewport so a low anchor doesn't clip the flyout).
+                  return (
+                    <TimelineAddSubmenu
+                      fields={fields}
+                      count={parsed.length}
+                      onToggle={toggle}
+                    />
+                  );
+                })()}
               {onAddToNotebook && (
                 <>
                   <div className="menu-sep" />

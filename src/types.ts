@@ -273,6 +273,12 @@ export interface AppState {
   /** Log lines added to the timeline, per file id. Persisted (survives reload),
    *  but not on the undo stack; line numbers are file-specific so it's keyed by file. */
   timelineLinesByFile?: Record<string, number[]>;
+  /** Per-lane opt-OUTS: a line on the timeline plots on every lane of its filter, so
+   *  to take one line off a SINGLE time field (keeping its other fields, and keeping
+   *  the lane's other lines) we record that one (line, filter, field) here instead of
+   *  removing the line or the lane. Persisted, off the undo stack, keyed by file id;
+   *  each entry is `line filterId timeField` (see `timelineExcludeKey`). */
+  timelineExcludedByFile?: Record<string, string[]>;
   /** Log lines added to the comparison panel, per file id. Persisted (survives
    *  reload / document switch / filter switch) like timeline lines; line numbers
    *  are file-specific so it's keyed by file. */

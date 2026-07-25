@@ -4,6 +4,7 @@ import {
   openLog,
   addFilter,
   filterRow,
+  logRow,
   logRowMenu,
   openTab,
   dragTo,
@@ -205,6 +206,161 @@ test.describe("Timeline spans & reorder", () => {
     ).toBeVisible();
   });
 
+  // The one submenu trigger in the row menu (its label pluralizes for a multi-select).
+  const sub = (page: Page) => page.locator(".row-menu .menu-item.has-sub");
+  const subField = (page: Page, name: string) =>
+    sub(page).locator(".row-submenu .menu-item", { hasText: name });
+
+  test("un-checking a time field keeps the line's OTHER fields plotted", async ({
+    page,
+  }) => {
+    // Plot line 1 on both `end` and `start` (two lanes of the same filter).
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+    await subField(page, "end").click();
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+    await subField(page, "start").click();
+
+    await openTab(page, "Timeline");
+    await expect(trackRows(page)).toHaveCount(2);
+    await expect(counts(page)).toContainText("2 events");
+
+    // Un-check `end`: the line drops off the END lane only — it stays on START, and
+    // both lanes (tracks) remain defined (empty lanes are kept, not deleted).
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+    await expect(subField(page, "end")).toHaveClass(/\bon\b/);
+    await subField(page, "end").click();
+
+    await expect(counts(page)).toContainText("1 event");
+    await expect(trackRows(page)).toHaveCount(2);
+    await expect(page.locator(".tl-sheet-body")).toContainText("#1:start");
+    await expect(page.locator(".tl-sheet-body")).toContainText("#1:end");
+  });
+
+  test("adding a line to one field does NOT plot it on other lanes", async ({
+    page,
+  }) => {
+    // Both lanes already exist in the panel (no lines yet).
+    await addTrackField(page, "start");
+    await addTrackField(page, "end");
+    await openTab(page, "Timeline");
+    await expect(trackRows(page)).toHaveCount(2);
+
+    // Add line 1 to `start` ONLY. It must not also land on the `end` lane just
+    // because that lane exists — one event, on start.
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+    await subField(page, "start").click();
+
+    await expect(counts(page)).toContainText("1 event");
+    await expect(counts(page)).toContainText("1 line");
+
+    // Confirm the menu agrees: start is ticked, end is not.
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+    await expect(subField(page, "start")).toHaveClass(/\bon\b/);
+    await expect(subField(page, "end")).not.toHaveClass(/\bon\b/);
+  });
+
+  test("a multi-line selection adds all lines on the picked field", async ({
+    page,
+  }) => {
+    // Select both lines (click line 1, shift-click line 2), then add the batch to
+    // `start` in one go. The submenu row shows plotted/applicable across the batch.
+    await logRow(page, 1).click();
+    await logRow(page, 2).click({ modifiers: ["Shift"] });
+    await logRow(page, 1).click({ button: "right" });
+    // The trigger pluralizes with the selection size, like "Add N lines to compare".
+    await expect(sub(page)).toContainText("Add 2 lines to timeline");
+    await sub(page).hover();
+    // Before adding: 0 of 2 lines plotted on start.
+    await expect(subField(page, "start")).toContainText("0/2");
+    await subField(page, "start").click();
+
+    await openTab(page, "Timeline");
+    await expect(trackRows(page)).toHaveCount(1);
+    await expect(page.locator(".tl-sheet-body")).toContainText("#1:start");
+    await expect(counts(page)).toContainText("2 events");
+    await expect(counts(page)).toContainText("2 lines");
+
+    // The submenu now reflects the batch as fully plotted on start, not on end.
+    await logRow(page, 1).click();
+    await logRow(page, 2).click({ modifiers: ["Shift"] });
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+    await expect(subField(page, "start")).toContainText("2/2");
+    await expect(subField(page, "start")).toHaveClass(/\bon\b/);
+    await expect(subField(page, "end")).toContainText("0/2");
+    await expect(subField(page, "end")).not.toHaveClass(/\bon\b/);
+  });
+
+  test("the per-track line badge counts only its OWN lane", async ({
+    page,
+  }) => {
+    // The a/b badge on each track row: `a` = lines on THIS lane, `b` = matchable.
+    // Adding/removing a line on one field must move only that lane's `a`.
+    const laneBadge = (lane: string) =>
+      trackRows(page)
+        .filter({ hasText: lane })
+        .locator('span[title*="on the timeline"]');
+
+    await addTrackField(page, "start");
+    await addTrackField(page, "end");
+    await openTab(page, "Timeline");
+
+    // Add line 1 to `start` only → start badge 1/2, end stays 0/2.
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+    await subField(page, "start").click();
+    await expect(laneBadge("#1:start")).toHaveText("1/2");
+    await expect(laneBadge("#1:end")).toHaveText("0/2");
+
+    // Also add line 1 to `end` → both lanes now 1/2.
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+    await subField(page, "end").click();
+    await expect(laneBadge("#1:start")).toHaveText("1/2");
+    await expect(laneBadge("#1:end")).toHaveText("1/2");
+
+    // Remove line 1 from `start` → start drops to 0/2 IMMEDIATELY; end keeps 1/2
+    // (not held until every field is removed).
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+    await subField(page, "start").click();
+    await expect(laneBadge("#1:start")).toHaveText("0/2");
+    await expect(laneBadge("#1:end")).toHaveText("1/2");
+  });
+
+  test("un-checking one line keeps the lane's OTHER lines", async ({
+    page,
+  }) => {
+    // Both lines share the `end` lane (no start track).
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+    await subField(page, "end").click();
+    await logRow(page, 2).click({ button: "right" });
+    await sub(page).hover();
+    await subField(page, "end").click();
+
+    await openTab(page, "Timeline");
+    await expect(trackRows(page)).toHaveCount(1);
+    await expect(counts(page)).toContainText("2 events");
+    await expect(counts(page)).toContainText("2 lines");
+
+    // Remove line 1 from `end`. `end` is line 1's only lane, so line 1 leaves the
+    // timeline — but the lane stays and line 2 is still plotted on it.
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+    await subField(page, "end").click();
+
+    await expect(trackRows(page)).toHaveCount(1);
+    await expect(page.locator(".tl-sheet-body")).toContainText("#1:end");
+    await expect(counts(page)).toContainText("1 event");
+    await expect(counts(page)).toContainText("1 line");
+  });
+
   test("reorders tracks by dragging the grip", async ({ page }) => {
     await addTrackField(page, "start");
     await addTrackField(page, "end");
@@ -226,5 +382,91 @@ test.describe("Timeline spans & reorder", () => {
       .locator(".tl-sheet-body .cursor-text")
       .allInnerTexts();
     expect(lanesAfter).toEqual(["#1:end", "#1:start"]);
+  });
+});
+
+// A selection spanning TWO filters: each keeps its own fields, labelled by lane.
+test.describe("Timeline cross-filter selection", () => {
+  const TWO_FILTER_LOG = ["boot ts=100", "http dur=5"].join("\n");
+
+  test.beforeEach(async ({ page, tauri }) => {
+    await openLog(page, tauri, "/logs/x.log", TWO_FILTER_LOG);
+    await addFilter(page, "boot ts=(?<ts>\\d+)", {
+      regex: true,
+      description: "boot",
+    });
+    await addFilter(page, "http dur=(?<dur>\\d+)", {
+      regex: true,
+      description: "http",
+    });
+  });
+
+  const sub = (page: Page) => page.locator(".row-menu .menu-item.has-sub");
+  const field = (page: Page, name: string) =>
+    sub(page).locator(".row-submenu .menu-item", { hasText: name });
+
+  test("groups fields into per-filter sections and scopes the add", async ({
+    page,
+  }) => {
+    // Select line 1 (filter #1 `ts`) + line 2 (filter #2 `dur`).
+    await logRow(page, 1).click();
+    await logRow(page, 2).click({ modifiers: ["Shift"] });
+    await logRow(page, 1).click({ button: "right" });
+    await sub(page).hover();
+
+    // Cross-filter → a section header per filter, fields grouped under them.
+    await expect(
+      sub(page).locator(".row-submenu .menu-section", { hasText: "#1 boot" }),
+    ).toBeVisible();
+    await expect(
+      sub(page).locator(".row-submenu .menu-section", { hasText: "#2 http" }),
+    ).toBeVisible();
+    // One (filter, field) row each; each applies to 1 of the 2 selected lines.
+    await expect(field(page, "ts")).toContainText("0/1");
+    await expect(field(page, "dur")).toContainText("0/1");
+
+    // Adding `ts` (under #1) plots ONLY line 1 — line 2's filter is untouched.
+    await field(page, "ts").click();
+    await openTab(page, "Timeline");
+    await expect(trackRows(page)).toHaveCount(1);
+    await expect(page.locator(".tl-sheet-body")).toContainText("#1:ts");
+    await expect(counts(page)).toContainText("1 event");
+    await expect(counts(page)).toContainText("1 line");
+  });
+});
+
+// Both the row menu and its "Add to timeline" flyout must stay on-screen when opened
+// from a row low in the viewport (they used to spill off the bottom and get clipped).
+test.describe("Timeline row menu clamping", () => {
+  const TALL_LOG = Array.from(
+    { length: 80 },
+    (_, i) => `req 0.${10 + i} done 0.${30 + i}`,
+  ).join("\n");
+
+  test.beforeEach(async ({ page, tauri }) => {
+    await openLog(page, tauri, "/logs/tall.log", TALL_LOG);
+    await addFilter(page, SPAN_PATTERN, { regex: true, description: "span" });
+  });
+
+  test("the menu and flyout stay within the viewport near the bottom", async ({
+    page,
+  }) => {
+    const vh = page.viewportSize()!.height;
+    // Right-click the lowest rendered row — its menu anchors near the bottom edge.
+    await page.locator(".log-row").last().click({ button: "right" });
+
+    const menu = page.locator(".row-menu");
+    await expect(menu).toBeVisible();
+    const mBox = await menu.boundingBox();
+    expect(mBox!.y + mBox!.height).toBeLessThanOrEqual(vh);
+
+    // Open the flyout (span has two fields) and check it too.
+    const trigger = menu.locator(".menu-item.has-sub");
+    await trigger.hover();
+    const fly = page.locator(".row-submenu");
+    await expect(fly).toBeVisible();
+    const fBox = await fly.boundingBox();
+    expect(fBox!.y + fBox!.height).toBeLessThanOrEqual(vh);
+    expect(fBox!.y).toBeGreaterThanOrEqual(0);
   });
 });
