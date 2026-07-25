@@ -3,10 +3,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { LogFile } from "@/types";
+import type { AppState, LogFile } from "@/types";
 import { uid } from "@/lib/defaults";
 import { baseName } from "@/lib/path";
 import { nextPaint } from "@/lib/paint";
+import { compileAll } from "@/lib/engine";
+import { scanAndPrime, scanSpecs } from "@/lib/scanPrime";
+import { beginOpenTiming, cancelOpenTiming } from "@/lib/openTiming";
 import { useStore } from "@/store";
 
 // In-memory log contents, keyed by file id. Log bodies are *not* persisted to
@@ -26,6 +29,65 @@ function splitLines(text: string): string[] {
   const arr = text.split(/\r\n|\n|\r/);
   if (arr.length > 0 && arr[arr.length - 1] === "") arr.pop();
   return arr;
+}
+
+// Warm the match cache for a file that just landed, BEFORE its lines become
+// visible to React. The first `computeView` over a new file is otherwise a cold
+// O(lines × filters) scan on the main thread — the dominant cost of opening a
+// large log. Rust scans the same file with one RegexSet pass across worker
+// threads and we prime the cache with the result, so that first computeView is a
+// cache hit throughout. Best-effort in every direction: no Tauri shell, no filter
+// set, an unsupported pattern — the engine just scans as it always did.
+//
+// Awaiting this before the lines go into the store is the whole point: an effect
+// that primed afterwards would always lose the race to the render it was meant to
+// speed up.
+/** How the scan went, for the open-perf log line. Zeroed when nothing was scanned. */
+interface PrimeStats {
+  patterns: number;
+  primed: number;
+  fallback: number;
+  rejected: number;
+  readMs: number;
+  splitMs: number;
+  scanMs: number;
+  primeMs: number;
+}
+const NO_SCAN: PrimeStats = {
+  patterns: 0,
+  primed: 0,
+  fallback: 0,
+  rejected: 0,
+  readMs: 0,
+  splitMs: 0,
+  scanMs: 0,
+  primeMs: 0,
+};
+
+async function primeFor(
+  path: string,
+  encoding: string | undefined,
+  lines: string[],
+  setId: string | null | undefined,
+  doc: AppState,
+): Promise<PrimeStats> {
+  const set = setId ? doc.filterSets.find((g) => g.id === setId) : undefined;
+  const specs = scanSpecs(compileAll(set?.filters ?? []));
+  if (!specs.length) return NO_SCAN;
+  const t0 = performance.now();
+  try {
+    const r = await scanAndPrime(path, encoding, lines, specs);
+    const primeMs = performance.now() - t0;
+    // A null result means the scan was unusable (no shell, line-count mismatch) and
+    // computeView will do the whole thing itself — report every pattern as fallback
+    // so the log line shows that, rather than a misleading zero.
+    return r
+      ? { patterns: specs.length, ...r, primeMs }
+      : { ...NO_SCAN, patterns: specs.length, fallback: specs.length, primeMs };
+  } catch {
+    /* priming is an optimisation; never fail an open over it */
+    return { ...NO_SCAN, patterns: specs.length, fallback: specs.length };
+  }
 }
 
 interface Deps {
@@ -166,7 +228,11 @@ export function useLogFiles({
         s.files = s.files.filter((x) => !ids.has(x.id));
         if (s.activeFileId && ids.has(s.activeFileId))
           s.activeFileId = s.files[0]?.id ?? null;
-        for (const id of ids) delete linesStore[id];
+        for (const id of ids) {
+          delete linesStore[id];
+          // Closed before its first view: no timing to report.
+          cancelOpenTiming(id);
+        }
       },
       { undoable: false },
     );
@@ -213,14 +279,20 @@ export function useLogFiles({
           // nonce is snapshotted too: the Cancel button bumps it to abandon the open.
           const selectAtStart = selectNonceRef.current;
           const cancelAtStart = openCancelRef.current;
+          // Stage timings for the open-perf log line (see lib/openTiming.ts). Started
+          // here so the total covers everything the user waits through.
+          const startedAt = performance.now();
           await nextPaint(); // let the overlay paint before the read/split blocks
+          let ipcMs = 0;
           try {
+            const t0 = performance.now();
             const res = await invoke<{
               text: string;
               encoding: string;
               size: number;
               mtime: number | null;
             }>("read_text_file", { path });
+            ipcMs = performance.now() - t0;
             text = res.text;
             encoding = res.encoding;
             sizeBytes = res.size;
@@ -234,14 +306,35 @@ export function useLogFiles({
           if (openCancelRef.current !== cancelAtStart) return;
           pushRecent("recentFiles", path);
           await nextPaint(); // yield again so the overlay stays visible before the synchronous line-split
+          const tSplit = performance.now();
           const lns = splitLines(text);
+          const jsSplitMs = performance.now() - tSplit;
           const id = uid("file");
+          // The set LIST is global; a new document adopts the caller's set (a pane
+          // drop), else the current file's, else the first one. Resolved here rather
+          // than inside the patch because the scan below needs to know which filters
+          // the file will open under.
+          const doc = getDoc();
+          const setId =
+            opts?.setId ??
+            doc.files.find((x) => x.id === doc.activeFileId)?.activeSetId ??
+            doc.filterSets[0]?.id ??
+            null;
+          const scan = await primeFor(path, undefined, lns, setId, doc);
           linesStore[id] = lns;
+          // Completed by App once this file's first view is computed.
+          beginOpenTiming(id, {
+            name: baseName(path),
+            bytes: sizeBytes,
+            lines: lns.length,
+            encoding,
+            ipcMs,
+            jsSplitMs,
+            startedAt,
+            ...scan,
+          });
           patchState(
             (s) => {
-              // The set LIST is global; a new document adopts the caller's set (a
-              // pane drop), else the current file's, else the first one.
-              const cur = s.files.find((x) => x.id === s.activeFileId);
               const f: LogFile = {
                 id,
                 name: baseName(path),
@@ -251,11 +344,7 @@ export function useLogFiles({
                 sizeBytes,
                 encoding,
                 detectedEncoding: encoding,
-                activeSetId:
-                  opts?.setId ??
-                  cur?.activeSetId ??
-                  s.filterSets[0]?.id ??
-                  null,
+                activeSetId: setId,
               };
               s.files.push(f);
               // Auto-activate the freshly opened file — unless the caller places
@@ -306,6 +395,9 @@ export function useLogFiles({
         return;
       }
       const lns = splitLines(res.text);
+      // Re-decoding produces a fresh lines array — a new cache key with nothing in
+      // it — so this file needs priming again just like a first open.
+      await primeFor(path, label ?? undefined, lns, f.activeSetId, getDoc());
       linesStore[fid] = lns;
       patchState(
         (s) => {
@@ -343,15 +435,41 @@ export function useLogFiles({
     // network share), and without feedback the blank workspace looks stuck.
     setBusy({ name });
     (async () => {
+      // Timed like a normal open: a slow restore is just as visible to the user,
+      // and this path reads the file the user last had open — often the big one.
+      const startedAt = performance.now();
       try {
-        const res = await invoke<{ text: string; encoding: string }>(
-          "read_text_file",
-          { path, encoding: encodingOverride },
-        );
+        const t0 = performance.now();
+        const res = await invoke<{
+          text: string;
+          encoding: string;
+          size: number;
+        }>("read_text_file", { path, encoding: encodingOverride });
+        const ipcMs = performance.now() - t0;
         // Even when the user has switched away mid-read (`cancelled`), keep the
         // result: the cache is keyed by file id, and caching it makes switching
         // back instant instead of triggering a second read.
-        linesStore[id] = splitLines(res.text);
+        const tSplit = performance.now();
+        const lns = splitLines(res.text);
+        const jsSplitMs = performance.now() - tSplit;
+        const scan = await primeFor(
+          path,
+          encodingOverride,
+          lns,
+          file.activeSetId,
+          getDoc(),
+        );
+        linesStore[id] = lns;
+        beginOpenTiming(id, {
+          name,
+          bytes: res.size ?? 0,
+          lines: lns.length,
+          encoding: res.encoding,
+          ipcMs,
+          jsSplitMs,
+          startedAt,
+          ...scan,
+        });
         patchState(
           (s) => {
             const f = s.files.find((x) => x.id === id);
@@ -399,7 +517,9 @@ export function useLogFiles({
             "read_text_file",
             { path, encoding: encodingOverride },
           );
-          linesStore[id] = splitLines(res.text);
+          const lns = splitLines(res.text);
+          await primeFor(path, encodingOverride, lns, f.activeSetId, getDoc());
+          linesStore[id] = lns;
           patchState(
             (s) => {
               const x = s.files.find((y) => y.id === id);

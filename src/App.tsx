@@ -32,6 +32,7 @@ import type { PaletteEntry } from "@/types";
 const EMPTY_NUMS: number[] = [];
 
 import { compileAll, computeView } from "@/lib/engine";
+import { finishOpenTiming } from "@/lib/openTiming";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { LogView } from "@/components/LogView";
 import {
@@ -325,7 +326,22 @@ export function App() {
     () => compileAll(set?.filters ?? []),
     [set?.filters],
   );
-  const view = useMemo(() => computeView(lines, compiled), [lines, compiled]);
+  // Timed for the open-perf log line: this is the cost the Rust pre-scan exists to
+  // remove, so it's the one number that says whether priming worked on a given open.
+  // Written to a ref from inside the memo (a measurement, not state — it must not
+  // re-render) and picked up by the effect below, which runs after this render.
+  const viewMsRef = useRef(0);
+  const view = useMemo(() => {
+    const t0 = performance.now();
+    const v = computeView(lines, compiled);
+    viewMsRef.current = performance.now() - t0;
+    return v;
+  }, [lines, compiled]);
+  // Emits only for a file with a pending open record, so filter toggles and tab
+  // switches (which also recompute the view) are no-ops here.
+  useEffect(() => {
+    if (file) finishOpenTiming(file.id, viewMsRef.current);
+  }, [file, view]);
 
   // The filter slice's confirm-dialog collaborator can't be store state (it's a
   // React/UI primitive), so bind it into the store once.

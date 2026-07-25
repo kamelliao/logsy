@@ -550,13 +550,21 @@ const matchCache = new WeakMap<readonly string[], Map<string, MatchBits>>();
 // million-line log stay under ~40 MB.
 const MATCH_CACHE_MAX = 300;
 
+// The per-regex cache key. Defined once and used by every reader and writer of the
+// cache: a second copy of this expression is a bug you cannot see, because the
+// separator is a NUL — chosen so it can't occur inside a source or flags string and
+// let two different regexes collide — and it renders as whitespace in most tools.
+function cacheKey(source: string, flags: string): string {
+  return source + " " + flags;
+}
+
 function matchBitsFor(lines: string[], re: RegExp): MatchBits {
   let perFile = matchCache.get(lines);
   if (!perFile) {
     perFile = new Map();
     matchCache.set(lines, perFile);
   }
-  const key = re.source + " " + re.flags;
+  const key = cacheKey(re.source, re.flags);
   const hit = perFile.get(key);
   if (hit) {
     perFile.delete(key); // re-insert to refresh LRU recency
@@ -577,6 +585,49 @@ function matchBitsFor(lines: string[], re: RegExp): MatchBits {
   if (perFile.size > MATCH_CACHE_MAX)
     perFile.delete(perFile.keys().next().value!);
   return entry;
+}
+
+/**
+ * Seed the cache with match bit sets computed elsewhere — the Rust `scan_lines`
+ * command, which scans the whole file with one RegexSet pass across worker threads
+ * instead of running each filter's RegExp over each line here. Priming before the
+ * first `computeView` for a file is what keeps opening a large log off the cold
+ * O(lines × filters) path entirely.
+ *
+ * `lines` must be the exact array `computeView` will be called with (the cache is
+ * keyed by array identity), and each entry's `source`/`flags` must match the
+ * RegExp that will look it up. Existing entries are never overwritten: a bit set
+ * this engine computed itself is authoritative.
+ */
+export function primeMatchCache(
+  lines: string[],
+  entries: { source: string; flags: string; bits: Uint8Array; count: number }[],
+): void {
+  if (!entries.length) return;
+  let perFile = matchCache.get(lines);
+  if (!perFile) {
+    perFile = new Map();
+    matchCache.set(lines, perFile);
+  }
+  const expect = (lines.length + 7) >> 3;
+  for (const e of entries) {
+    if (e.bits.length !== expect) continue; // stale/mismatched scan — let JS do it
+    const key = cacheKey(e.source, e.flags);
+    if (perFile.has(key)) continue;
+    perFile.set(key, { bits: e.bits, count: e.count });
+    if (perFile.size > MATCH_CACHE_MAX)
+      perFile.delete(perFile.keys().next().value!);
+  }
+}
+
+/**
+ * Whether `re`'s bit set is already cached for `lines`. Exists so tests can assert
+ * on the cache from the outside — in particular that priming writes entries the
+ * engine's own lookup will actually find, which is not something the resulting
+ * view can reveal (a missed cache just re-scans to the same answer, slowly).
+ */
+export function hasMatchBits(lines: string[], re: RegExp): boolean {
+  return !!matchCache.get(lines)?.has(cacheKey(re.source, re.flags));
 }
 
 export function computeView(
