@@ -279,6 +279,16 @@ const EXPORT_LANG_LABELS = new Map(
   CODE_LANGUAGES.map((l) => [l.value, l.label] as const),
 );
 
+// lucide "File" glyph, inlined so the exported (React-less) filename bar keeps
+// the same icon the editor header shows. stroke:currentColor inherits the bar's
+// text colour.
+const EXPORT_FILE_ICON =
+  `<svg class="cbx-name-icon" viewBox="0 0 24 24" fill="none" ` +
+  `stroke="currentColor" stroke-width="2" stroke-linecap="round" ` +
+  `stroke-linejoin="round" aria-hidden="true">` +
+  `<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>` +
+  `<path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg>`;
+
 /** getHTML() emits plain `<pre><code>` — highlighting lives in editor
  *  decorations, not the document model — so re-run lowlight over the exported
  *  markup (reusing the editor's instance, only our registered languages). */
@@ -302,6 +312,11 @@ function highlightExportedCode(html: string): string {
     const pre = code.parentElement;
     if (!pre) return;
     const showLn = pre.getAttribute("data-line-numbers") === "true";
+    const fileName = pre.getAttribute("data-filename") || "";
+    const startLine = Math.max(
+      1,
+      parseInt(pre.getAttribute("data-start-line") || "1", 10) || 1,
+    );
     let hlLines: number[] = [];
     try {
       const raw = JSON.parse(pre.getAttribute("data-highlight") || "[]");
@@ -310,12 +325,13 @@ function highlightExportedCode(html: string): string {
       /* ignore */
     }
     const hasLang = !!lang && lang !== "plaintext";
-    // Wrap when the block carries line numbers, highlights, or a real language
-    // (the language badge). A bare plaintext block stays a plain <pre>.
-    if (!showLn && hlLines.length === 0 && !hasLang) return;
+    // Wrap when the block carries a filename, line numbers, highlights, or a
+    // real language (the badge). A bare plaintext block stays a plain <pre>.
+    if (!showLn && hlLines.length === 0 && !hasLang && !fileName) return;
 
     const lineCount = Math.max(1, text.split("\n").length);
     const hlSet = new Set(hlLines);
+    // Gutter shows absolute numbers (startLine offset); highlights stay relative.
     const nums = Array.from({ length: lineCount }, (_, i) => i + 1);
     const escLabel = (s: string) =>
       s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -329,7 +345,7 @@ function highlightExportedCode(html: string): string {
       `</div>`;
     const gutter = showLn
       ? `<div class="cbx-gutter">` +
-        nums.map((n) => `<span>${n}</span>`).join("") +
+        nums.map((n) => `<span>${startLine - 1 + n}</span>`).join("") +
         `</div>`
       : "";
     // Language badge, top-right — mirrors the editor's language dropdown spot.
@@ -344,8 +360,20 @@ function highlightExportedCode(html: string): string {
     wrapper.innerHTML = badge + hlLayer + gutter;
     pre.removeAttribute("data-line-numbers");
     pre.removeAttribute("data-highlight");
+    pre.removeAttribute("data-filename");
+    pre.removeAttribute("data-start-line");
     pre.className = "cbx-pre";
     wrapper.appendChild(pre);
+
+    // A filename gets a header bar above the code. Wrap the whole block so the
+    // bar and code share one rounded, clipped frame.
+    if (fileName) {
+      const outer = doc.createElement("div");
+      outer.className = "cbx-wrap";
+      wrapper.parentNode?.replaceChild(outer, wrapper);
+      outer.innerHTML = `<div class="cbx-name">${EXPORT_FILE_ICON}${escLabel(fileName)}</div>`;
+      outer.appendChild(wrapper);
+    }
   });
   return doc.body.innerHTML;
 }
@@ -427,6 +455,10 @@ async function exportHTML(editor: Editor, title: string) {
   pre code{background:none;padding:0}
   /* code block with a language badge / line numbers / highlighted lines */
   .cbx{position:relative;display:flex;margin:1rem 0;background:#f6f8fa;border-radius:6px}
+  .cbx-wrap{margin:1rem 0;border:1px solid #e2e8f0;border-radius:6px;overflow:hidden}
+  .cbx-wrap>.cbx{margin:0;border-radius:0}
+  .cbx-name{display:flex;align-items:center;gap:5px;padding:5px 10px;background:#eef1f4;border-bottom:1px solid #e2e8f0;font-family:ui-monospace,monospace;font-size:.72rem;color:#57606a}
+  .cbx-name-icon{flex:0 0 auto;width:12px;height:12px;opacity:.85}
   .cbx-lang{position:absolute;top:0;right:0;z-index:2;padding:2px 8px;font-family:-apple-system,"Noto Sans TC",sans-serif;font-size:.68rem;letter-spacing:.04em;text-transform:uppercase;color:#8b949e;background:#eef1f4;border-bottom-left-radius:6px;border-top-right-radius:6px}
   .cbx-hl{position:absolute;inset:0;z-index:0;padding:1rem 0;font-size:.85rem;line-height:1.6;pointer-events:none}
   .cbx-hl-row{height:calc(1.6 * 1em)}
@@ -469,6 +501,7 @@ async function exportHTML(editor: Editor, title: string) {
      table styling above. */
   [data-type="compare-card"]{overflow-x:auto}
   .cc-source-bar{display:flex;align-items:center;gap:6px;padding:5px 10px;background:#f8f9fa;border-bottom:1px solid #e2e8f0;font-size:12px;color:#555}
+  .cc-source-icon{display:inline-flex;flex:0 0 auto;color:#8b949e}
   .cc-table{width:100%;border-collapse:collapse;font-family:ui-monospace,monospace;font-size:12.5px}
   .cc-table th,.cc-table td{border:none;border-bottom:1px solid #eee;padding:3px 10px;font-size:12.5px;text-align:left;white-space:nowrap;vertical-align:top}
   .cc-table th{background:#fff;font-family:-apple-system,"Noto Sans TC",sans-serif;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:#555}
