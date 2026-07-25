@@ -7,7 +7,10 @@ import {
   useCallback,
 } from "react";
 import { createPortal } from "react-dom";
-import type { EventMark, EventShape } from "@/types";
+import { MapPin, Pencil, Trash2, Eraser } from "lucide-react";
+import type { EventMark, EventShape, TimeMarker } from "@/types";
+import { useClampedPopup } from "@/hooks/useClampedPopup";
+import { MARKER_ICONS } from "@/components/widgets/markers";
 
 // Layout constants (CSS px).
 // The left lane-label column is user-resizable (drag the gutter divider); the
@@ -20,6 +23,11 @@ const GUTTER_EDGE = 4; // px around the divider that grabs it to resize
 const GUTTER_KEY = "logsy.tl.gutter";
 const RIGHT = 12;
 const AXIS = 18; // top axis strip (timestamps) — pinned, never scrolls
+// A blank strip reserved directly below the timestamp axis: the drag-to-measure Δ
+// readout lives here (centered) so it never overlaps the timestamps above or the
+// first lane below. Lanes start at PLOT_TOP; the timestamp strip stays at AXIS.
+const DELTA_H = 18;
+const PLOT_TOP = AXIS + DELTA_H; // top of the scrolling lane/plot area
 const PAD = 6; // gap below the last lane
 // Each lane is a fixed height: adding tracks grows the plot (and scrolls it
 // vertically past the viewport) rather than squeezing every lane thinner, so
@@ -61,6 +69,42 @@ function fmtNs(ns: number): string {
   if (a >= 1e6) return trim(ns / 1e6) + " ms";
   if (a >= 1e3) return trim(ns / 1e3) + " µs";
   return group(String(Math.round(ns))) + " ns";
+}
+
+// Unit ladder for durations, largest first.
+const DUR_UNITS: [string, number][] = [
+  ["s", 1e9],
+  ["ms", 1e6],
+  ["µs", 1e3],
+  ["ns", 1],
+];
+/**
+ * Format a DURATION without decimals: the largest fitting unit as an integer, and
+ * any remainder carried into the next-smaller unit (also integer) — so `3.88 s`
+ * reads `3s 880ms`, `1.5 ms` reads `1ms 500µs`. At most two components; the second
+ * is rounded, and a round-up that reaches 1000 carries back into the first.
+ */
+function fmtDur(ns: number): string {
+  const neg = ns < 0;
+  const a = Math.round(Math.abs(ns));
+  const sign = neg ? "-" : "";
+  if (a < 1) return "0 ns";
+  let ui = DUR_UNITS.findIndex(([, size]) => a >= size);
+  if (ui < 0) ui = DUR_UNITS.length - 1;
+  const [u, uSize] = DUR_UNITS[ui];
+  let hi = Math.floor(a / uSize);
+  const rem = a - hi * uSize;
+  if (ui === DUR_UNITS.length - 1 || rem === 0)
+    return `${sign}${group(String(hi))}${u}`;
+  const [nu, nSize] = DUR_UNITS[ui + 1];
+  let lo = Math.round(rem / nSize);
+  if (lo >= 1000) {
+    hi += 1;
+    lo = 0;
+  }
+  return lo === 0
+    ? `${sign}${group(String(hi))}${u}`
+    : `${sign}${group(String(hi))}${u} ${lo}${nu}`;
 }
 
 /** Multiply a hex color toward black by `f` (0 = black, 1 = unchanged). */
@@ -170,7 +214,7 @@ function estCardW(m: EventMark): number {
     const valW = Math.max(
       approxTextW(fmtNs(m.t)),
       approxTextW(fmtNs(m.end)),
-      approxTextW(fmtNs(m.end - m.t)),
+      approxTextW(fmtDur(m.end - m.t)),
     );
     content = Math.max(content, approxTextW("begin") + 14 + valW); // label + srow gap
   } else {
@@ -288,7 +332,7 @@ function drawCardOnCanvas(
     const rows = [
       { k: "begin", v: fmtNs(m.t), accent: false },
       { k: "end", v: fmtNs(m.end), accent: false },
-      { k: "dur", v: fmtNs(m.end - m.t), accent: true },
+      { k: "dur", v: fmtDur(m.end - m.t), accent: true },
     ];
     for (const row of rows) {
       ctx.font = "11px ui-sans-serif,system-ui,sans-serif";
@@ -365,7 +409,7 @@ function EventCardBody({ m, cols }: { m: EventMark; cols?: number }) {
           </div>
           <div className="tlc-tip-srow dur">
             <span className="tlc-tip-sk">dur</span>
-            <span className="tlc-tip-sv">{fmtNs(m.end - m.t)}</span>
+            <span className="tlc-tip-sv">{fmtDur(m.end - m.t)}</span>
           </div>
         </div>
       ) : (
@@ -424,7 +468,38 @@ interface Props {
    *  (canvas + DOM overlay cards) as a WebP dataURL — used by the notebook
    *  "snapshot" button. */
   onRegisterCapture?: (capture: () => Promise<string | null>) => void;
+  /** User-placed vertical reference lines (absolute ns). */
+  timeMarkers?: TimeMarker[];
+  /** Drop a marker at absolute time `t` (ns). */
+  onAddTimeMarker?: (t: number) => void;
+  /** Remove the marker with this id. */
+  onRemoveTimeMarker?: (id: string) => void;
+  /** Remove every marker. */
+  onClearTimeMarkers?: () => void;
+  /** Update a marker (label / color / icon edits). */
+  onSetTimeMarker?: (tm: TimeMarker) => void;
 }
+
+// Marker accent (violet) — deliberately distinct from the blue guide / measure /
+// active-playhead lines so a dropped reference bar reads as its own thing.
+const MARKER_COLOR = "#8b5cf6";
+// px around a marker's line that a click / right-click counts as "on" it.
+const MARKER_HIT = 6;
+// The marker line starts here (not at AXIS) so the bar hangs BELOW the knob glyph
+// — its top meets the icon's bottom edge instead of skewering up through it. The
+// knob (DOM) is bottom-anchored to this same y (see `.tl-marker` in css).
+const MARKER_LINE_TOP = PLOT_TOP - 2;
+// Colour choices in the marker editor (saturated — a line reads better than a tint).
+const MARKER_PALETTE = [
+  "#8b5cf6",
+  "#2c6ce6",
+  "#0ea5e9",
+  "#10b981",
+  "#f59e0b",
+  "#ef4444",
+  "#ec4899",
+  "#64748b",
+];
 
 // Marker geometry per icon-size setting: `r` = point radius (px), `hot` = its
 // hovered radius, `span` = span-bar half-height (px).
@@ -444,6 +519,11 @@ export function TimelineCanvas({
   deltaLanes,
   expandedLanes,
   onRegisterCapture,
+  timeMarkers,
+  onAddTimeMarker,
+  onRemoveTimeMarker,
+  onClearTimeMarkers,
+  onSetTimeMarker,
 }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const vpRef = useRef<HTMLDivElement>(null);
@@ -485,6 +565,74 @@ export function TimelineCanvas({
         for (const c of cardsRef.current) {
           drawCardOnCanvas(ctx, c, { bg, border, text, dim, accent });
         }
+        ctx.restore();
+
+        // Marker knobs (icon + label) — DOM overlays, so the raw canvas grab misses
+        // them; redraw here. The lucide glyph is pulled from the live knob's <svg>
+        // (currentColor swapped for the marker colour so it isn't black once it's a
+        // standalone image); the default marker draws its down-triangle directly.
+        const vp = vpRef.current;
+        const knobs = vp
+          ? [...vp.querySelectorAll<HTMLElement>(".tl-marker")]
+          : [];
+        const mData = knobs
+          .map((el) => {
+            const x = parseFloat(el.style.left);
+            const color = getComputedStyle(el).color;
+            const labelEl = el.querySelector(".tl-marker-label");
+            const svgEl = el.querySelector("svg");
+            const svg = svgEl
+              ? new XMLSerializer()
+                  .serializeToString(svgEl)
+                  .replace(/currentColor/g, color)
+              : null;
+            return {
+              x,
+              color,
+              label: labelEl?.textContent ?? "",
+              labelColor: labelEl ? getComputedStyle(labelEl).color : text,
+              svg,
+            };
+          })
+          .filter((d) => Number.isFinite(d.x));
+        const mImgs = await Promise.all(
+          mData.map(
+            (d) =>
+              new Promise<HTMLImageElement | null>((res) => {
+                if (!d.svg) return res(null);
+                const img = new Image();
+                img.onload = () => res(img);
+                img.onerror = () => res(null);
+                img.src =
+                  "data:image/svg+xml;charset=utf-8," +
+                  encodeURIComponent(d.svg);
+              }),
+          ),
+        );
+        ctx.save();
+        ctx.scale(dpr, dpr);
+        const IC = 13;
+        mData.forEach((d, i) => {
+          const img = mImgs[i];
+          if (img) {
+            ctx.drawImage(img, d.x - IC / 2, MARKER_LINE_TOP - IC, IC, IC);
+          } else {
+            ctx.fillStyle = d.color;
+            ctx.beginPath();
+            ctx.moveTo(d.x - 4, MARKER_LINE_TOP - 7);
+            ctx.lineTo(d.x + 4, MARKER_LINE_TOP - 7);
+            ctx.lineTo(d.x, MARKER_LINE_TOP);
+            ctx.closePath();
+            ctx.fill();
+          }
+          if (d.label) {
+            ctx.font = "10px ui-sans-serif, system-ui, sans-serif";
+            ctx.fillStyle = d.labelColor;
+            ctx.textAlign = "left";
+            ctx.textBaseline = "alphabetic";
+            ctx.fillText(d.label, d.x + IC / 2 + 2, MARKER_LINE_TOP - 1);
+          }
+        });
         ctx.restore();
 
         return off.toDataURL("image/png");
@@ -537,6 +685,32 @@ export function TimelineCanvas({
   // point brings its card above the others (clicking the current front one drops
   // it). Keyed by markKey so it survives marks-array re-creation.
   const [raised, setRaised] = useState<string[]>([]);
+  // The marker last clicked (single-click) — kept highlighted (thicker line) and
+  // the target the Delete key removes. Independent of `active` (which is an event).
+  const [focusedMarker, setFocusedMarker] = useState<string | null>(null);
+  const focusedMarkerRef = useRef(focusedMarker);
+  focusedMarkerRef.current = focusedMarker;
+  // Kept current so the window key handler (Delete) always calls the latest remove
+  // callback — its effect deps don't include it (avoids re-subscribing per render).
+  const onRemoveMarkerRef = useRef(onRemoveTimeMarker);
+  onRemoveMarkerRef.current = onRemoveTimeMarker;
+  // Right-click marker menu: anchored at the click. `t` is the time under the
+  // cursor (for "Add marker here"); `markerId` is set when the click landed on an
+  // existing marker (→ Edit / Delete for that one).
+  const [menu, setMenu] = useState<{
+    x: number;
+    y: number;
+    t: number;
+    markerId?: string;
+  } | null>(null);
+  const menuPos = useClampedPopup(menu);
+  // Marker icon/color/label editor popover, anchored at the marker's knob.
+  const [editor, setEditor] = useState<{
+    id: string;
+    x: number;
+    y: number;
+  } | null>(null);
+  const editorPos = useClampedPopup(editor);
   const pan = useRef<{ x: number; offset: number } | null>(null);
   const measuring = useRef(false);
   // Active gutter-resize drag (grabbed the divider): snapshots the start so the
@@ -636,13 +810,13 @@ export function TimelineCanvas({
   // than squeezing lanes.
   const { laneTops, totalLaneH } = useMemo(() => {
     const tops: number[] = [];
-    let y = AXIS;
+    let y = PLOT_TOP;
     for (const l of lanes) {
       tops.push(y);
       y +=
         LANE_H + (expandedLanes?.has(l) ? (laneCardH.get(l) ?? CARD_MIN_H) : 0);
     }
-    return { laneTops: tops, totalLaneH: y - AXIS };
+    return { laneTops: tops, totalLaneH: y - PLOT_TOP };
   }, [lanes, expandedLanes, laneCardH]);
   // The point sits in the top LANE_H strip of its lane (so an expanded lane's dot
   // stays put, with the card hanging below). Content coords, before scrollY.
@@ -650,7 +824,7 @@ export function TimelineCanvas({
     (li: number) => laneTops[li] + LANE_H / 2,
     [laneTops],
   );
-  const contentH = lanes.length ? AXIS + totalLaneH + PAD : size.h;
+  const contentH = lanes.length ? PLOT_TOP + totalLaneH + PAD : size.h;
   // Extend the scroll range by the sheet-covered height so the bottom lanes can be
   // scrolled up from behind the sheet (only meaningful when there are lanes).
   const spacerH = Math.max(
@@ -739,7 +913,7 @@ export function TimelineCanvas({
 
   const pick = useCallback(
     (px: number, py: number): number => {
-      if (!view || py < AXIS) return -1;
+      if (!view || py < PLOT_TOP) return -1;
       // Map y → lane by walking the (variable-height) lane bands, then restrict
       // the hit to the lane's LANE_H point row so a click in an expanded lane's
       // card strip doesn't pick a marker.
@@ -747,7 +921,7 @@ export function TimelineCanvas({
       let lane = -1;
       for (let i = 0; i < laneTops.length; i++) {
         const bot =
-          i + 1 < laneTops.length ? laneTops[i + 1] : AXIS + totalLaneH;
+          i + 1 < laneTops.length ? laneTops[i + 1] : PLOT_TOP + totalLaneH;
         if (yc >= laneTops[i] && yc < bot) {
           lane = i;
           break;
@@ -772,9 +946,10 @@ export function TimelineCanvas({
     [marks, view, laneIndex, xOf, laneTops, totalLaneH, scrollY],
   );
 
-  // Snap a cursor x to the nearest event edge (a point's t, or a span's t/end)
-  // within SNAP_PX, so a measurement locks onto exact event timestamps and the Δ
-  // is event-to-event. Beyond the threshold the raw cursor time is kept.
+  // Snap a cursor x to the nearest event edge (a point's t, or a span's t/end) OR
+  // user marker within SNAP_PX, so a measurement locks onto exact event timestamps
+  // / dropped markers and the Δ is edge-to-edge. Beyond the threshold the raw
+  // cursor time is kept.
   const SNAP_PX = 7;
   const snapTime = useCallback(
     (px: number, v: View): number => {
@@ -790,9 +965,35 @@ export function TimelineCanvas({
           }
         }
       }
+      // Markers are snap targets too — a measurement can lock onto a reference line.
+      for (const mk of timeMarkers ?? []) {
+        const d = Math.abs(xOf(mk.t, v) - px);
+        if (d < bestD) {
+          bestD = d;
+          bestT = mk.t;
+        }
+      }
       return bestT;
     },
-    [marks, tOf, xOf],
+    [marks, timeMarkers, tOf, xOf],
+  );
+  // Hit-test the user markers (canvas px): the nearest marker within MARKER_HIT of
+  // the cursor x, provided the click is below the timestamp strip. Returns its id.
+  const pickMarker = useCallback(
+    (px: number, py: number): string | null => {
+      if (py < AXIS || !view) return null;
+      let best: string | null = null,
+        bestD = MARKER_HIT;
+      for (const mk of timeMarkers ?? []) {
+        const d = Math.abs(xOf(mk.t, view) - px);
+        if (d < bestD) {
+          bestD = d;
+          best = mk.id;
+        }
+      }
+      return best;
+    },
+    [timeMarkers, view, xOf],
   );
 
   // Overlay detail cards for expanded lanes: decimated left→right, but cards are
@@ -827,11 +1028,11 @@ export function TimelineCanvas({
       const top = laneTops[li] + LANE_H - scrollY + 2;
       const maxH = (laneCardH.get(lane) ?? CARD_MIN_H) - CARD_GAP;
       // Cull only when the card's whole band is off-screen — entirely above the
-      // pinned axis, or entirely below the viewport. A card scrolled partly under
-      // the axis still shows its lower part; we just clip the covered strip (below)
-      // so it doesn't paint over the timestamp axis.
-      if (top + maxH <= AXIS || top >= size.h) continue;
-      const clipTop = Math.max(0, AXIS - top);
+      // pinned header (axis + delta band), or entirely below the viewport. A card
+      // scrolled partly under the header still shows its lower part; we just clip
+      // the covered strip (below) so it doesn't paint over the header.
+      if (top + maxH <= PLOT_TOP || top >= size.h) continue;
+      const clipTop = Math.max(0, PLOT_TOP - top);
       const arr = sortedLaneMarks.get(lane);
       if (!arr) continue;
       let nextFree = -Infinity;
@@ -924,7 +1125,7 @@ export function TimelineCanvas({
     // Visible plot floor: the viewport bottom, but no lower than the last lane's
     // bottom (in viewport coords, offset by scrollY) so gridlines and bands don't
     // bleed into empty space when the lanes don't fill the viewport.
-    const lanesFloor = lanes.length ? AXIS + totalLaneH - scrollY : H - PAD;
+    const lanesFloor = lanes.length ? PLOT_TOP + totalLaneH - scrollY : H - PAD;
     const bottom = Math.min(H - PAD, lanesFloor);
 
     // Tick positions are shared by the gridlines (in the lane area) and the
@@ -932,18 +1133,18 @@ export function TimelineCanvas({
     const step = niceStep(view.nsPerPx * 70);
     const t0 = Math.ceil(tOf(GUTTER, view) / step) * step;
 
-    // lane bands + labels — clipped to below the (pinned) axis so scrolled rows
-    // never paint over the timestamp strip; offset by scrollY.
+    // lane bands + labels — clipped to below the (pinned) header so scrolled rows
+    // never paint over the timestamp strip or the delta band; offset by scrollY.
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, AXIS, W, bottom - AXIS);
+    ctx.rect(0, PLOT_TOP, W, bottom - PLOT_TOP);
     ctx.clip();
     for (let i = 0; i < lanes.length; i++) {
       const yTop = laneTops[i] - scrollY;
       const lh =
-        (i + 1 < laneTops.length ? laneTops[i + 1] : AXIS + totalLaneH) -
+        (i + 1 < laneTops.length ? laneTops[i + 1] : PLOT_TOP + totalLaneH) -
         laneTops[i];
-      if (yTop >= bottom || yTop + lh <= AXIS) continue;
+      if (yTop >= bottom || yTop + lh <= PLOT_TOP) continue;
       if (i % 2 === 1) {
         ctx.fillStyle = "rgba(130,140,150,0.07)";
         ctx.fillRect(0, yTop, W, lh);
@@ -957,11 +1158,12 @@ export function TimelineCanvas({
     }
     ctx.restore();
 
-    // gutter divider + vertical gridlines (full plot height; below the axis)
+    // gutter divider + vertical gridlines (full plot height; below the delta band
+    // so the band reads as clean reserved space)
     ctx.strokeStyle = cBorder;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(GUTTER + 0.5, AXIS);
+    ctx.moveTo(GUTTER + 0.5, PLOT_TOP);
     ctx.lineTo(GUTTER + 0.5, bottom);
     ctx.stroke();
     ctx.strokeStyle = "rgba(130,140,150,0.18)";
@@ -973,7 +1175,7 @@ export function TimelineCanvas({
       lastX = x;
       if (x < GUTTER) continue;
       ctx.beginPath();
-      ctx.moveTo(x + 0.5, AXIS);
+      ctx.moveTo(x + 0.5, PLOT_TOP);
       ctx.lineTo(x + 0.5, bottom);
       ctx.stroke();
     }
@@ -993,14 +1195,14 @@ export function TimelineCanvas({
     // marks (clipped to plot, offset by scrollY)
     ctx.save();
     ctx.beginPath();
-    ctx.rect(GUTTER, AXIS, W - GUTTER - RIGHT, bottom - AXIS);
+    ctx.rect(GUTTER, PLOT_TOP, W - GUTTER - RIGHT, bottom - PLOT_TOP);
     ctx.clip();
     for (let i = 0; i < marks.length; i++) {
       const m = marks[i];
       const li = laneIndex.get(m.lane);
       if (li === undefined) continue;
       const cy = pointCy(li) - scrollY;
-      if (cy < AXIS || cy > bottom) continue;
+      if (cy < PLOT_TOP || cy > bottom) continue;
       const x1 = xOf(m.t, view);
       const hot = hover?.i === i;
       const isActive = active === markKey(m);
@@ -1028,6 +1230,23 @@ export function TimelineCanvas({
     }
     ctx.restore();
 
+    // user markers → persistent reference lines from the top of the delta band
+    // down through the lanes. Drawn AFTER the marks so a time marker sits ON TOP
+    // of the event dots/spans. The grabbable knob (icon + label) is a DOM overlay
+    // in the band; the focused marker draws thicker.
+    if (timeMarkers?.length) {
+      for (const mk of timeMarkers) {
+        const mx = xOf(mk.t, view);
+        if (mx < GUTTER || mx > W - RIGHT) continue;
+        ctx.strokeStyle = mk.color || MARKER_COLOR;
+        ctx.lineWidth = mk.id === focusedMarker ? 2 : 1;
+        ctx.beginPath();
+        ctx.moveTo(mx + 0.5, MARKER_LINE_TOP);
+        ctx.lineTo(mx + 0.5, bottom);
+        ctx.stroke();
+      }
+    }
+
     // delta connectors: a `<-- 1.2 ms -->` annotation spanning the gap between
     // consecutive events on each delta-enabled lane. For points it's begin→begin;
     // for spans it's the previous end → the next begin (the inter-span gap). The
@@ -1038,7 +1257,7 @@ export function TimelineCanvas({
       const cPanel = cs.getPropertyValue("--panel-bg").trim() || "#ffffff";
       ctx.save();
       ctx.beginPath();
-      ctx.rect(GUTTER, AXIS, W - GUTTER - RIGHT, bottom - AXIS);
+      ctx.rect(GUTTER, PLOT_TOP, W - GUTTER - RIGHT, bottom - PLOT_TOP);
       ctx.clip();
       ctx.font = "10px ui-sans-serif, system-ui, sans-serif";
       const inset = ICON_SIZES[iconSize].r + 3;
@@ -1048,7 +1267,7 @@ export function TimelineCanvas({
         const li = laneIndex.get(lane);
         if (li === undefined) continue;
         const cy = pointCy(li) - scrollY;
-        if (cy < AXIS || cy > bottom) continue;
+        if (cy < PLOT_TOP || cy > bottom) continue;
         for (let i = 1; i < arr.length; i++) {
           // Left endpoint = the previous event's END (its begin for a point);
           // right endpoint = this event's BEGIN. So a span lane measures the gap
@@ -1092,7 +1311,7 @@ export function TimelineCanvas({
             ctx.fill();
           }
           // label centered, on a panel-bg chip that masks the line behind it
-          const label = fmtNs(curBegin - prevEnd);
+          const label = fmtDur(curBegin - prevEnd);
           const tw = ctx.measureText(label).width;
           if (gap >= tw + 10) {
             const mx = (Lx + Rx) / 2;
@@ -1122,7 +1341,7 @@ export function TimelineCanvas({
         cr = Math.min(hi, W - RIGHT);
       if (cr > cl) {
         ctx.fillStyle = "rgba(59,130,246,0.12)";
-        ctx.fillRect(cl, AXIS, cr - cl, bottom - AXIS);
+        ctx.fillRect(cl, PLOT_TOP, cr - cl, bottom - PLOT_TOP);
         ctx.strokeStyle = "rgba(59,130,246,0.55)";
         ctx.lineWidth = 1;
         ctx.beginPath();
@@ -1135,9 +1354,10 @@ export function TimelineCanvas({
           ctx.lineTo(hi + 0.5, bottom);
         }
         ctx.stroke();
-        // Δ readout centered above the visible band
+        // Δ readout — centered in the reserved delta band, so it never overlaps the
+        // timestamps above or the first lane below.
         const dt = Math.abs(measure.t1 - measure.t0);
-        const label = fmtNs(dt);
+        const label = fmtDur(dt);
         ctx.font = "10px ui-sans-serif, system-ui, sans-serif";
         const tw = ctx.measureText(label).width;
         const cx = Math.min(
@@ -1145,11 +1365,11 @@ export function TimelineCanvas({
           W - RIGHT - tw / 2 - 4,
         );
         ctx.fillStyle = "rgba(59,130,246,0.92)";
-        ctx.fillRect(cx - tw / 2 - 4, AXIS + 2, tw + 8, 14);
+        ctx.fillRect(cx - tw / 2 - 4, AXIS + (DELTA_H - 14) / 2, tw + 8, 14);
         ctx.fillStyle = "#fff";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(label, cx, AXIS + 9);
+        ctx.fillText(label, cx, AXIS + DELTA_H / 2);
         ctx.textBaseline = "middle";
       }
     }
@@ -1243,6 +1463,8 @@ export function TimelineCanvas({
     size.h,
     scrollY,
     marks,
+    timeMarkers,
+    focusedMarker,
     lanes,
     laneIndex,
     laneTops,
@@ -1428,7 +1650,9 @@ export function TimelineCanvas({
 
   // Pan on shift-drag or dragging the top axis strip; plain body drag measures.
   const onDown = (e: React.PointerEvent) => {
-    if (!view) return;
+    // Only the primary (left) button drives measure/pan/gutter gestures; the
+    // right button is reserved for the marker context menu (see onCtxMenu).
+    if (!view || e.button !== 0) return;
     const rect = canvasRef.current!.getBoundingClientRect();
     const px = e.clientX - rect.left,
       py = e.clientY - rect.top;
@@ -1511,6 +1735,7 @@ export function TimelineCanvas({
         if (i >= 0) {
           const m = marks[i];
           setActive(markKey(m));
+          setFocusedMarker(null);
           onJump(m.lineN);
           // On an expanded lane, bring this point's card to the FRONT (append =
           // topmost). Clicking the card that's already frontmost drops it back; any
@@ -1524,33 +1749,111 @@ export function TimelineCanvas({
                 : [...without, k];
             });
           }
-        } else setActive(null);
+        } else {
+          // No event under the cursor — a click on a marker line focuses it (so
+          // Delete can remove it); a click on truly empty space clears both.
+          const mid = pickMarker(px, py);
+          setFocusedMarker(mid);
+          setActive(null);
+        }
       }
       // a real drag keeps the band shown for reading the duration
     }
+  };
+  // Double-click on empty plot drops a marker at the clicked time. On a dot it's
+  // left alone (that's a jump); the knobs handle their own double-click (→ edit).
+  const onDblClick = (e: React.MouseEvent) => {
+    const v = viewRef.current;
+    if (!v || marks.length === 0) return; // no events → no meaningful time domain
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const px = e.clientX - rect.left,
+      py = e.clientY - rect.top;
+    if (px < GUTTER || px > size.w - RIGHT || py < AXIS) return;
+    if (pick(px, py) >= 0) return; // on an event dot → leave it (that's a jump)
+    onAddTimeMarker?.(tOf(px, v));
   };
   const onLeave = () => {
     hoverRef.current = false;
     setCursor(null);
     if (!measuring.current) setHover(null);
   };
+  // Right-click → the marker menu: "Add marker here" at the clicked time, plus
+  // Edit / Delete for the marker under the cursor and Delete all. Opens whenever
+  // there's a time domain to add into (events present) or a marker to act on.
+  const onCtxMenu = (e: React.MouseEvent) => {
+    const v = viewRef.current;
+    if (!v) return;
+    const rect = canvasRef.current!.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    // No meaningful time in the gutter / right pad — let the native menu through.
+    if (px < GUTTER || px > size.w - RIGHT) return;
+    if (marks.length === 0 && (timeMarkers?.length ?? 0) === 0) return;
+    e.preventDefault();
+    const hit = pickMarker(px, e.clientY - rect.top);
+    if (hit) setFocusedMarker(hit);
+    setMenu({
+      x: e.clientX,
+      y: e.clientY,
+      t: tOf(px, v),
+      markerId: hit ?? undefined,
+    });
+  };
+  // Dismiss the marker menu on an outside click or Escape (mirrors the log view's
+  // row menu).
+  useEffect(() => {
+    if (!menu) return;
+    const onDocDown = (e: MouseEvent) => {
+      const el = document.querySelector(".tl-marker-menu");
+      if (el && !el.contains(e.target as Node)) setMenu(null);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setMenu(null);
+    };
+    document.addEventListener("mousedown", onDocDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDocDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [menu]);
+  // Dismiss the marker editor popover on an outside click or Escape.
+  useEffect(() => {
+    if (!editor) return;
+    const onDocDown = (e: MouseEvent) => {
+      const el = document.querySelector(".tl-marker-editor");
+      if (el && !el.contains(e.target as Node)) setEditor(null);
+    };
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setEditor(null);
+    };
+    document.addEventListener("mousedown", onDocDown);
+    document.addEventListener("keydown", onEsc);
+    return () => {
+      document.removeEventListener("mousedown", onDocDown);
+      document.removeEventListener("keydown", onEsc);
+    };
+  }, [editor]);
   const fit = () => {
     lastRange.current = "";
     setView(null);
     setRaised([]); // dropping back to the overview clears any raised cards
   };
 
-  // Clear the active marker when a pointer-down lands anywhere outside this
-  // canvas (e.g. in the log view) — clicks on the canvas itself are handled by
-  // onUp (which sets/keeps/clears active based on what's under the cursor).
+  // Clear the active event AND the focused marker when a pointer-down lands
+  // anywhere outside this canvas (e.g. in the log view). Clicks on the canvas are
+  // handled by onUp; the marker knobs and the editor popover stopPropagation on
+  // their own pointer-downs, so interacting with them doesn't clear the selection.
   useEffect(() => {
-    if (!active) return;
+    if (!active && !focusedMarker) return;
     const onDocDown = (e: PointerEvent) => {
-      if (e.target !== canvasRef.current) setActive(null);
+      if (e.target !== canvasRef.current) {
+        setActive(null);
+        setFocusedMarker(null);
+      }
     };
     window.addEventListener("pointerdown", onDocDown);
     return () => window.removeEventListener("pointerdown", onDocDown);
-  }, [active]);
+  }, [active, focusedMarker]);
 
   // Keyboard nav works while the cursor is OVER the canvas — no click-to-focus
   // needed. A/D pan left/right, W/S zoom in/out (anchored at the cursor, else the
@@ -1567,6 +1870,16 @@ export function TimelineCanvas({
           ae.isContentEditable)
       )
         return;
+      // Delete/Backspace removes the focused marker (only while hovering the
+      // canvas, so it never hijacks Delete elsewhere).
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (focusedMarkerRef.current) {
+          onRemoveMarkerRef.current?.(focusedMarkerRef.current);
+          setFocusedMarker(null);
+          e.preventDefault();
+        }
+        return;
+      }
       const v = viewRef.current;
       if (!v) return;
       const k = e.key.toLowerCase();
@@ -1601,6 +1914,17 @@ export function TimelineCanvas({
   // Column count drives the hover card's width + flip math; the body itself flows
   // the fields column-major (see EventCardBody).
   const fieldCols = hm ? cardCols(hm) : 1;
+  // Visible markers with their on-screen x, for the DOM knobs pinned in the band.
+  const markerKnobs = useMemo(() => {
+    if (!view || !timeMarkers?.length || size.w <= 0) return [];
+    return timeMarkers
+      .map((mk) => ({ mk, x: xOf(mk.t, view) }))
+      .filter(({ x }) => x >= GUTTER && x <= size.w - RIGHT);
+  }, [view, timeMarkers, size.w, xOf, GUTTER]);
+  // The marker being edited (looked up live so a delete closes the popover).
+  const editMarker = editor
+    ? (timeMarkers?.find((m) => m.id === editor.id) ?? null)
+    : null;
   return (
     <div className="tlc-outer">
       <div className="tlc-mm">
@@ -1648,6 +1972,8 @@ export function TimelineCanvas({
             onPointerMove={onMove}
             onPointerUp={onUp}
             onPointerLeave={onLeave}
+            onDoubleClick={onDblClick}
+            onContextMenu={onCtxMenu}
           />
           <button className="tlc-fit" title="Fit all events" onClick={fit}>
             fit
@@ -1664,6 +1990,58 @@ export function TimelineCanvas({
           {placeholder && marks.length === 0 && (
             <div className="tlc-empty">{placeholder}</div>
           )}
+          {/* Marker knobs — pinned in the reserved delta band at each marker's line.
+              Icon + optional label; click focuses (Delete removes), double-click
+              edits, right-click opens the menu. The canvas draws the line itself. */}
+          {markerKnobs.map(({ mk, x }) => {
+            const color = mk.color || MARKER_COLOR;
+            const Icon = (
+              MARKER_ICONS.find((m) => m.id === (mk.icon ?? "star")) ??
+              MARKER_ICONS[0]
+            ).Icon;
+            return (
+              <div
+                key={mk.id}
+                data-mk={mk.id}
+                className={
+                  "tl-marker" + (mk.id === focusedMarker ? " focused" : "")
+                }
+                style={{
+                  left: x,
+                  top: AXIS,
+                  height: MARKER_LINE_TOP - AXIS,
+                  color,
+                }}
+                title={mk.label || "Marker — Delete key to remove"}
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  setFocusedMarker(mk.id);
+                }}
+                onDoubleClick={(e) => {
+                  e.stopPropagation();
+                  setEditor({ id: mk.id, x: e.clientX, y: e.clientY });
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setFocusedMarker(mk.id);
+                  setMenu({
+                    x: e.clientX,
+                    y: e.clientY,
+                    t: mk.t,
+                    markerId: mk.id,
+                  });
+                }}
+              >
+                <span className="tl-marker-knob">
+                  <Icon size={13} fill={color} fillOpacity={0.2} />
+                </span>
+                {mk.label && (
+                  <span className="tl-marker-label">{mk.label}</span>
+                )}
+              </div>
+            );
+          })}
           {/* Expanded lanes' per-point detail cards — one per in-view point, freely
               overlapping (pointer-events:none so the dot above stays click-to-jump
               and drag-to-measure still works over the card strip). Hovering a point
@@ -1710,6 +2088,154 @@ export function TimelineCanvas({
         </div>
         <div className="tlc-spacer" style={{ height: spacerH }} />
       </div>
+      {/* Right-click marker menu — portaled to <body> (fixed) so the scroll wrap's
+        overflow can't clip it, and clamped on-screen like the log view's menu.
+        "Add marker here" drops one at the clicked time (also available via
+        double-click); Edit / Delete act on the marker under the cursor. */}
+      {menu &&
+        createPortal(
+          <div
+            ref={menuPos.ref}
+            className="menu-pop tl-marker-menu"
+            style={{
+              position: "fixed",
+              left: menuPos.left,
+              top: menuPos.top,
+              zIndex: 60,
+            }}
+          >
+            {marks.length > 0 && (
+              <div
+                className="menu-item"
+                onClick={() => {
+                  onAddTimeMarker?.(menu.t);
+                  setMenu(null);
+                }}
+              >
+                <span className="mi-ico">
+                  <MapPin size={14} />
+                </span>
+                Add marker here
+              </div>
+            )}
+            {menu.markerId && (
+              <>
+                {marks.length > 0 && <div className="menu-sep" />}
+                <div
+                  className="menu-item"
+                  onClick={() => {
+                    setEditor({ id: menu.markerId!, x: menu.x, y: menu.y });
+                    setMenu(null);
+                  }}
+                >
+                  <span className="mi-ico">
+                    <Pencil size={14} />
+                  </span>
+                  Edit marker…
+                </div>
+                <div
+                  className="menu-item danger"
+                  onClick={() => {
+                    onRemoveTimeMarker?.(menu.markerId!);
+                    setMenu(null);
+                  }}
+                >
+                  <span className="mi-ico">
+                    <Trash2 size={14} />
+                  </span>
+                  Delete marker
+                </div>
+              </>
+            )}
+            {(timeMarkers?.length ?? 0) > 0 && (
+              <>
+                <div className="menu-sep" />
+                <div
+                  className="menu-item danger"
+                  onClick={() => {
+                    onClearTimeMarkers?.();
+                    setMenu(null);
+                  }}
+                >
+                  <span className="mi-ico">
+                    <Eraser size={14} />
+                  </span>
+                  Delete all markers
+                </div>
+              </>
+            )}
+          </div>,
+          document.body,
+        )}
+
+      {/* Marker editor popover — set the label / colour / icon of one marker. */}
+      {editor &&
+        editMarker &&
+        createPortal(
+          <div
+            ref={editorPos.ref}
+            className="tl-marker-editor"
+            style={{
+              position: "fixed",
+              left: editorPos.left,
+              top: editorPos.top,
+              zIndex: 61,
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <div className="tl-marker-editor-time">{fmtNs(editMarker.t)}</div>
+            <input
+              className="tl-marker-editor-label"
+              placeholder="Label…"
+              value={editMarker.label ?? ""}
+              autoFocus
+              spellCheck={false}
+              onChange={(e) =>
+                onSetTimeMarker?.({
+                  ...editMarker,
+                  label: e.target.value || undefined,
+                })
+              }
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === "Escape") setEditor(null);
+              }}
+            />
+            <div className="tl-marker-editor-swatches">
+              {MARKER_PALETTE.map((c) => (
+                <button
+                  key={c}
+                  className={
+                    "tl-marker-swatch" +
+                    ((editMarker.color || MARKER_COLOR).toLowerCase() ===
+                    c.toLowerCase()
+                      ? " on"
+                      : "")
+                  }
+                  style={{ background: c }}
+                  title={c}
+                  onClick={() => onSetTimeMarker?.({ ...editMarker, color: c })}
+                />
+              ))}
+            </div>
+            <div className="tl-marker-editor-icons">
+              {MARKER_ICONS.map(({ id, Icon, label }) => (
+                <button
+                  key={id}
+                  className={
+                    "tl-marker-icon" +
+                    ((editMarker.icon ?? "star") === id ? " on" : "")
+                  }
+                  title={label}
+                  onClick={() => onSetTimeMarker?.({ ...editMarker, icon: id })}
+                >
+                  <Icon size={14} />
+                </button>
+              ))}
+            </div>
+          </div>,
+          document.body,
+        )}
+
       {/* Tooltip is portaled to <body> with fixed positioning so the wrap's
         `overflow` can't clip a tall card; it flips up/left near edges. */}
       {hm &&

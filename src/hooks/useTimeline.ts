@@ -1,6 +1,12 @@
 import { useMemo } from "react";
 import { toast } from "sonner";
-import type { LogFile, FilterSet, ViewResult, TimelineSource } from "@/types";
+import type {
+  LogFile,
+  FilterSet,
+  ViewResult,
+  TimelineSource,
+  TimeMarker,
+} from "@/types";
 import {
   buildTimeline,
   laneColor,
@@ -38,6 +44,9 @@ export function useTimeline({ view, file, set, selectPanelTab }: Deps) {
   const removeTimelineExcluded = useStore((s) => s.removeTimelineExcluded);
   // Timeline tracks: a user-owned, ordered list (no auto-derivation).
   const tracks = useMemo(() => set?.sources ?? [], [set?.sources]);
+  // Vertical reference lines the user dropped at arbitrary times (independent of
+  // events). Persisted per-set, edited through undoable document patches.
+  const timeMarkers = useMemo(() => set?.timeMarkers ?? [], [set?.timeMarkers]);
   // Lines the user added to the timeline. Persisted per file (survives reload),
   // keyed by file id so a file switch naturally shows that file's own set.
   const timelineLinesByFile = useStore((s) => s.doc.timelineLinesByFile);
@@ -125,6 +134,43 @@ export function useTimeline({ view, file, set, selectPanelTab }: Deps) {
       if (i >= 0) list[i] = tr;
       else list.push(tr);
       g.sources = list;
+    });
+  // Drop a vertical reference line at absolute time `t` (ns). Undoable, like a
+  // track edit; persisted on the set.
+  const addTimeMarker = (t: number) =>
+    patchState((s) => {
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
+      const marker: TimeMarker = {
+        id:
+          "tlm_" +
+          Date.now().toString(36) +
+          Math.random().toString(36).slice(2, 8),
+        t,
+        icon: "star",
+      };
+      g.timeMarkers = [...(g.timeMarkers ?? []), marker];
+    });
+  const removeTimeMarker = (id: string) =>
+    patchState((s) => {
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
+      g.timeMarkers = (g.timeMarkers ?? []).filter((m) => m.id !== id);
+    });
+  // Update a marker in place (label / color / icon edits), keyed by id.
+  const setTimeMarker = (tm: TimeMarker) =>
+    patchState((s) => {
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
+      g.timeMarkers = (g.timeMarkers ?? []).map((m) =>
+        m.id === tm.id ? tm : m,
+      );
+    });
+  const clearTimeMarkers = () =>
+    patchState((s) => {
+      if (!file || !set) return;
+      const g = withSet(s, file.id, set.id);
+      g.timeMarkers = [];
     });
   // All visible lines for which `filterId` is the first-match winner AND that
   // expose `timeField` — exactly the lines that will produce a mark on this track.
@@ -544,6 +590,11 @@ export function useTimeline({ view, file, set, selectPanelTab }: Deps) {
 
   return {
     tracks,
+    timeMarkers,
+    addTimeMarker,
+    removeTimeMarker,
+    setTimeMarker,
+    clearTimeMarkers,
     timelineLines,
     marks,
     badEndTracks,

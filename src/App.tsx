@@ -346,6 +346,11 @@ export function App() {
   } = useCompare({ view, file });
   const {
     tracks,
+    timeMarkers,
+    addTimeMarker,
+    removeTimeMarker,
+    setTimeMarker,
+    clearTimeMarkers,
     timelineLines,
     marks,
     badEndTracks,
@@ -1110,6 +1115,11 @@ export function App() {
         filters={set?.filters ?? []}
         timeFields={timeFieldsByFilter}
         marks={marks}
+        timeMarkers={timeMarkers}
+        onAddTimeMarker={addTimeMarker}
+        onRemoveTimeMarker={removeTimeMarker}
+        onSetTimeMarker={setTimeMarker}
+        onClearTimeMarkers={clearTimeMarkers}
         badEndTracks={badEndTracks}
         badFormatTracks={badFormatTracks}
         lineCount={timelineLines.size}

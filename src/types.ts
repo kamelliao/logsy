@@ -79,6 +79,12 @@ export interface FilterSet {
    * matched lines onto one named lane. Travels with the saved filter file.
    */
   sources?: TimelineSource[];
+  /**
+   * User-placed vertical reference lines on the timeline, at absolute times
+   * (canonical ns, the same axis as EventMark.t). Not tied to any event — the
+   * user drops one at whatever time they clicked. Travels with the saved set.
+   */
+  timeMarkers?: TimeMarker[];
   /** Last path this set's filters were saved to (for "Save filters"). */
   filePath?: string;
   /**
@@ -454,6 +460,24 @@ export interface TimelineSource {
   showDeltas?: boolean;
   /** Expand this lane to show a per-point detail card (UI only). */
   expanded?: boolean;
+}
+
+/**
+ * A user-placed vertical reference line on the timeline, at an absolute time in
+ * canonical nanoseconds (the same domain as EventMark.t). Independent of any
+ * event: the user drops it at the time they clicked. Named `TimeMarker` to avoid
+ * colliding with `Marker` (a log-line bookmark). Persisted on the FilterSet.
+ */
+export interface TimeMarker {
+  id: string;
+  /** Time in canonical nanoseconds (same axis as EventMark.t). */
+  t: number;
+  /** Optional user label, shown on the marker's knob. */
+  label?: string;
+  /** Line + knob color; defaults to the marker accent when absent. */
+  color?: string;
+  /** Optional glyph shown on the knob (reuses the bookmark icon set). */
+  icon?: MarkerIcon;
 }
 
 /** One extracted timeline event, time normalized to nanoseconds. */
