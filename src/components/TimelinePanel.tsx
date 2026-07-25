@@ -54,6 +54,7 @@ import type {
   TimeUnit,
   EventMark,
   EventShape,
+  TimeMarker,
 } from "@/types";
 import { trackFieldsOf } from "@/lib/engine";
 import {
@@ -117,6 +118,16 @@ interface Props {
   /** Per-filter set of field names allowed as a time field (numeric / time-like). */
   timeFields: Map<string, Set<string>>;
   marks: EventMark[];
+  /** User-placed vertical reference lines (absolute ns), drawn over the canvas. */
+  timeMarkers: TimeMarker[];
+  /** Drop a marker at absolute time `t` (ns). */
+  onAddTimeMarker: (t: number) => void;
+  /** Remove the marker with this id. */
+  onRemoveTimeMarker: (id: string) => void;
+  /** Update a marker (label / color / icon). */
+  onSetTimeMarker: (tm: TimeMarker) => void;
+  /** Remove every marker. */
+  onClearTimeMarkers: () => void;
   /** Span track ids whose end field resolved BEFORE the start (illegal span):
    *  the end is dropped and the row shows a warning. */
   badEndTracks: Set<string>;
@@ -202,6 +213,11 @@ export function TimelinePanel({
   filters,
   timeFields,
   marks,
+  timeMarkers,
+  onAddTimeMarker,
+  onRemoveTimeMarker,
+  onSetTimeMarker,
+  onClearTimeMarkers,
   badEndTracks,
   badFormatTracks,
   lineCount,
@@ -375,6 +391,11 @@ export function TimelinePanel({
           iconSize={iconSize}
           deltaLanes={deltaLanes}
           expandedLanes={expandedLanes}
+          timeMarkers={timeMarkers}
+          onAddTimeMarker={onAddTimeMarker}
+          onRemoveTimeMarker={onRemoveTimeMarker}
+          onSetTimeMarker={onSetTimeMarker}
+          onClearTimeMarkers={onClearTimeMarkers}
           onRegisterCapture={(fn) => {
             captureRef.current = fn;
           }}

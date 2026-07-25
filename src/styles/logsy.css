@@ -258,7 +258,11 @@ button {
   height: 100%;
   /* plain ↔ (ew-resize), not the barred col-resize (↔ with bars) */
   cursor: ew-resize;
-  z-index: 5;
+  /* Above the dock chrome that shares this root stacking context — notably the
+     timeline bottom sheet (.tl-sheet, z-index 5) and the dock resize handles
+     (z-index 10), which the sheet would otherwise paint over where the sidebar's
+     right-edge strip overhangs into the workspace. */
+  z-index: 11;
 }
 .sidebar-resizer::after {
   content: "";
@@ -2049,7 +2053,7 @@ button {
 /* Centered hint over an empty canvas (no events yet). */
 .tlc-empty {
   position: absolute;
-  inset: 18px 12px 0 76px;
+  inset: 36px 12px 0 76px;
   pointer-events: none;
   display: flex;
   align-items: center;
@@ -2090,6 +2094,125 @@ button {
 }
 .tlc-clear:hover {
   color: var(--text);
+}
+/* Marker knobs: pinned in the reserved delta band at each marker's line. The
+   canvas draws the vertical line; this is the icon + optional label handle. */
+.tl-marker {
+  position: absolute;
+  /* height is set inline (MARKER_LINE_TOP − AXIS); content bottom-aligns so the
+     glyph's bottom sits at the marker line's top (the bar hangs below the icon). */
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  white-space: nowrap;
+  cursor: pointer;
+  z-index: 6;
+  color: #8b5cf6;
+}
+.tl-marker-knob {
+  /* shift left by half the knob so it centres on the marker's line (at `left`) */
+  margin-left: -7px;
+  width: 14px;
+  height: 14px;
+  display: grid;
+  /* glyph pinned to the bottom-centre so its lower edge meets the bar's top */
+  place-items: end center;
+  border-radius: 3px;
+  color: inherit;
+}
+.tl-marker.focused .tl-marker-knob {
+  outline: 1.5px solid currentColor;
+  outline-offset: 1px;
+}
+.tl-marker-label {
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 500;
+  max-width: 90px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-2, #5b616b);
+}
+/* Marker editor popover: label / colour / icon of one marker. */
+.tl-marker-editor {
+  display: flex;
+  flex-direction: column;
+  /* row gap kept close to the in-row button gaps (below) so the vertical and
+     horizontal rhythm feel balanced rather than "tight buttons, loose rows" */
+  gap: 6px;
+  padding: 8px;
+  width: 176px;
+  background: var(--panel-bg, #fff);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: var(--shadow-pop);
+}
+.tl-marker-editor-time {
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-2, #5b616b);
+  padding: 0 1px 1px;
+}
+.tl-marker-editor-label {
+  width: 100%;
+  box-sizing: border-box;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--app-bg, #fff);
+  padding: 0 7px;
+  font-size: 12px;
+  color: var(--text);
+  outline: none;
+}
+.tl-marker-editor-label:focus {
+  border-color: var(--accent-bg, #2c6ce6);
+}
+.tl-marker-editor-swatches {
+  display: grid;
+  /* minmax(0,1fr) — not plain 1fr — so the 8 <button> cells can shrink below their
+     UA min-width instead of overflowing the popover (that made the row stick out
+     past the label/icon rows). */
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 5px;
+}
+.tl-marker-swatch {
+  /* fill the grid cell so the row's left/right edges line up with the label input
+     and the icon row (all three span the popover's content width) */
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.12);
+  cursor: pointer;
+  padding: 0;
+}
+.tl-marker-swatch.on {
+  outline: 1px solid var(--text);
+  outline-offset: 1px;
+}
+.tl-marker-editor-icons {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 5px;
+}
+.tl-marker-icon {
+  aspect-ratio: 1; /* square buttons */
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--app-bg, #fff);
+  color: var(--text-2, #5b616b);
+  cursor: pointer;
+}
+.tl-marker-icon:hover {
+  color: var(--text);
+}
+.tl-marker-icon.on {
+  border-color: var(--text);
+  color: var(--text);
+  background: var(--panel-bg-2, #f6f7f8);
 }
 .tlc-tip {
   position: absolute;
