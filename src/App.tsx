@@ -31,8 +31,9 @@ import type { PaletteEntry } from "@/types";
  *  PaneData a fresh `[]` each render (it would re-memo its Sets every time). */
 const EMPTY_NUMS: number[] = [];
 
-import { compileAll, computeView } from "@/lib/engine";
+import { compileAll, computeView, hasMatchBits } from "@/lib/engine";
 import { finishOpenTiming } from "@/lib/openTiming";
+import { scanAndPrime, scanSpecs } from "@/lib/scanPrime";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { LogView } from "@/components/LogView";
 import {
@@ -343,11 +344,43 @@ export function App() {
     if (file) finishOpenTiming(file.id, viewMsRef.current);
   }, [file, view]);
 
-  // The filter slice's confirm-dialog collaborator can't be store state (it's a
-  // React/UI primitive), so bind it into the store once.
+  // Warm a filter set's match cache before `switchSet` activates it — otherwise the
+  // render that follows scans every filter over every line on the main thread, the
+  // same cost the Rust pre-scan removes from opening a file. Lives here because it
+  // needs the active file's lines, which the store has no access to.
+  //
+  // Only the patterns not already cached are sent, so switching back to a set (or to
+  // one sharing patterns with the current one) costs nothing and does no IPC at all.
+  const primeSet = useCallback(
+    async (setId: string) => {
+      const f = liveActiveFile;
+      if (!f?.path) return;
+      const lns = linesFor(f.id);
+      if (!lns.length) return;
+      const target = state.filterSets.find((g) => g.id === setId);
+      if (!target?.filters.length) return;
+      const specs = scanSpecs(
+        compileAll(target.filters).filter(
+          (c) => c.re && !hasMatchBits(lns, c.re),
+        ),
+      );
+      if (!specs.length) return;
+      // Only show the overlay when there's real work — a cache-hit switch shouldn't flash it.
+      useStore.getState().setLoadingLabel("filters");
+      try {
+        await scanAndPrime(f.path, f.encodingOverride, lns, specs);
+      } finally {
+        useStore.getState().setLoadingLabel(null);
+      }
+    },
+    [liveActiveFile, linesFor, state.filterSets],
+  );
+
+  // The filter slice's collaborators can't be store state (a React/UI primitive and
+  // a closure over the lines cache), so bind them into the store.
   useEffect(() => {
-    useStore.getState().setRuntime({ confirm: appConfirm });
-  }, [appConfirm]);
+    useStore.getState().setRuntime({ confirm: appConfirm, primeSet });
+  }, [appConfirm, primeSet]);
 
   // ---------- compare / timeline / bookmarks ----------
   const {

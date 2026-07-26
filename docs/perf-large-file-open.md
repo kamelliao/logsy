@@ -1,7 +1,7 @@
 # Opening large logs: cost model and the Rust pre-scan
 
-Status: **implemented 2026-07-26**, in the working tree (not committed). Rust 20
-tests + JS 130 tests green; Rust↔JS cross-check clean; e2e unaffected.
+Status: **implemented 2026-07-26**. Rust 20 tests + JS 133 tests green;
+`bun run test:crosscheck` clean; e2e unaffected.
 
 This documents why opening a big log used to freeze the window, what the cost
 actually consists of, and how the Rust `scan_lines` pre-scan removes it. The
@@ -167,6 +167,21 @@ removes that machinery entirely.
 All four read paths are wired: `loadPaths` (open dialog / drop), the
 restart-reload effect, the split-pane reload effect, and `setFileEncoding` (a
 re-decode produces a fresh lines array, i.e. a fresh cache key).
+
+**Switching filter sets** takes the same shape: `switchSet` awaits `primeSet`
+before committing the new `activeSetId`, for exactly the same reason. The store
+has no access to the lines cache, so App binds `primeSet` as a runtime
+collaborator alongside `confirm`. Two things make it cheap:
+
+- The cache is keyed per pattern, not per set, so only the patterns not already
+  cached are sent — switching back to a set, or to one sharing patterns with the
+  current one, hits throughout and does no IPC at all.
+- A `switchSeq` guard means a slow scan landing after a later switch is dropped
+  rather than yanking the selection back.
+
+Ordering is pinned by `src/__tests__/switchSet.test.ts` — without it, dropping the
+`await` would leave the view correct and merely slow again, which no other test
+would notice.
 
 ## 6. Regex semantics: Rust must agree with JS exactly
 
@@ -372,9 +387,6 @@ even in debug builds — the loading overlay stays responsive.
 - **Skipping disabled filters.** `computeView` scans them too, only to populate
   badge counts. A set with many disabled filters pays for them; deferring those
   counts to idle would cut the scan proportionally. Judged low value.
-- **Priming on filter-set switch.** Only file opens prime today, so switching to a
-  large, never-scanned set still pays a cold scan on the main thread. Same
-  await-before-commit shape would apply, at the set-switch action.
 - **Bitset disk cache** keyed by path + mtime + pattern hash — would make reopening
   the same log with the same set nearly free, and stacks on top of the above.
 - **FilterPanel render cost** with 100+ filter rows is unmeasured and is plausibly

@@ -87,8 +87,17 @@ export interface Store
   // ---- runtime collaborators (bound by App; not state we can compute) ----
   /** App-styled confirm() replacement; bound from useConfirm. */
   confirm: (opts: ConfirmOptions) => Promise<boolean>;
+  /**
+   * Warm the match cache for a filter set before it becomes active, so the render
+   * that follows doesn't do the cold O(lines × filters) scan on the main thread.
+   * Bound by App because it needs the active file's lines, which live in
+   * useLogFiles' cache rather than the store. A no-op until bound, and resolves
+   * immediately when every pattern is cached already.
+   */
+  primeSet?: (setId: string) => Promise<void>;
   setRuntime: (rt: {
     confirm?: (opts: ConfirmOptions) => Promise<boolean>;
+    primeSet?: (setId: string) => Promise<void>;
   }) => void;
 
   // ---- undo engine ----
