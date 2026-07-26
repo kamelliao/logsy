@@ -1,6 +1,6 @@
 # Opening large logs: cost model and the Rust pre-scan
 
-Status: **implemented 2026-07-26**. Rust 20 tests + JS 133 tests green;
+Status: **implemented 2026-07-26**. Rust 20 tests + JS 130 tests green;
 `bun run test:crosscheck` clean; e2e unaffected.
 
 This documents why opening a big log used to freeze the window, what the cost
@@ -120,8 +120,17 @@ Key files:
 - `src-tauri/src/lib.rs` — the `scan_lines` command (wraps `scan_text` in
   `spawn_blocking`, times the read).
 - `src/lib/engine.ts` — `cacheKey`, `matchBitsFor`, `primeMatchCache`, `hasMatchBits`.
-- `src/lib/scanPrime.ts` — `scanSpecs`, blob parsing, `verify`, `scanAndPrime`.
+- `src/lib/scanPrime.ts` — `primeFilters` (the one entry point every caller uses),
+  plus `scanSpecs`, blob parsing, `verify` and `scanAndPrime` beneath it.
 - `src/hooks/useLogFiles.ts` — `primeFor`, called from all four read paths.
+
+`primeFilters` is the only thing callers touch, and it **never throws**: priming is
+awaited on the critical path of opening a file and of switching a set, so a failure
+there has to leave the caller slower, not broken. (An earlier version had the
+try/catch in one caller but not the other — the unguarded one would have turned a
+scan error into an unhandled rejection that silently stopped the set from switching
+at all.) It also scans only the patterns not already cached, which is what makes
+switching sets usually free.
 
 `scan_lines` **re-reads and re-decodes the file** rather than taking the text back
 over IPC. The read is a few ms off a warm page cache; shipping 12 MB of text in
@@ -178,10 +187,6 @@ collaborator alongside `confirm`. Two things make it cheap:
   current one, hits throughout and does no IPC at all.
 - A `switchSeq` guard means a slow scan landing after a later switch is dropped
   rather than yanking the selection back.
-
-Ordering is pinned by `src/__tests__/switchSet.test.ts` — without it, dropping the
-`await` would leave the view correct and merely slow again, which no other test
-would notice.
 
 ## 6. Regex semantics: Rust must agree with JS exactly
 

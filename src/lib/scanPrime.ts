@@ -8,8 +8,8 @@
 // line-count disagreement, an unsupported pattern or a failed spot-check just
 // leaves those bit sets uncomputed and `computeView` scans them itself.
 import { invoke } from "@tauri-apps/api/core";
-import { primeMatchCache } from "@/lib/engine";
-import type { CompiledFilter } from "@/types";
+import { compileAll, hasMatchBits, primeMatchCache } from "@/lib/engine";
+import type { CompiledFilter, Filter } from "@/types";
 
 export interface ScanSpec {
   /** `RegExp.source` verbatim — the cache key both sides must agree on. */
@@ -177,4 +177,53 @@ export async function scanAndPrime(
     splitMs,
     scanMs,
   };
+}
+
+export interface PrimeOutcome {
+  /** Patterns actually sent to Rust (0 when everything was cached already). */
+  requested: number;
+  /** The scan result, or null when nothing was sent or the scan was unusable. */
+  result: PrimeResult | null;
+}
+
+/**
+ * Warm the match cache for `filters` over `lines` — the one entry point every caller
+ * should use.
+ *
+ * Scans only the patterns not already cached, so switching to a set that shares
+ * patterns with the current one (or back to a previously used one) costs nothing and
+ * does no IPC at all. The cache is keyed per pattern, not per filter set.
+ *
+ * **Never throws.** Priming is an optimisation: callers await it on the critical path
+ * of opening a file or switching a set, and a failure here must leave them slower,
+ * not broken. Anything that goes wrong simply leaves those bit sets uncomputed for
+ * `computeView` to scan itself.
+ *
+ * `onScanStart` fires only when there is real work — it lets a caller show a
+ * progress affordance without flashing it on a switch that was a pure cache hit.
+ */
+export async function primeFilters(
+  // Both take their `LogFile` shapes directly (a file may have no path, and a null
+  // encoding means auto-detect), so no caller has to translate before calling.
+  path: string | null | undefined,
+  encoding: string | null | undefined,
+  lines: string[],
+  filters: Filter[],
+  onScanStart?: () => void,
+): Promise<PrimeOutcome> {
+  if (!path || !lines.length || !filters.length)
+    return { requested: 0, result: null };
+  const specs = scanSpecs(
+    compileAll(filters).filter((c) => c.re && !hasMatchBits(lines, c.re)),
+  );
+  if (!specs.length) return { requested: 0, result: null };
+  onScanStart?.();
+  try {
+    return {
+      requested: specs.length,
+      result: await scanAndPrime(path, encoding ?? undefined, lines, specs),
+    };
+  } catch {
+    return { requested: specs.length, result: null };
+  }
 }

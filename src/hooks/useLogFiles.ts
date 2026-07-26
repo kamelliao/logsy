@@ -7,8 +7,7 @@ import type { AppState, LogFile } from "@/types";
 import { uid } from "@/lib/defaults";
 import { baseName } from "@/lib/path";
 import { nextPaint } from "@/lib/paint";
-import { compileAll } from "@/lib/engine";
-import { scanAndPrime, scanSpecs } from "@/lib/scanPrime";
+import { primeFilters } from "@/lib/scanPrime";
 import { beginOpenTiming, cancelOpenTiming } from "@/lib/openTiming";
 import { useStore } from "@/store";
 
@@ -31,17 +30,6 @@ function splitLines(text: string): string[] {
   return arr;
 }
 
-// Warm the match cache for a file that just landed, BEFORE its lines become
-// visible to React. The first `computeView` over a new file is otherwise a cold
-// O(lines × filters) scan on the main thread — the dominant cost of opening a
-// large log. Rust scans the same file with one RegexSet pass across worker
-// threads and we prime the cache with the result, so that first computeView is a
-// cache hit throughout. Best-effort in every direction: no Tauri shell, no filter
-// set, an unsupported pattern — the engine just scans as it always did.
-//
-// Awaiting this before the lines go into the store is the whole point: an effect
-// that primed afterwards would always lose the race to the render it was meant to
-// speed up.
 /** How the scan went, for the open-perf log line. Zeroed when nothing was scanned. */
 interface PrimeStats {
   patterns: number;
@@ -64,6 +52,13 @@ const NO_SCAN: PrimeStats = {
   primeMs: 0,
 };
 
+/**
+ * Warm the match cache for a file that just landed, BEFORE its lines become visible
+ * to React, and report how it went for the open-perf log line.
+ *
+ * Awaiting this before the lines go into the store is the whole point: an effect that
+ * primed afterwards would always lose the race to the render it was meant to speed up.
+ */
 async function primeFor(
   path: string,
   encoding: string | undefined,
@@ -72,22 +67,21 @@ async function primeFor(
   doc: AppState,
 ): Promise<PrimeStats> {
   const set = setId ? doc.filterSets.find((g) => g.id === setId) : undefined;
-  const specs = scanSpecs(compileAll(set?.filters ?? []));
-  if (!specs.length) return NO_SCAN;
   const t0 = performance.now();
-  try {
-    const r = await scanAndPrime(path, encoding, lines, specs);
-    const primeMs = performance.now() - t0;
-    // A null result means the scan was unusable (no shell, line-count mismatch) and
-    // computeView will do the whole thing itself — report every pattern as fallback
-    // so the log line shows that, rather than a misleading zero.
-    return r
-      ? { patterns: specs.length, ...r, primeMs }
-      : { ...NO_SCAN, patterns: specs.length, fallback: specs.length, primeMs };
-  } catch {
-    /* priming is an optimisation; never fail an open over it */
-    return { ...NO_SCAN, patterns: specs.length, fallback: specs.length };
-  }
+  const { requested, result } = await primeFilters(
+    path,
+    encoding,
+    lines,
+    set?.filters ?? [],
+  );
+  if (!requested) return NO_SCAN;
+  const primeMs = performance.now() - t0;
+  // A null result means the scan was unusable (no shell, line-count mismatch) and
+  // computeView will do the whole thing itself — report every pattern as fallback
+  // so the log line shows that, rather than a misleading zero.
+  return result
+    ? { patterns: requested, ...result, primeMs }
+    : { ...NO_SCAN, patterns: requested, fallback: requested, primeMs };
 }
 
 interface Deps {

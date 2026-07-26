@@ -31,9 +31,9 @@ import type { PaletteEntry } from "@/types";
  *  PaneData a fresh `[]` each render (it would re-memo its Sets every time). */
 const EMPTY_NUMS: number[] = [];
 
-import { compileAll, computeView, hasMatchBits } from "@/lib/engine";
+import { compileAll, computeView } from "@/lib/engine";
 import { finishOpenTiming } from "@/lib/openTiming";
-import { scanAndPrime, scanSpecs } from "@/lib/scanPrime";
+import { primeFilters } from "@/lib/scanPrime";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { LogView } from "@/components/LogView";
 import {
@@ -353,27 +353,27 @@ export function App() {
   // one sharing patterns with the current one) costs nothing and does no IPC at all.
   const primeSet = useCallback(
     async (setId: string) => {
-      const f = liveActiveFile;
-      if (!f?.path) return;
-      const lns = linesFor(f.id);
-      if (!lns.length) return;
-      const target = state.filterSets.find((g) => g.id === setId);
-      if (!target?.filters.length) return;
-      const specs = scanSpecs(
-        compileAll(target.filters).filter(
-          (c) => c.re && !hasMatchBits(lns, c.re),
-        ),
+      // Read the live document rather than closing over render state: this callback
+      // is handed to the store once, and a stale filter list here would scan the
+      // wrong patterns. It also keeps the callback identity stable, so editing a
+      // filter doesn't rebind it on every keystroke.
+      const store = useStore.getState();
+      const f = activeFile(store.doc); // the same file switchSet will act on
+      const target = store.doc.filterSets.find((g) => g.id === setId);
+      if (!f || !target) return;
+      await primeFilters(
+        f.path,
+        f.encodingOverride,
+        linesFor(f.id),
+        target.filters,
+        // Shown only when patterns actually need scanning, so a cache-hit switch
+        // doesn't flash the overlay. (Shares the label with filter-file loading —
+        // they can't overlap, both being user-initiated and awaited.)
+        () => store.setLoadingLabel("filters"),
       );
-      if (!specs.length) return;
-      // Only show the overlay when there's real work — a cache-hit switch shouldn't flash it.
-      useStore.getState().setLoadingLabel("filters");
-      try {
-        await scanAndPrime(f.path, f.encodingOverride, lns, specs);
-      } finally {
-        useStore.getState().setLoadingLabel(null);
-      }
+      store.setLoadingLabel(null);
     },
-    [liveActiveFile, linesFor, state.filterSets],
+    [linesFor],
   );
 
   // The filter slice's collaborators can't be store state (a React/UI primitive and
