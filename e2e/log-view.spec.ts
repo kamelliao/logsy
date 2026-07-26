@@ -87,13 +87,12 @@ test.describe("LogView", () => {
     test("the toggle is disabled until there are highlights", async ({
       page,
     }) => {
-      await expect(
-        page.locator(".lv-actions .lv-toggle").first(),
-      ).toBeDisabled();
+      const toggle = page.getByRole("button", {
+        name: "Show only matched lines",
+      });
+      await expect(toggle).toBeDisabled();
       await addFilter(page, "wifi");
-      await expect(
-        page.locator(".lv-actions .lv-toggle").first(),
-      ).toBeEnabled();
+      await expect(toggle).toBeEnabled();
     });
 
     test("Ctrl+H shows only matched lines and back", async ({ page }) => {
@@ -110,10 +109,12 @@ test.describe("LogView", () => {
 
     test("the toolbar button toggles matches-only too", async ({ page }) => {
       await addFilter(page, "wifi");
-      const btn = page.locator(".lv-actions .lv-toggle").first();
+      const btn = page.getByRole("button", {
+        name: "Show only matched lines",
+      });
 
       await btn.click();
-      await expect(btn).toHaveClass(/active/);
+      await expect(btn).toHaveAttribute("aria-pressed", "true");
       await expect(page.locator(".log-row")).toHaveCount(2);
     });
   });
