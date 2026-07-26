@@ -17,6 +17,10 @@ import {
 import { activeFile, activeSet } from "@/state/selectors";
 import type { Store } from "@/store";
 
+// Bumped by every set switch. A switch awaits the pre-scan before committing, so
+// without this a slow scan could land after a later switch and steal the selection.
+let switchSeq = 0;
+
 // Open accepts native Logsy JSON plus TextAnalysisTool.NET (.tat/.xml) for import;
 // Save always writes Logsy JSON, so it only offers .json.
 const OPEN_DIALOG_FILTERS = [
@@ -34,7 +38,8 @@ export interface EditingState {
 }
 
 export interface FilterActions {
-  switchSet: (gid: string) => void;
+  /** Activate a filter set on the active file, priming its match cache first. */
+  switchSet: (gid: string) => Promise<void>;
   addSet: () => void;
   renameSet: (gid: string, name: string) => void;
   deleteSet: (gid: string) => Promise<void>;
@@ -130,14 +135,30 @@ export function createFilterActions(
     // split panes (different files) keep different sets. The heavy re-render
     // switchSet triggers is deferred in render via the dock's deferred set id
     // (useDockLayout / App), not here — see that note.
-    switchSet: (gid) =>
+
+    // Warm the incoming set's match bitsets BEFORE activating it. The render that
+    // follows computes a view over the new filters, and doing that cold is an
+    // O(lines × filters) scan on the main thread — the same cost that made opening
+    // a large log freeze (see docs/perf-large-file-open.md). Priming afterwards
+    // would be a render too late.
+    //
+    // Usually free: the cache is keyed per pattern, not per set, so switching back
+    // to a set — or to one sharing patterns with the current one — hits throughout
+    // and `primeSet` returns without any IPC at all.
+    switchSet: async (gid) => {
+      const seq = ++switchSeq;
+      await get().primeSet?.(gid);
+      // The user picked another set while we scanned; that later switch owns the
+      // selection now, and applying this one would yank them back.
+      if (seq !== switchSeq) return;
       patch(
         (s) => {
           const f = activeFile(s);
           if (f) f.activeSetId = gid;
         },
         { undoable: false },
-      ),
+      );
+    },
     addSet: () =>
       patch((s) => {
         const g: FilterSet = {
