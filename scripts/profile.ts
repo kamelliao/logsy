@@ -461,6 +461,7 @@ const EXE = join(
   TAURI,
   "target",
   "release",
+  "examples",
   process.platform === "win32" ? "crosscheck.exe" : "crosscheck",
 );
 
@@ -495,14 +496,14 @@ function buildRustHelper(): boolean {
   if (!JSON_OUT) process.stdout.write("building rust scanner… ");
   const r = spawnSync(
     "cargo",
-    ["build", "--release", "--features", "crosscheck", "--bin", "crosscheck"],
+    ["build", "--release", "--example", "crosscheck"],
     { cwd: TAURI, stdio: "pipe" },
   );
   if (r.status !== 0 || !existsSync(EXE)) {
     if (!JSON_OUT) console.log(c.yellow("failed"));
     note(
       "cargo build failed — no Rust comparison. Run with --no-rust to skip it, or\n" +
-        "      see the error: cargo build --release --features crosscheck --bin crosscheck",
+        "      see the error: cargo build --release --example crosscheck",
     );
     return false;
   }

@@ -215,7 +215,7 @@ pattern, and `computeView` scans it itself.
 
 **3. Cross-check harness** — `bun run test:crosscheck`. `scripts/crosscheck.ts`
 generates randomised logs and patterns, runs them through the app's own `scan.rs`
-(via `src-tauri/src/bin/crosscheck.rs`, which `#[path]`-includes it rather than
+(via `src-tauri/examples/crosscheck.rs`, which `#[path]`-includes it rather than
 copying it), and compares every bit against real JS `RegExp` results. ~340k
 (line × pattern) bits per run, plus pinned cases for CRLF/CR/LF mixes, blank
 lines, multi-byte text, emoji, full-width digits, Unicode case folding, and chunk
@@ -223,8 +223,11 @@ boundaries — and an assertion that lookaround/backreference/`\w.*` are _refuse
 rather than guessed at, so the protection is shown to fire rather than merely to
 exist. Exits non-zero on any disagreement.
 
-The helper binary sits behind the `crosscheck` cargo feature, so a normal build —
-and therefore `tauri build` — never compiles it.
+The helper is a cargo _example_, not a `[[bin]]`, so a normal build — and therefore
+`tauri build` — never compiles it. It must stay that way: the Tauri bundler enumerates
+every bin target in the manifest and ignores `required-features`, so a dev-only bin
+lands in the installer's file list and breaks bundling on a clean checkout (this is
+what killed the v0.5.6 release build on all three platforms).
 
 **Run this after touching `scan.rs`.** The runtime spot-check only downgrades
 quietly on a user's machine; this is the only thing that fails loudly.
