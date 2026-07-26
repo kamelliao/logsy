@@ -20,6 +20,10 @@ import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+// The app's own splitter, not a copy of it — a copy that drifted would make this
+// whole comparison agree with the wrong thing.
+import { splitLines } from "../src/lib/lines.ts";
+
 const args = process.argv.slice(2);
 const flag = (name: string, def: number): number => {
   const hit = args.find((a) => a.startsWith(`--${name}=`));
@@ -94,13 +98,6 @@ function rustScan(text: string, patterns: Spec[]): Scan {
       new Uint8Array(b.buffer, b.byteOffset + off + k * bytesLen, bytesLen),
     );
   return { nLines, fallback, counts, bits };
-}
-
-/** Must stay identical to `splitLines` in src/hooks/useLogFiles.ts. */
-function splitLines(text: string): string[] {
-  const arr = text.split(/\r\n|\n|\r/);
-  if (arr.length > 0 && arr[arr.length - 1] === "") arr.pop();
-  return arr;
 }
 
 // --- comparison -------------------------------------------------------------

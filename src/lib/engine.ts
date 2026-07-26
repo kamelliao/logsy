@@ -630,13 +630,37 @@ export function hasMatchBits(lines: string[], re: RegExp): boolean {
   return !!matchCache.get(lines)?.has(cacheKey(re.source, re.flags));
 }
 
+/** A filter that contributes to the view: compiled, non-empty pattern, valid regex. */
+function isUsable(c: CompiledFilter): boolean {
+  return !!c.re && !c.empty && c.ok;
+}
+
+/**
+ * Run just the scan phase of `computeView`: fill the match cache for every usable
+ * filter, computing nothing else.
+ *
+ * `computeView` is two costs in one call — the O(lines × filters) scan, and the
+ * compose pass that turns cached bits into rows. They differ by ~70×, and which one
+ * a user pays depends entirely on whether the cache is warm. This exists so
+ * `scripts/profile.ts` can measure the scan on its own instead of subtracting a warm
+ * run from a cold one: a subtraction is right by construction and so can never
+ * disagree with reality, whereas measuring both directly means `scan + compose ≈ cold`
+ * is a check that can fail and tell us something.
+ *
+ * Shares `isUsable` with `computeView` rather than repeating the predicate, so the
+ * two can't come to disagree about which filters get scanned.
+ */
+export function scanAll(lines: string[], compiled: CompiledFilter[]): void {
+  for (const c of compiled) if (isUsable(c)) matchBitsFor(lines, c.re!);
+}
+
 export function computeView(
   lines: string[],
   compiled: CompiledFilter[],
 ): ViewResult {
   // Every filter with a usable regex. List order is significant: the colour
   // winner and field provider go to the first match in this order.
-  const usable = compiled.filter((c) => c.re && !c.empty && c.ok);
+  const usable = compiled.filter(isUsable);
   // Existence flags reflect which enabled filters exist, not per-line matches.
   const hasHighlights = usable.some((c) => c.f.enabled && !c.f.exclude);
   const hasExcludes = usable.some((c) => c.f.enabled && c.f.exclude);

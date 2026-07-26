@@ -18,7 +18,7 @@ Opening a log runs a fixed pipeline. Only one stage matters:
 | ------------------------------ | ------------------------------------------------- | ------------------- |
 | read + decode                  | `read_text_file_blocking`, `src-tauri/src/lib.rs` | file size           |
 | IPC (text as JSON)             | Tauri command return                              | file size           |
-| `splitLines`                   | `src/hooks/useLogFiles.ts`                        | file size           |
+| `splitLines`                   | `src/lib/lines.ts`                                | file size           |
 | **first `computeView`**        | `src/lib/engine.ts`                               | **lines × filters** |
 | downstream O(rows) derivations | `LogView`, `useTimeline`, minimap                 | lines               |
 
@@ -344,14 +344,21 @@ Each of these produced a wrong conclusion at least once.
 - **The first `computeView` in a fresh JS process takes ~1 s regardless of cache
   state** — the bit loops start interpreted. Warm the JIT before timing or it
   swamps the measurement (this is what made priming first appear to save −31 ms).
-- **`scripts/profile.ts` reuses one lines array across runs**, so it measures WARM
-  `computeView`. Use a fresh `lines.slice()` per run for cold numbers.
+- **Reusing one lines array across runs measures WARM `computeView`.** Use a fresh
+  `lines.slice()` per run for cold numbers. `scripts/profile.ts` had this bug and
+  reported 55 ms for work that takes ~1.2 s; it now benches cold and warm
+  separately, with the copy made in an untimed per-run `setup`.
 - **Patterns must be distinct.** `matchBitsFor` keys on source+flags, so repeated
   patterns share one entry — 100 filters drawn from 40 distinct patterns measured
-  like 47, not 100.
+  like 47, not 100. `profile.ts` padded its set from a 20-entry list on a cycle, so
+  `--filters=100` measured 27 patterns; it now draws from a pool of distinct ones
+  and prints the distinct count next to the filter count.
 - **Measure Rust in release.** The scan is 43 ms release vs **432 ms debug**
   (10×), because `regex` is unoptimised in debug. Under `tauri dev` the whole
   benefit looks ~1.7× instead of ~6.7×.
+- **A helper binary that is only built when missing is a stale-code trap.** Edit
+  `scan.rs`, re-run the profiler, and it benchmarks the previous build without a
+  word. `profile.ts` now runs `cargo build` every time (~0.5 s no-op).
 - **JSC ≠ V8.** Bun measures ~1302 ms cold where Chromium measures ~856 ms. The
   app runs on WebView2 (V8); use Chromium via Playwright for frontend numbers.
 
@@ -376,12 +383,15 @@ even in debug builds — the loading overlay stays responsive.
 
 ## 11. Reproducing the measurements
 
-- `bun run scripts/profile.ts --lines=200000 --filters=100` — engine-level, but see
-  the warm-cache trap above.
-- Cold vs warm and filter scaling: call `computeView(lines.slice(), compiled)` per
-  run to defeat the identity-keyed cache.
-- Rust side: build a small bin that `#[path]`-includes `src-tauri/src/scan.rs`, and
-  run it in `--release` against a real file.
+- `bun run scripts/profile.ts --lines=200000 --filters=100` — engine-level. Reports
+  cold and warm `computeView` separately, plus the Rust scan, `verify` and
+  `primeMatchCache`, and adds them up into an open-a-file model. Bun numbers, so
+  see the JSC≠V8 trap above.
+- Rust side runs by default (`--no-rust` opts out): `scan_text` through the existing
+  `crosscheck` binary, which `#[path]`-includes `src-tauri/src/scan.rs` — the code
+  that ships. Rebuilt `--release` every run, so a stale binary can't be measured;
+  its JSON-over-stdin round trip is harness overhead and is reported on its own
+  line, never folded into the scan.
 - Frontend numbers: bundle an entry importing `engine.ts` and run it in Chromium
   through Playwright; warm the JIT with a smaller input first.
 - Semantics: `bun run test:crosscheck` (see §6). `--seeds=40 --lines=20000` for a
