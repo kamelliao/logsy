@@ -7,9 +7,6 @@ license = ""
 repository = ""
 edition = "2021"
 rust-version = "1.77.2"
-# The crate ships a second, dev-only binary (`crosscheck`), which makes a bare
-# `cargo run` — what `tauri dev` issues — ambiguous. Name the real one.
-default-run = "app"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -17,16 +14,11 @@ default-run = "app"
 name = "app_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
-# Dev-only helper for `scripts/crosscheck.ts` (verifies the Rust scanner agrees with
-# JS regex semantics). Behind a feature so a normal build — and `tauri build` — never
-# compiles it.
-[features]
-crosscheck = []
-
-[[bin]]
-name = "crosscheck"
-path = "src/bin/crosscheck.rs"
-required-features = ["crosscheck"]
+# NOTE: `app` must stay the crate's only [[bin]]. The Tauri bundler treats every bin
+# target in this manifest as something to ship — it ignores `required-features`, so a
+# dev-only bin either breaks `tauri build` on a clean checkout (the binary was never
+# compiled, so light.exe/dpkg can't find it) or gets installed onto users' machines.
+# Dev helpers belong in `examples/` instead; see `examples/crosscheck.rs`.
 
 [build-dependencies]
 tauri-build = { version = "2.6.2", features = [] }

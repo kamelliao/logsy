@@ -37,10 +37,12 @@ const QUIET = args.includes("--quiet");
 // --- build + drive the Rust half -------------------------------------------
 
 const TAURI = join(import.meta.dir, "..", "src-tauri");
+// A cargo *example*, not a bin: bin targets get picked up by the Tauri bundler.
 const EXE = join(
   TAURI,
   "target",
   "release",
+  "examples",
   process.platform === "win32" ? "crosscheck.exe" : "crosscheck",
 );
 
@@ -48,7 +50,7 @@ function buildRustHelper(): void {
   process.stdout.write("building crosscheck helper… ");
   const r = spawnSync(
     "cargo",
-    ["build", "--release", "--features", "crosscheck", "--bin", "crosscheck"],
+    ["build", "--release", "--example", "crosscheck"],
     { cwd: TAURI, stdio: QUIET ? "pipe" : ["ignore", "pipe", "inherit"] },
   );
   if (r.status !== 0) {

@@ -6,11 +6,14 @@
 //! lives in `scripts/crosscheck.ts`, which owns the cases and does the diffing; this
 //! binary is only the Rust half of the pipe.
 //!
-//! Built behind the `crosscheck` feature so a normal `cargo build` (and therefore
-//! `tauri build`) doesn't pay for it:
+//! An *example*, not a `[[bin]]`, and deliberately so: the Tauri bundler enumerates
+//! every bin target in the manifest and ignores `required-features`, so a dev-only
+//! bin gets written into the installer's file list and then fails to bundle (or, if
+//! it happens to be lying around in `target/`, silently ships to users). Examples
+//! are invisible to the bundler and are still skipped by a plain `cargo build`:
 //!
 //! ```text
-//! cargo build --release --features crosscheck --bin crosscheck
+//! cargo build --release --example crosscheck
 //! ```
 //!
 //! stdin:  {"text": "...", "patterns": [{"source": "...", "ci": true}, ...]}
@@ -19,7 +22,7 @@
 //! Includes the app's own `scan.rs` via `#[path]` rather than duplicating it — the
 //! whole point is to test the code that actually ships. (That's also why `scan.rs`
 //! is a standalone module with no tauri dependency.)
-#[path = "../scan.rs"]
+#[path = "../src/scan.rs"]
 mod scan;
 
 use std::io::{Read, Write};
