@@ -70,6 +70,16 @@ export function PinnedLinesView({ node, updateAttributes }: NodeViewProps) {
     }
   }, [updateAttributes]);
 
+  // Where the pointer went down, so a drag that ends on a number reads as the text
+  // selection it is rather than a click. This has to be measured, not inferred from
+  // `window.getSelection()`: the numbers are `contentEditable=false` inside an
+  // editable <pre>, so merely clicking one makes the browser select that element —
+  // the selection is never collapsed, and testing for that swallowed every click.
+  const downAt = useRef<{ x: number; y: number } | null>(null);
+  const onBodyMouseDown = useCallback((e: React.MouseEvent<HTMLPreElement>) => {
+    downAt.current = { x: e.clientX, y: e.clientY };
+  }, []);
+
   // Click a line number to jump to that line in its source log (switching to the
   // file first, if it isn't the active one). Delegated from the <pre> rather than
   // bound per row: the rows are uncontrolled innerHTML — that's what lets the user's
@@ -78,11 +88,14 @@ export function PinnedLinesView({ node, updateAttributes }: NodeViewProps) {
   // free of extra attributes and so keeps the exported HTML plain text.
   const onBodyClick = useCallback(
     (e: React.MouseEvent<HTMLPreElement>) => {
+      const from = downAt.current;
+      downAt.current = null;
       const target = e.target as HTMLElement | null;
       const num = target?.closest?.(".pl-num");
       if (!num) return;
-      // A drag that happens to END on a number is a text selection, not a click.
-      if (window.getSelection()?.isCollapsed === false) return;
+      // Slop, not zero: a click almost always drifts a pixel or two.
+      if (from && Math.hypot(e.clientX - from.x, e.clientY - from.y) > 4)
+        return;
       const n = parseInt(num.textContent ?? "", 10);
       if (!Number.isFinite(n)) return;
       getPinnedLinesJumpHandler()?.(fileId, n);
@@ -116,6 +129,7 @@ export function PinnedLinesView({ node, updateAttributes }: NodeViewProps) {
         className="pl-body"
         contentEditable={true}
         suppressContentEditableWarning
+        onMouseDown={onBodyMouseDown}
         onClick={onBodyClick}
         onKeyDown={(e) => {
           e.stopPropagation();

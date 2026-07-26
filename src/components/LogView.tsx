@@ -1660,6 +1660,12 @@ export function LogView({
                     "dock-btn lv-toggle" +
                     (viewMode === "matches" ? " active" : "")
                   }
+                  // Icon-only, so it needs its own accessible name; the tooltip is
+                  // not one. Kept constant while the state rides on aria-pressed —
+                  // a name that changed with the state would make the control
+                  // impossible to refer to.
+                  aria-label="Show only matched lines"
+                  aria-pressed={viewMode === "matches"}
                   disabled={!view.hasHighlights}
                   onClick={() =>
                     onToggleViewMode(viewMode === "matches" ? "all" : "matches")
@@ -1682,6 +1688,8 @@ export function LogView({
               render={
                 <button
                   className={"dock-btn lv-toggle" + (findOpen ? " active" : "")}
+                  aria-label="Find"
+                  aria-pressed={findOpen}
                   onClick={onToggleFind}
                 />
               }
@@ -1692,7 +1700,13 @@ export function LogView({
           </Tooltip>
           <Tooltip>
             <TooltipTrigger
-              render={<button className="dock-btn" onClick={exportView} />}
+              render={
+                <button
+                  className="dock-btn"
+                  aria-label="Export filtered view"
+                  onClick={exportView}
+                />
+              }
             >
               <Download size={14} />
             </TooltipTrigger>
