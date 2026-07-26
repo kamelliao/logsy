@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import type { AppState, LogFile } from "@/types";
 import { uid } from "@/lib/defaults";
 import { baseName } from "@/lib/path";
+import { splitLines } from "@/lib/lines";
 import { nextPaint } from "@/lib/paint";
 import { primeFilters } from "@/lib/scanPrime";
 import { beginOpenTiming, cancelOpenTiming } from "@/lib/openTiming";
@@ -23,12 +24,6 @@ const readsInFlight = new Set<string>();
 // The live document, read without a render dependency — the old `stateRef.current`.
 // Module-level so it's a stable reference (safe to use inside useCallback bodies).
 const getDoc = () => useStore.getState().doc;
-
-function splitLines(text: string): string[] {
-  const arr = text.split(/\r\n|\n|\r/);
-  if (arr.length > 0 && arr[arr.length - 1] === "") arr.pop();
-  return arr;
-}
 
 /** How the scan went, for the open-perf log line. Zeroed when nothing was scanned. */
 interface PrimeStats {

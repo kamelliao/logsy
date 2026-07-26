@@ -40,7 +40,14 @@ export function scanSpecs(compiled: CompiledFilter[]): ScanSpec[] {
 const SPREAD_SAMPLES = 48;
 const HIT_SAMPLES = 16;
 
-function verify(lines: string[], re: RegExp, bits: Uint8Array): boolean {
+/**
+ * Whether `bits` agrees with what `re` actually matches, on a sample of `lines`.
+ *
+ * Exported only so `scripts/profile.ts` can time the real thing: verification is part
+ * of what the Rust-primed open path costs, and a profiler that measured a re-typed
+ * copy of this loop would be quoting a number the product never pays.
+ */
+export function verify(lines: string[], re: RegExp, bits: Uint8Array): boolean {
   const n = lines.length;
   if (!n) return true;
   const agrees = (i: number): boolean => {

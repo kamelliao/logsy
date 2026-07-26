@@ -67,36 +67,92 @@ on Windows, `.dmg` on macOS, `.deb`/`.AppImage` on Linux.
 
 The log-processing core in [`src/lib/engine.ts`](src/lib/engine.ts) is what keeps the UI
 smooth on large files. [`scripts/profile.ts`](scripts/profile.ts) benchmarks it
-in isolation (no React, no Tauri) against a synthetic firmware log, reporting
-per-function timings plus `computeView` throughput:
+in isolation (no React, no Tauri) against a synthetic firmware log, reporting what
+each stage of opening a file costs and how the JS and Rust scanners compare:
 
 ```bash
 bun run scripts/profile.ts                          # defaults: 200k lines, 20 filters
-bun run scripts/profile.ts --lines=500000 --filters=40
+bun run scripts/profile.ts --lines=500000 --filters=100
+bun run scripts/profile.ts --no-rust                # JS only, no cargo toolchain needed
 bun run scripts/profile.ts --json                   # machine-readable, for CI / before-after
 ```
 
-Flags: `--lines=N` · `--filters=N` · `--runs=N` (odd → median) · `--warmup=N` ·
-`--seed=N` (reproducible logs) · `--json`.
+Flags: `--lines=N` · `--filters=N` · `--runs=N` (odd → median) · `--cold-runs=N` ·
+`--warmup=N` · `--seed=N` (reproducible logs) · `--no-rust` · `--quiet` · `--json`.
+Run `bun run scripts/profile.ts --help` for the authoritative list.
 
-Sample run (200k lines, 20 filters, Apple-class laptop):
+A default run takes ~21 s at 500k lines × 100 filters, most of it inside one
+benchmark, so a progress line on **stderr** reports the phase, the run and the
+estimated time left:
 
 ```
-benchmark                         min     median       mean    ops/s
-────────────────────────────────────────────────────────────────────
-compileAll                    0.01 ms    0.01 ms    0.01 ms  84745.8
-computeView (full file)     211.38 ms  220.21 ms  219.79 ms      4.5
-fieldsFor × all rows        110.16 ms  113.46 ms  113.73 ms      8.8
-segments × 1000 rows          0.06 ms    0.12 ms    0.14 ms   8628.1
-scanMatches (preview)        10.37 ms   11.32 ms   11.22 ms     88.3
-
-computeView throughput: 0.91 M lines/s · 52 MB/s
+[4/11] js: computeView (cold)  run 2/3  ~3.3 s each, ~6.7 s left
 ```
 
-`computeView` (every line tested against every filter) dominates and scales with
-`lines × filters` — at 500k lines / 40 filters it's ~1.06 s — so it's the first
-place to look when a large file feels sluggish. `compileAll` and `segments`
-(per-rendered-row highlighting) are effectively free.
+It is a plain overwritten line, not a spinner: each run holds the event loop for
+its whole duration, so an animation would freeze during exactly the wait it is
+meant to cover. It goes to stderr so stdout stays exactly the report, and is off
+under `--json`, `--quiet`, or when stderr is not a terminal.
+
+The report **ends** with what opening a file costs, stage by stage, with both paths
+as columns — the terminal is scrolled to the bottom when a run finishes, so the last
+thing printed is the first thing read. Only the match scan differs; every other
+stage is the same work on both sides, so the comparison is a substitution rather
+than two unrelated totals:
+
+```
+══ opening a 11.5 MB log — 200,000 lines × 100 distinct filters ══
+
+  stage                               JS only  Rust-primed
+  ────────────────────────────────────────────────────────
+  js: splitLines                     17.00 ms     17.00 ms
+  js: match scan                   1190.23 ms            —
+  rust: split_lines                         —      7.69 ms
+  rust: RegexSet scan (rayon)               —     45.09 ms
+  js: verify (spot-check)                   —      0.49 ms
+  js: primeMatchCache                       —      0.04 ms
+  js: computeView (compose)          18.71 ms     18.71 ms
+  ────────────────────────────────────────────────────────
+  total                            1225.94 ms     89.03 ms   13.8× faster
+
+  not measured here (same on both paths): file read + decode, and the IPC
+  that carries the text and the bit sets — see docs/perf-large-file-open.md
+
+  cross-check: scan + compose = 1208.95 ms vs computeView (cold) 1203.69 ms
+```
+
+The match scan is measured **directly**, via `scanAll` in `engine.ts`, rather than
+derived by subtracting a warm `computeView` from a cold one. That is what makes the
+cross-check meaningful: `scan`, `compose` and cold `computeView` are three
+independently measured numbers that have to agree, and a subtraction could never
+disagree. The Rust timings likewise come from `scan_text`'s own `Instant`s in the
+result blob, so they contain none of this harness's process spawn or JSON. The Rust
+helper is rebuilt every run (`--release`, ~0.5 s when there is nothing to do) so the
+scan can never be measured against a stale binary.
+
+Above the summary, in the order they print: the raw min/median/mean/max samples
+(which answer how stable a number is rather than what it costs), then the engine's
+other hot paths (`compileAll`, `fieldsFor`, `segments`, `scanMatches` — rendering
+and the edit modal, none of them on the open path). Anything that qualifies the
+numbers prints above the summary too, so the summary stays the final block.
+
+Colour carries hierarchy, not decoration: **bold** for section titles and the total
+row, dim for anything that is not a result (separators, footnotes, and any stage
+costing under a millisecond — otherwise a 1200 ms row and a 0.03 ms row have the
+same visual weight), and yellow only for something that wants reading, such as a
+failed cross-check. No number is coloured by whether it is good or bad — a slow
+cold scan is the finding, not a fault. Colour switches itself off when stdout is
+not a terminal, under `NO_COLOR`, and under `--json`.
+
+Cold `computeView` dominates and is why opening a file primes the match cache
+from Rust (see [`docs/perf-large-file-open.md`](docs/perf-large-file-open.md));
+at 200k lines / 100 filters it is ~1.2 s in Bun against ~71 ms primed.
+`compileAll` and `segments` (per-rendered-row highlighting) are effectively free.
+
+Two things the synthetic workload has to get right, or every number is optimistic:
+the filter patterns must be **distinct** (the match cache keys on regex source +
+flags, so repeated patterns are scanned once between them), and the cold benchmark
+must hand each run a **fresh lines array** (the cache is keyed by array identity).
 
 ## Keyboard shortcuts
 
