@@ -39,6 +39,7 @@ import type {
   Marker,
   MarkerIcon,
   Filter as FilterCfg,
+  PaneSignal,
 } from "@/types";
 import { escapeRegex } from "@/lib/engine";
 import {
@@ -142,6 +143,43 @@ function renderLine(
 // so it survives remounts; ephemeral — not persisted, which matches the lazy
 // line cache (non-active files aren't even loaded after a restart).
 const scrollByFile: Record<string, number> = {};
+
+// The last one-shot signal (go to line / bookmark jump / select all) already acted
+// on, per kind. Module-level because the instance that should act on a signal may
+// not be the one mounted when it was raised — a bookmark jump into another file
+// remounts LogView, and the fresh instance is meant to pick the signal up on mount.
+// Recording what's been handled is what stops that same mount-time read from
+// REPLAYING an old jump later, when the pane switches tabs and remounts again.
+const handledSignal: Record<
+  "goto" | "marker" | "selectAll",
+  { nonce: number; by: object } | null
+> = { goto: null, marker: null, selectAll: null };
+
+/**
+ * The signal, if it's ours to act on and not acted on yet — otherwise null. A signal
+ * names the pane and document it was raised for, so it reaches exactly one view:
+ * focusing a pane can't make an old jump fire again and throw away the scroll
+ * position. Claiming records it, so a later remount of that pane (switching tabs
+ * away and back) doesn't replay it either — `owner` identifies the mounted instance,
+ * which may re-run its own claim, since React StrictMode invokes mount effects twice.
+ */
+function claimSignal<S extends PaneSignal>(
+  kind: keyof typeof handledSignal,
+  sig: S | null | undefined,
+  paneId: string,
+  fileId: string,
+  owner: object,
+): S | null {
+  if (!sig || sig.pane !== paneId || sig.file !== fileId) return null;
+  const prev = handledSignal[kind];
+  if (
+    prev &&
+    (sig.nonce < prev.nonce || (sig.nonce === prev.nonce && prev.by !== owner))
+  )
+    return null;
+  handledSignal[kind] = { nonce: sig.nonce, by: owner };
+  return sig;
+}
 
 /** Compact 2-row table for one line's parsed fields: names on top, values below. */
 function FieldTable({ fields }: { fields: Record<string, FieldValue> }) {
@@ -338,16 +376,16 @@ interface LogViewProps {
   showLineNumbers: boolean;
   compareLines: Set<number>;
   style?: CSSProperties;
-  /** Bumped by the Edit ▸ Select All menu to select every visible line. */
-  selectAllNonce?: number;
+  /** Raised by the Edit ▸ Select All menu to select every visible line. */
+  selectAllSignal?: PaneSignal | null;
   /** Set by Edit ▸ Go to… to scroll/select a line number (nonce re-triggers). */
-  gotoSignal?: { n: number; nonce: number } | null;
+  gotoSignal?: (PaneSignal & { n: number }) | null;
   /** Save the filtered view text via a native dialog (provided by App). */
   onExportView?: (defaultName: string, text: string) => void;
   /** Bookmarks for this pane's file (one per line number). */
   markers: Marker[];
   /** Set by the bookmarks menu to scroll/select a marked line (nonce re-triggers). */
-  markerJump?: { n: number; nonce: number } | null;
+  markerJump?: (PaneSignal & { n: number }) | null;
   /** Jump to a bookmarked line (routes through App so a hidden line reveals first). */
   onJumpMarker: (n: number) => void;
   /** Resolves a line number to its raw text, for the bookmark menu's preview. */
@@ -417,7 +455,7 @@ export function LogView({
   showLineNumbers,
   compareLines,
   style,
-  selectAllNonce,
+  selectAllSignal,
   gotoSignal,
   onExportView,
   markers,
@@ -459,6 +497,8 @@ export function LogView({
     return m;
   }, [filters]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Identity of this mounted instance, for claiming one-shot signals (see above).
+  const instance = useRef({}).current;
   const mapCanvasRef = useRef<HTMLCanvasElement>(null);
   const findInputRef = useRef<HTMLInputElement>(null);
   // The log-view root + whether the pointer is over it — scopes Ctrl/Cmd+A
@@ -795,17 +835,20 @@ export function LogView({
 
   // Edit ▸ Select All — select every currently-visible line.
   useEffect(() => {
-    if (!selectAllNonce) return;
+    if (!claimSignal("selectAll", selectAllSignal, paneId, file.id, instance))
+      return;
     setSelectedLines(new Set(visible.map((r) => r.n)));
     setAnchorRi(visible.length ? visible.length - 1 : null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectAllNonce]);
+  }, [selectAllSignal?.nonce]);
 
   // Edit ▸ Go to… — scroll to (and select) the requested line number, or the
   // nearest visible line at/after it.
   useEffect(() => {
-    if (!gotoSignal || !visible.length) return;
-    const { n } = gotoSignal;
+    if (!visible.length) return;
+    const claimed = claimSignal("goto", gotoSignal, paneId, file.id, instance);
+    if (!claimed) return;
+    const { n } = claimed;
     let idx = visible.findIndex((r) => r.n === n);
     if (idx < 0) idx = visible.findIndex((r) => r.n >= n);
     if (idx < 0) idx = visible.length - 1;
@@ -977,9 +1020,11 @@ export function LogView({
   // select it. Declared after the view-mode switch effect so that when a hidden
   // marker forces a switch to "Show all", this final scroll wins.
   useEffect(() => {
-    if (!markerJump || !visible.length) return;
-    let idx = visible.findIndex((r) => r.n === markerJump.n);
-    if (idx < 0) idx = visible.findIndex((r) => r.n >= markerJump.n);
+    if (!visible.length) return;
+    const jump = claimSignal("marker", markerJump, paneId, file.id, instance);
+    if (!jump) return;
+    let idx = visible.findIndex((r) => r.n === jump.n);
+    if (idx < 0) idx = visible.findIndex((r) => r.n >= jump.n);
     if (idx < 0) idx = visible.length - 1;
     rowVirtualizer.scrollToIndex(idx, { align: "center" });
     setSelectedLines(new Set([visible[idx].n]));

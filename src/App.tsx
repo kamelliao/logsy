@@ -23,7 +23,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { FilterGroup, Pane } from "@/types";
+import type { FilterGroup, Pane, PaneSignal } from "@/types";
 import { DEFAULT_PALETTE } from "@/lib/palette";
 import type { PaletteEntry } from "@/types";
 
@@ -125,16 +125,16 @@ export function App() {
   const [gotoOpen, setGotoOpen] = useState(false);
   // Quick Open palette (Ctrl+P) — fuzzy-jump between the open logs.
   const [quickOpen, setQuickOpen] = useState(false);
-  const [selectAllNonce, setSelectAllNonce] = useState(0);
-  const [gotoSignal, setGotoSignal] = useState<{
-    n: number;
-    nonce: number;
-  } | null>(null);
+  const [selectAllSignal, setSelectAllSignal] = useState<PaneSignal | null>(
+    null,
+  );
+  const [gotoSignal, setGotoSignal] = useState<
+    (PaneSignal & { n: number }) | null
+  >(null);
   // Pushed to LogView to scroll/select a bookmarked line from the Bookmarks tab.
-  const [markerJump, setMarkerJump] = useState<{
-    n: number;
-    nonce: number;
-  } | null>(null);
+  const [markerJump, setMarkerJump] = useState<
+    (PaneSignal & { n: number }) | null
+  >(null);
   // "View this filter only" — ephemeral focus on a single filter's matches (ui slice).
   const soloFilterId = useStore((s) => s.soloFilterId);
   const setSoloFilterId = useStore((s) => s.setSoloFilterId);
@@ -513,6 +513,17 @@ export function App() {
     setFilterFlash({ id, nonce: Date.now() });
   };
 
+  // Address a one-shot LogView signal (goto / bookmark jump / select all) at the
+  // view it means: the focused pane, showing `fileId` (the active file unless the
+  // caller is about to switch it). Without the stamp a pane would re-run the last
+  // jump whenever it GAINED focus, since the prop only reached the focused pane
+  // and so looked new on every focus swap — which threw away its scroll position.
+  const signalFor = (fileId?: string | null): PaneSignal => ({
+    nonce: Date.now(),
+    pane: activePaneId,
+    file: fileId ?? file?.id ?? "",
+  });
+
   // Jump to a bookmark from the Bookmarks tab. Bookmarks only render in "Show
   // all"; if the target line is hidden *because* of matches-only mode (not
   // excluded, just unmatched), switch to all first so the jump lands on it.
@@ -527,7 +538,7 @@ export function App() {
     ) {
       setViewMode("all");
     }
-    setMarkerJump({ n, nonce: Date.now() });
+    setMarkerJump({ n, ...signalFor() });
   };
 
   // Wire the pinned-lines "jump to line" button into the app's jump mechanism.
@@ -552,7 +563,7 @@ export function App() {
         },
         { undoable: false },
       );
-      setMarkerJump({ n, nonce: Date.now() });
+      setMarkerJump({ n, ...signalFor(fileId) });
       return;
     }
     jumpToMarker(n);
@@ -819,7 +830,7 @@ export function App() {
       toast.error("Could not open documentation: " + String(e)),
     );
   };
-  const selectAllLines = () => setSelectAllNonce((n) => n + 1);
+  const selectAllLines = () => setSelectAllSignal(signalFor());
   const openGoto = () => setGotoOpen(true);
 
   useKeyboardShortcuts({
@@ -959,11 +970,11 @@ export function App() {
                 timelineFieldsForLines={timelineFieldsForLines}
                 onRemoveTimelineField={removeTimelineField}
                 onRemoveFromTimeline={removeFromTimeline}
-                selectAllNonce={isFocused ? selectAllNonce : undefined}
-                gotoSignal={isFocused ? gotoSignal : undefined}
+                selectAllSignal={selectAllSignal}
+                gotoSignal={gotoSignal}
                 onExportView={exportFilteredView}
                 markers={b.markers}
-                markerJump={isFocused ? markerJump : undefined}
+                markerJump={markerJump}
                 onJumpMarker={jumpToMarker}
                 lineText={(n) => b.view.rows[n - 1]?.text ?? ""}
                 onSetMarker={setMarker}
@@ -1368,7 +1379,7 @@ export function App() {
           {/* go-to-line dialog */}
           {gotoOpen && (
             <GotoDialog
-              onSubmit={(n) => setGotoSignal({ n, nonce: Date.now() })}
+              onSubmit={(n) => setGotoSignal({ n, ...signalFor() })}
               onClose={() => setGotoOpen(false)}
             />
           )}

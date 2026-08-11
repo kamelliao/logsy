@@ -212,6 +212,21 @@ export interface Pane {
 }
 
 /**
+ * A ONE-SHOT instruction pushed from App to a LogView: go to a line, jump to a
+ * bookmark, select everything. `nonce` re-triggers it; `pane` + `file` name the
+ * one view it means, so it can never leak into another pane. Addressing the
+ * target explicitly is what keeps these signals one-shot — a pane that merely
+ * gains focus (or remounts on a tab switch) must not replay the last jump.
+ */
+export interface PaneSignal {
+  nonce: number;
+  /** The pane focused when the signal was raised. */
+  pane: string;
+  /** The document it meant — a pane that has since switched tabs ignores it. */
+  file: string;
+}
+
+/**
  * The split-view layout: N panes laid out in ONE row (`dir: "h"`) or ONE column
  * (`dir: "v"`) — a list, not a nested grid. A single pane means the split is off
  * (that pane is simply the main group). Persisted, but not undoable: it's window

@@ -29,6 +29,11 @@ async function openTwo(page: Page, tauri: TauriMock) {
 
 const panes = (page: Page) => page.locator(".pane-group");
 const pane = (page: Page, i: number) => panes(page).nth(i);
+/** A pane's vertical log scroll offset. */
+const scrollTop = (page: Page, i: number) =>
+  pane(page, i)
+    .locator(".log-scroll")
+    .evaluate((el) => el.scrollTop);
 
 /** Split the focused pane. Like VS Code, the new pane opens on the SAME document. */
 async function split(page: Page, expected = 2) {
@@ -612,6 +617,48 @@ test.describe("split view", () => {
     await pane(page, 1).getByRole("button", { name: "Close pane" }).click();
     await expect(panes(page)).toHaveCount(0);
     await expect(page.locator(".logview")).toHaveCount(1);
+  });
+
+  // Go-to-line / bookmark jumps are one-shot signals addressed at ONE pane. They
+  // used to reach LogView only while it was focused, so the nonce looked new to
+  // every pane the moment it GAINED focus: clicking between panes replayed the
+  // last jump and threw away where each pane was scrolled to.
+  test("moving focus between panes keeps each pane's scroll position", async ({
+    page,
+    tauri,
+  }) => {
+    const LONG = Array.from(
+      { length: 2000 },
+      (_, i) => `line ${i + 1} payload`,
+    ).join("\n");
+    await tauri.setFile("/logs/long.log", LONG);
+    await tauri.setDialogOpen(["/logs/long.log"]);
+    await page.locator(".empty-workspace").click();
+    await expect(page.locator(".file-item")).toHaveCount(1);
+    await split(page);
+
+    // Use go-to-line once, so a stale jump signal exists.
+    await page.keyboard.press("ControlOrMeta+g");
+    await page.locator(".goto-input").fill("50");
+    await page.getByRole("button", { name: "Go" }).click();
+    await expect(page.locator(".goto-box")).toBeHidden();
+
+    const scroller = (i: number) => pane(page, i).locator(".log-scroll");
+    const scrollTo = async (i: number, top: number) => {
+      await scroller(i).evaluate((el, t) => {
+        el.scrollTop = t;
+      }, top);
+      await expect.poll(() => scrollTop(page, i)).toBe(top);
+    };
+    await scrollTo(0, 4000);
+    await scrollTo(1, 9000);
+
+    // Click one pane, then the other: both keep their own offset.
+    await scroller(0).click({ position: { x: 200, y: 60 } });
+    await scroller(1).click({ position: { x: 200, y: 60 } });
+    await scroller(0).click({ position: { x: 200, y: 60 } });
+    expect(await scrollTop(page, 0)).toBe(4000);
+    expect(await scrollTop(page, 1)).toBe(9000);
   });
 
   test("closing a pane's last tab collapses that pane", async ({
