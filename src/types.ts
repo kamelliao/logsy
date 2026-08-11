@@ -295,6 +295,15 @@ export interface AppState {
    * group signature, inner key is the panel id.
    */
   panelSizes: Record<string, Record<string, number>>;
+  /**
+   * Last EXPANDED size (CSS px) of each dock, so re-opening a collapsed dock
+   * restores the size the user left it at instead of a fixed default. Keyed
+   * `${dockId}:${pos}` (`fp:bottom`, `fp:right`, `pop:bottom`, `pop:right`) —
+   * a bottom dock's height and a right dock's width are different quantities,
+   * so each side remembers its own. Written when a dock collapses; px (not
+   * percent) so it survives a window resize.
+   */
+  dockSizes?: Record<string, number>;
   /** User-customised quick-access colour palette (swatches row in Edit filter).
    *  undefined = use the built-in defaults. */
   customPalette?: PaletteEntry[];

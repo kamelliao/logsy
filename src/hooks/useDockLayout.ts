@@ -15,7 +15,9 @@ const POP_COLLAPSED = MAIN_COLLAPSED;
 // drag. Well below either dock's expanded floor (140px / 240px) and above the 34px
 // strip, so it can't be confused with a small-but-open dock.
 const COLLAPSE_DETECT_PX = 70;
-// The popped dock opens larger than the filter dock — its tables/canvas benefit.
+// Fallback expand size, used only until a dock has a remembered size of its own
+// (see `AppState.dockSizes`). The popped dock opens larger than the filter dock —
+// its tables/canvas benefit.
 const EXPAND_FP = "30%";
 const EXPAND_POP = "30%";
 // Default share (weight) for a panel that has no persisted size yet. Docks
@@ -55,12 +57,45 @@ export function useDockLayout() {
   const fpRef = useRef<PanelImperativeHandle | null>(null);
   const popRef = useRef<PanelImperativeHandle | null>(null);
 
+  // ── Remembered dock size ────────────────────────────────────────────────────
+  // Each dock re-opens at the size the user last left it at. The live size comes
+  // in through `onResize` (every drag frame), so we keep the latest EXPANDED px
+  // in a ref — free, no re-render — and only commit it to the document at the
+  // moment the dock collapses, where a state write happens anyway. Keyed by dock
+  // AND side, because the popped dock (and the main one, via "Dock right") can
+  // move: a bottom dock's height must not become a right dock's width.
+  const lastPx = useRef<Record<string, number>>({});
+  const sideOf = (id: "fp" | "pop", s: AppState): "bottom" | "right" =>
+    id === "fp" ? s.panelPos : s.panelPos === "bottom" ? "right" : "bottom";
+  const dockKey = (id: "fp" | "pop", s: AppState) => `${id}:${sideOf(id, s)}`;
+  // The `dockSizes` patch to fold into a state update that collapses `id`.
+  const rememberSize = (id: "fp" | "pop", s: AppState): Partial<AppState> => {
+    const px = lastPx.current[dockKey(id, s)];
+    if (!px || px <= COLLAPSE_DETECT_PX) return {};
+    return { dockSizes: { ...(s.dockSizes ?? {}), [dockKey(id, s)]: px } };
+  };
+  // Size to expand a dock to: what it was last left at, else the generous default.
+  const expandSize = (id: "fp" | "pop", fallback: string): string => {
+    const s = getDoc();
+    const px = s.dockSizes?.[dockKey(id, s)] ?? lastPx.current[dockKey(id, s)];
+    return px && px > COLLAPSE_DETECT_PX ? `${Math.round(px)}px` : fallback;
+  };
+
   const setFilterPos = (pos: "bottom" | "right") =>
     setState((s) => ({ ...s, panelPos: pos }));
   const toggleFilterCollapsed = () =>
-    setState((s) => ({ ...s, filterCollapsed: !s.filterCollapsed }));
+    setState((s) => ({
+      ...s,
+      filterCollapsed: !s.filterCollapsed,
+      // Collapsing: capture the size we're collapsing away from.
+      ...(s.filterCollapsed ? {} : rememberSize("fp", s)),
+    }));
   const togglePoppedCollapsed = () =>
-    setState((s) => ({ ...s, poppedCollapsed: !s.poppedCollapsed }));
+    setState((s) => ({
+      ...s,
+      poppedCollapsed: !s.poppedCollapsed,
+      ...(s.poppedCollapsed ? {} : rememberSize("pop", s)),
+    }));
 
   // Which panels are where. ANY panel can be popped out into the shared side dock;
   // the main dock keeps whatever is left, and always at least one (`canPop` gates
@@ -238,27 +273,37 @@ export function useDockLayout() {
     const p = fpRef.current;
     if (!p || p.isCollapsed() === state.filterCollapsed) return;
     if (state.filterCollapsed) p.collapse();
-    // Defer expand a frame so the panel settles before we size it generously.
-    else requestAnimationFrame(() => p.resize(EXPAND_FP));
+    // Defer expand a frame so the panel settles before we size it.
+    else requestAnimationFrame(() => p.resize(expandSize("fp", EXPAND_FP)));
   }, [state.filterCollapsed]);
   useEffect(() => {
     const p = popRef.current;
     if (!p || p.isCollapsed() === state.poppedCollapsed) return;
     if (state.poppedCollapsed) p.collapse();
-    else requestAnimationFrame(() => p.resize(EXPAND_POP));
+    else requestAnimationFrame(() => p.resize(expandSize("pop", EXPAND_POP)));
   }, [state.poppedCollapsed]);
 
-  // Read a drag-driven collapse/expand back into the persisted boolean. Attached to
-  // each dock panel's onResize; a no-op unless the panel just crossed the strip line
+  // Read a drag-driven collapse/expand back into the persisted boolean, and track
+  // the dock's live expanded size for `dockSizes`. Attached to each dock panel's
+  // onResize, so it fires on every drag frame: the size tracking is a ref write,
+  // and the state write is a no-op unless the panel just crossed the strip line
   // (guarded so the effect above and this handler can't ping-pong).
   const onDockResize =
-    (key: "filterCollapsed" | "poppedCollapsed") => (size: PanelSize) => {
+    (id: "fp" | "pop", key: "filterCollapsed" | "poppedCollapsed") =>
+    (size: PanelSize) => {
       const collapsed = size.inPixels <= COLLAPSE_DETECT_PX;
-      if (getDoc()[key] === collapsed) return;
-      setState((s) => ({ ...s, [key]: collapsed }));
+      const s = getDoc();
+      if (!collapsed) lastPx.current[dockKey(id, s)] = size.inPixels;
+      if (!!s[key] === collapsed) return;
+      setState((st) => ({
+        ...st,
+        [key]: collapsed,
+        // Dragged shut: persist the size it had just before crossing the line.
+        ...(collapsed ? rememberSize(id, st) : {}),
+      }));
     };
-  const onFpResize = onDockResize("filterCollapsed");
-  const onPopResize = onDockResize("poppedCollapsed");
+  const onFpResize = onDockResize("fp", "filterCollapsed");
+  const onPopResize = onDockResize("pop", "poppedCollapsed");
 
   return {
     isPanelPending,

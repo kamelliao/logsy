@@ -414,6 +414,15 @@ export function normalizeState(state: AppState): AppState {
   ) {
     state.panelSizes = {};
   }
+  // dockSizes is dock-key → px; drop the field entirely if it isn't a plain
+  // object, and any entry that isn't a usable positive number.
+  if (state.dockSizes && typeof state.dockSizes === "object") {
+    for (const [k, v] of Object.entries(state.dockSizes))
+      if (typeof v !== "number" || !Number.isFinite(v) || v <= 0)
+        delete state.dockSizes[k];
+  } else if (state.dockSizes) {
+    delete state.dockSizes;
+  }
   // Drop the short-lived app-level parse-profile fields; parsing now lives on
   // individual regex filters (Filter.fields).
   delete (
