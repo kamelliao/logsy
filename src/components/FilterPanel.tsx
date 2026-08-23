@@ -35,6 +35,7 @@ import {
   Save,
   Search,
   Trash2,
+  Turtle,
   Upload,
   X,
 } from "lucide-react";
@@ -573,6 +574,8 @@ interface FilterRowProps {
   /** 0-based position in the set; shown as a 1-based "#N" serial (matches the timeline). */
   index: number;
   count: number;
+  /** Rust refused this filter's pattern, so the JS engine scans it (see `jsScanned`). */
+  slowScan: boolean;
   /** Names of this filter's fields already plotted as a timeline track (stable ref). */
   trackedFields: string[];
   searching: boolean;
@@ -630,6 +633,7 @@ const FilterRowCells = memo(
     f,
     index,
     count,
+    slowScan,
     trackedFields,
     api,
     dragging,
@@ -640,6 +644,7 @@ const FilterRowCells = memo(
     f: Filter;
     index: number;
     count: number;
+    slowScan: boolean;
     trackedFields: string[];
     api: RowApi;
     dragging: boolean;
@@ -764,6 +769,20 @@ const FilterRowCells = memo(
             {f.exclude && (
               <span className="fr-flag ex">
                 <EyeOff size={12} />
+              </span>
+            )}
+
+            {slowScan && (
+              <span
+                className="fr-flag slow"
+                title={
+                  "Scanned by the JS engine — this pattern uses syntax the fast " +
+                  "scanner can't take (lookaround, a backreference, or \\b next to " +
+                  "a dot). On a large log one of these can cost seconds; the rest " +
+                  "of the set costs nothing."
+                }
+              >
+                <Turtle size={12} />
               </span>
             )}
 
@@ -906,6 +925,7 @@ const FilterRowCells = memo(
     sameFilter(prev.f, next.f) &&
     prev.index === next.index &&
     prev.count === next.count &&
+    prev.slowScan === next.slowScan &&
     prev.trackedFields === next.trackedFields &&
     prev.dragging === next.dragging &&
     prev.api === next.api &&
@@ -929,6 +949,7 @@ const FilterRow = memo(
     selectMode,
     selected,
     flashing,
+    slowScan,
     api,
   }: FilterRowProps) {
     const {
@@ -960,6 +981,7 @@ const FilterRow = memo(
           f={f}
           index={index}
           count={count}
+          slowScan={slowScan}
           trackedFields={trackedFields}
           api={api}
           dragging={isDragging}
@@ -974,6 +996,7 @@ const FilterRow = memo(
     sameFilter(prev.f, next.f) &&
     prev.index === next.index &&
     prev.count === next.count &&
+    prev.slowScan === next.slowScan &&
     prev.trackedFields === next.trackedFields &&
     prev.searching === next.searching &&
     prev.api === next.api &&
@@ -1364,6 +1387,11 @@ interface FilterPanelProps {
   file: LogFile;
   set: FilterSet;
   counts: Record<string, number>;
+  /** Filters whose pattern the Rust scanner refused, leaving it to the JS engine.
+   *  Those are the only ones that cost real time on a big log — everything else is
+   *  scanned in one RegexSet pass — so the row says so rather than leaving a user
+   *  guessing which of a hundred filters made the open slow. */
+  jsScanned?: ReadonlySet<string>;
   style?: CSSProperties;
   /** Toggle a timeline track bound to (filterId, timeField): add if absent, remove
    *  if present. Still a prop — owned by useTimeline, not yet in the store. */
@@ -1386,6 +1414,7 @@ export function FilterPanel({
   file,
   set,
   counts,
+  jsScanned,
   style,
   onToggleTimelineTrack,
   onCompareFilter,
@@ -1831,6 +1860,7 @@ export function FilterPanel({
         f={f}
         index={indexById.get(f.id) ?? -1}
         count={counts[f.id] ?? 0}
+        slowScan={jsScanned?.has(f.id) ?? false}
         trackedFields={trackedByFilter.get(f.id) ?? NO_TRACKED_FIELDS}
         searching={searching}
         selectMode={selectMode}

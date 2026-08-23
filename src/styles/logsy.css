@@ -3892,6 +3892,12 @@ button {
   background: #fbe3e1;
   color: var(--error);
 }
+/* Rust refused this pattern, so the JS engine scans it. Amber rather than red: the
+   filter works, it is just the one paying for the open. */
+.fr-flag.slow {
+  background: #fdf0d5;
+  color: #a16207;
+}
 .active-btn {
   background: var(--row-hover) !important;
   color: var(--text) !important;

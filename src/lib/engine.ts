@@ -554,7 +554,7 @@ const MATCH_CACHE_MAX = 300;
 // cache: a second copy of this expression is a bug you cannot see, because the
 // separator is a NUL — chosen so it can't occur inside a source or flags string and
 // let two different regexes collide — and it renders as whitespace in most tools.
-function cacheKey(source: string, flags: string): string {
+export function cacheKey(source: string, flags: string): string {
   return source + " " + flags;
 }
 
@@ -618,6 +618,23 @@ export function primeMatchCache(
     if (perFile.size > MATCH_CACHE_MAX)
       perFile.delete(perFile.keys().next().value!);
   }
+}
+
+/**
+ * The cached bit set for `source`+`flags` over `lines`, or undefined when there is
+ * none. Read-only access for the one caller that needs to COMPOSE bit sets rather
+ * than compute them: `scanAndPrime` ANDs the branches of a lookahead conjunction
+ * into the bits for the pattern the user actually wrote.
+ *
+ * Takes the key parts rather than a RegExp because the caller is working from the
+ * scan specs, which carry `source`/`ci` and never build the intermediate RegExp.
+ */
+export function cachedMatchBits(
+  lines: string[],
+  source: string,
+  flags: string,
+): MatchBits | undefined {
+  return matchCache.get(lines)?.get(cacheKey(source, flags));
 }
 
 /**

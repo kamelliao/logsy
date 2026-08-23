@@ -23,8 +23,12 @@ export interface OpenStages {
   encoding: string;
   patterns: number;
   primed: number;
+  /** Of `primed`, how many were assembled from branch bit sets rather than scanned. */
+  composed: number;
   fallback: number;
   rejected: number;
+  /** Patterns Rust couldn't take, scanned in JS — sliced, off the render path. */
+  jsScanned: number;
   /** Rust-side stages, reported back in the scan blob's header. */
   readMs: number;
   splitMs: number;
@@ -34,6 +38,9 @@ export interface OpenStages {
   jsSplitMs: number;
   /** The `scan_lines` round trip, verification and cache priming. */
   primeMs: number;
+  /** The sliced JS scan of whatever Rust couldn't take. Time the user waits in the
+   *  loading overlay — but interruptible, unlike the `view` it used to land in. */
+  jsScanMs: number;
   /** When the open began, for the total. */
   startedAt: number;
 }
@@ -85,13 +92,16 @@ export function finishOpenTiming(fileId: string, viewMs: number): void {
       // The scan outcome is bracketed onto the filter count it breaks down, so the
       // three numbers read as one fact rather than three loose fields.
       `${pair("filters", s.patterns)} (${pair("primed", s.primed)} ` +
-        `${pair("fallback", s.fallback)} ${pair("rejected", s.rejected)})`,
+        `${pair("composed", s.composed)} ` +
+        `${pair("fallback", s.fallback)} ${pair("rejected", s.rejected)} ` +
+        `${pair("js", s.jsScanned)})`,
       pair("read_ms", ms(s.readMs)),
       pair("ipc_ms", ms(s.ipcMs)),
       pair("js_split_ms", ms(s.jsSplitMs)),
       pair("rust_split_ms", ms(s.splitMs)),
       pair("scan_ms", ms(s.scanMs)),
       pair("prime_ms", ms(s.primeMs)),
+      pair("js_scan_ms", ms(s.jsScanMs)),
       pair("view_ms", ms(viewMs)),
       pair("total_ms", ms(performance.now() - s.startedAt)),
     ].join(" "),

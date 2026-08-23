@@ -311,6 +311,27 @@ compare("ASCII class semantics", "ID ３７\nID 37\nname_1\n名前\ntab\there\n"
   { source: "\\s", ci: false },
   { source: "\\bID\\b", ci: false },
 ]);
+// The escapes `rewrite_js_classes` spells out, on the characters where a plausible
+// translation drifts. `\s` is the one that bites hardest: JS's set is
+// WhiteSpace ∪ LineTerminator, so it contains U+00A0/U+3000 (which ASCII `\s` misses)
+// AND U+FEFF (which Rust's Unicode `\s` = \p{White_Space} misses). Every pattern here
+// mixes an ASCII escape with a `.` or a negated class, which is exactly the
+// combination that used to be handed back to JS.
+compare(
+  "rewritten ASCII classes",
+  "err 42ms\n\u{a0}err 1\n\u{feff}err 2\n\u{3000}err 3\n\u{2028}err 4\n" +
+    "３ms\nérr err 5\n名前 err 6\ntab\terr 0\nname_1.err\n",
+  [
+    { source: "\\d+.*ms", ci: false },
+    { source: ".*err.*\\d+", ci: true },
+    { source: "\\w+.*err", ci: false },
+    { source: "[\\w\\s]+err", ci: false },
+    { source: "\\s+err.*\\d", ci: true },
+    { source: "\\S+.*err", ci: false },
+    { source: "\\Dx|\\W+.*err", ci: false },
+    { source: "[^\\d]+err", ci: false },
+  ],
+);
 // More lines than SCAN_CHUNK (8192), so the per-chunk bit sets must merge at the
 // right byte offsets.
 compare(
@@ -330,8 +351,14 @@ expectFallback("unsupported syntax", "foobar\nxy\naa\nword here\n", [
   { source: "foo(?=bar)", ci: false }, // lookahead
   { source: "(?<=x)y", ci: false }, // lookbehind
   { source: "(a)\\1", ci: false }, // backreference
-  { source: "\\w.*", ci: false }, // \w needs ASCII mode, . can't be byte-wise
+  // `\b` is the one ASCII escape with no Unicode-mode spelling: `\w`/`\d`/`\s` are
+  // rewritten into explicit classes, but an ASCII word boundary can't be. It is also
+  // the cheapest of them to leave with JS (~4ms over 92k lines, against ~14s for the
+  // `\w+.*` it used to drag down with it).
   { source: "\\bfoo\\b.*", ci: false },
+  { source: "\\p{L}.*", ci: false }, // JS reads a literal `p`; Rust reads a class
+  { source: "[a[b].*", ci: false }, // JS: literal `[`. Rust: a nested class
+  { source: "[a&&b].*", ci: false }, // JS: literal `&`. Rust: intersection
 ]);
 
 // --- report -----------------------------------------------------------------

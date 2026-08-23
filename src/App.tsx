@@ -33,7 +33,11 @@ const EMPTY_NUMS: number[] = [];
 
 import { compileAll, computeView } from "@/lib/engine";
 import { finishOpenTiming } from "@/lib/openTiming";
-import { primeFilters } from "@/lib/scanPrime";
+import {
+  jsScannedFilters,
+  primeFilters,
+  scanRemainingInJs,
+} from "@/lib/scanPrime";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { LogView } from "@/components/LogView";
 import {
@@ -338,6 +342,13 @@ export function App() {
     viewMsRef.current = performance.now() - t0;
     return v;
   }, [lines, compiled]);
+  // Which filters the Rust scanner refused, so the panel can say which ones the JS
+  // engine is scanning. Recomputed with the view because priming always completes
+  // before these lines reach the store — so by this render the answer is already in.
+  const jsScanned = useMemo(
+    () => jsScannedFilters(lines, set?.filters ?? []),
+    [lines, set?.filters],
+  );
   // Emits only for a file with a pending open record, so filter toggles and tab
   // switches (which also recompute the view) are no-ops here.
   useEffect(() => {
@@ -361,16 +372,22 @@ export function App() {
       const f = activeFile(store.doc); // the same file switchSet will act on
       const target = store.doc.filterSets.find((g) => g.id === setId);
       if (!f || !target) return;
+      const lines = linesFor(f.id);
       await primeFilters(
         f.path,
         f.encodingOverride,
-        linesFor(f.id),
+        lines,
         target.filters,
         // Shown only when patterns actually need scanning, so a cache-hit switch
         // doesn't flash the overlay. (Shares the label with filter-file loading —
         // they can't overlap, both being user-initiated and awaited.)
         () => store.setLoadingLabel("filters"),
       );
+      // The patterns Rust refuses are deliberately left uncached by `primeFilters`,
+      // so without this the render after a switch would scan them synchronously —
+      // the very freeze this callback exists to avoid, just moved to a different
+      // trigger. Sliced here for the same reason it is sliced on the open path.
+      await scanRemainingInJs(lines, target.filters);
       store.setLoadingLabel(null);
     },
     [linesFor],
@@ -1134,6 +1151,7 @@ export function App() {
         file={file!}
         set={set!}
         counts={view.counts}
+        jsScanned={jsScanned}
         onToggleTimelineTrack={toggleTimelineTrack}
         onCompareFilter={compareFilter}
         flashFilterId={filterFlash?.id ?? null}

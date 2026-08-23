@@ -8,7 +8,7 @@ import { uid } from "@/lib/defaults";
 import { baseName } from "@/lib/path";
 import { splitLines } from "@/lib/lines";
 import { nextPaint } from "@/lib/paint";
-import { primeFilters } from "@/lib/scanPrime";
+import { primeFilters, scanRemainingInJs } from "@/lib/scanPrime";
 import { beginOpenTiming, cancelOpenTiming } from "@/lib/openTiming";
 import { useStore } from "@/store";
 
@@ -29,8 +29,15 @@ const getDoc = () => useStore.getState().doc;
 interface PrimeStats {
   patterns: number;
   primed: number;
+  /** Of `primed`, how many were assembled from branch bit sets. */
+  composed: number;
   fallback: number;
   rejected: number;
+  /** Patterns Rust couldn't take, scanned here in slices instead of in the render. */
+  jsScanned: number;
+  jsScanMs: number;
+  /** The open was cancelled part-way through that scan. */
+  cancelled: boolean;
   readMs: number;
   splitMs: number;
   scanMs: number;
@@ -39,8 +46,12 @@ interface PrimeStats {
 const NO_SCAN: PrimeStats = {
   patterns: 0,
   primed: 0,
+  composed: 0,
   fallback: 0,
   rejected: 0,
+  jsScanned: 0,
+  jsScanMs: 0,
+  cancelled: false,
   readMs: 0,
   splitMs: 0,
   scanMs: 0,
@@ -60,23 +71,43 @@ async function primeFor(
   lines: string[],
   setId: string | null | undefined,
   doc: AppState,
+  cancelled?: () => boolean,
 ): Promise<PrimeStats> {
   const set = setId ? doc.filterSets.find((g) => g.id === setId) : undefined;
+  const filters = set?.filters ?? [];
   const t0 = performance.now();
   const { requested, result } = await primeFilters(
     path,
     encoding,
     lines,
-    set?.filters ?? [],
+    filters,
   );
-  if (!requested) return NO_SCAN;
   const primeMs = performance.now() - t0;
-  // A null result means the scan was unusable (no shell, line-count mismatch) and
-  // computeView will do the whole thing itself — report every pattern as fallback
-  // so the log line shows that, rather than a misleading zero.
+
+  // Whatever Rust couldn't take is scanned HERE, sliced, rather than being left for
+  // `computeView` to do synchronously inside the render that follows. Same work, but
+  // the window keeps painting and Cancel stays clickable — which is the one moment a
+  // user most wants it. Runs even when nothing was requested (everything already
+  // cached), because that is a no-op, and even when the scan came back unusable,
+  // because that is exactly when there is the most left to do.
+  const tJs = performance.now();
+  const js = await scanRemainingInJs(lines, filters, { cancelled });
+  const jsScanMs = performance.now() - tJs;
+  const scan = { jsScanned: js.scanned, jsScanMs, cancelled: js.cancelled };
+
+  if (!requested) return { ...NO_SCAN, ...scan };
+  // A null result means the scan was unusable (no shell, line-count mismatch) and the
+  // JS pass above did the whole thing — report every pattern as fallback so the log
+  // line shows that, rather than a misleading zero.
   return result
-    ? { patterns: requested, ...result, primeMs }
-    : { ...NO_SCAN, patterns: requested, fallback: requested, primeMs };
+    ? { patterns: requested, ...result, primeMs, ...scan }
+    : {
+        ...NO_SCAN,
+        patterns: requested,
+        fallback: requested,
+        primeMs,
+        ...scan,
+      };
 }
 
 interface Deps {
@@ -145,6 +176,9 @@ export function useLogFiles({
   const pushRecent = useStore((s) => s.pushRecent);
   // Bumped whenever a file's lines land in `linesStore`, to re-derive `lines`.
   const [linesVersion, setLinesVersion] = useState(0);
+  // Bumped by the "Retry" on a cancelled restore — the only way to re-run an effect
+  // whose other deps (the active file's id and path) are unchanged by cancelling.
+  const [reloadNonce, setReloadNonce] = useState(0);
   // When set, a log file is being read from disk — drives the loading overlay.
   const [busy, setBusy] = useState<{ name: string } | null>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -309,7 +343,17 @@ export function useLogFiles({
             doc.files.find((x) => x.id === doc.activeFileId)?.activeSetId ??
             doc.filterSets[0]?.id ??
             null;
-          const scan = await primeFor(path, undefined, lns, setId, doc);
+          const scan = await primeFor(
+            path,
+            undefined,
+            lns,
+            setId,
+            doc,
+            () => openCancelRef.current !== cancelAtStart,
+          );
+          // Cancelled mid-scan: drop the whole open rather than adding a file whose
+          // filters are half-scanned.
+          if (scan.cancelled || openCancelRef.current !== cancelAtStart) return;
           linesStore[id] = lns;
           // Completed by App once this file's first view is computed.
           beginOpenTiming(id, {
@@ -370,6 +414,7 @@ export function useLogFiles({
       const f = getDoc().files.find((x) => x.id === fid);
       if (!f || !f.path) return;
       const { path, name } = f;
+      const encodeAt = openCancelRef.current;
       setBusy({ name });
       await nextPaint();
       let res: { text: string; encoding: string };
@@ -385,8 +430,21 @@ export function useLogFiles({
       }
       const lns = splitLines(res.text);
       // Re-decoding produces a fresh lines array — a new cache key with nothing in
-      // it — so this file needs priming again just like a first open.
-      await primeFor(path, label ?? undefined, lns, f.activeSetId, getDoc());
+      // it — so this file needs priming again just like a first open. Including the
+      // cancel check: this shows the same overlay, with the same Cancel button.
+      const enc = await primeFor(
+        path,
+        label ?? undefined,
+        lns,
+        f.activeSetId,
+        getDoc(),
+        () => openCancelRef.current !== encodeAt,
+      );
+      if (enc.cancelled || openCancelRef.current !== encodeAt) {
+        setBusy(null);
+        toast(`Re-decoding ${name} was cancelled.`);
+        return;
+      }
       linesStore[fid] = lns;
       patchState(
         (s) => {
@@ -420,6 +478,7 @@ export function useLogFiles({
     if (!file || !file.path || linesStore[file.id]) return;
     const { id, path, name, encodingOverride } = file;
     let cancelled = false;
+    const reloadAt = openCancelRef.current;
     // Show the loading overlay: the read can be slow (a large file, or one on a
     // network share), and without feedback the blank workspace looks stuck.
     setBusy({ name });
@@ -447,7 +506,23 @@ export function useLogFiles({
           lns,
           file.activeSetId,
           getDoc(),
+          () => openCancelRef.current !== reloadAt,
         );
+        // Cancelled — either between scan slices, or while the Rust round trip was
+        // in flight. Dropping the result leaves the ACTIVE file with no lines, and
+        // this effect keys on `[file.id, file.path, reloadNonce]`, neither of the
+        // first two of which changes by staying put. So offer the retry explicitly
+        // rather than leaving a blank workspace with no way back.
+        if (scan.cancelled || openCancelRef.current !== reloadAt) {
+          setBusy(null);
+          toast(`Loading ${name} was cancelled.`, {
+            action: {
+              label: "Retry",
+              onClick: () => setReloadNonce((n) => n + 1),
+            },
+          });
+          return;
+        }
         linesStore[id] = lns;
         beginOpenTiming(id, {
           name,
@@ -482,7 +557,7 @@ export function useLogFiles({
       setBusy(null);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [file?.id, file?.path]);
+  }, [file?.id, file?.path, reloadNonce]);
 
   // The same reload, for the documents the OTHER split panes are showing. The split
   // layout persists, so a restored pane can show a log that was never the active
@@ -507,7 +582,17 @@ export function useLogFiles({
             { path, encoding: encodingOverride },
           );
           const lns = splitLines(res.text);
-          await primeFor(path, encodingOverride, lns, f.activeSetId, getDoc());
+          // Honour the effect's own cleanup: without this the sliced scan keeps
+          // taking the main thread for a pane that has already gone away.
+          const paneScan = await primeFor(
+            path,
+            encodingOverride,
+            lns,
+            f.activeSetId,
+            getDoc(),
+            () => cancelled,
+          );
+          if (paneScan.cancelled) return;
           linesStore[id] = lns;
           patchState(
             (s) => {
