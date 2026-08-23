@@ -560,7 +560,12 @@ export interface JsScanResult {
 export async function scanRemainingInJs(
   lines: string[],
   filters: Filter[],
-  opts: { cancelled?: () => boolean; yieldTo?: () => Promise<void> } = {},
+  opts: {
+    cancelled?: () => boolean;
+    yieldTo?: () => Promise<void>;
+    /** One pattern's bits just landed — the caller may want to re-resolve. */
+    onPattern?: () => void;
+  } = {},
 ): Promise<JsScanResult> {
   const yieldTo = opts.yieldTo ?? yieldToEventLoop;
   const n = lines.length;
@@ -594,6 +599,7 @@ export async function scanRemainingInJs(
       { source: re.source, flags: re.flags, bits, count },
     ]);
     scanned++;
+    opts.onPattern?.();
   }
   return { scanned, cancelled: false };
 }

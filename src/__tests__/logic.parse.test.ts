@@ -4,7 +4,7 @@ import {
   deriveFields,
   coerceValue,
   compileAll,
-  computeView,
+  scanAndResolve,
 } from "@/lib/engine";
 import type { Filter, FieldDef } from "@/types";
 
@@ -80,14 +80,14 @@ test("coerceValue parses clock-style and plain timestamps", () => {
   expect(coerceValue("12.5", "time")).toBe(12.5);
 });
 
-// --- computeView field extraction from structural filters -------------------
+// --- scanAndResolve field extraction from structural filters -------------------
 
 const structural = (id: string, pattern: string, over: Partial<Filter> = {}) =>
   filter(id, pattern, { fields: deriveFields(pattern), ...over });
 
 test("a regex filter with named groups extracts coerced fields on matching lines", () => {
   const lines = ["12.0 E boom", "plain line"];
-  const view = computeView(
+  const view = scanAndResolve(
     lines,
     compileAll([
       structural("p1", "(?<ts>\\d+\\.\\d+)\\s+(?<lvl>[EWID])\\s+(?<msg>.*)", {
@@ -107,14 +107,17 @@ test("a regex filter with named groups extracts coerced fields on matching lines
 });
 
 test("a plain (non-named-group) filter highlights but extracts nothing", () => {
-  const view = computeView(["error here"], compileAll([filter("h", "error")]));
+  const view = scanAndResolve(
+    ["error here"],
+    compileAll([filter("h", "error")]),
+  );
   expect(view.rows[0].winner?.f.id).toBe("h");
   expect(view.fieldsFor(1)).toBeUndefined();
 });
 
 test("field extraction is first-structural-filter-wins, independent of the colour winner", () => {
   const lines = ["12.0 E i2c boom"];
-  const view = computeView(
+  const view = scanAndResolve(
     lines,
     compileAll([
       filter("color", "boom", { regex: false }), // colour winner, no fields
@@ -141,7 +144,7 @@ test("field extraction is first-structural-filter-wins, independent of the colou
 
 test("counts cover every line and include disabled filters", () => {
   const lines = ["error a", "ok b", "error c"];
-  const view = computeView(
+  const view = scanAndResolve(
     lines,
     compileAll([
       filter("on", "error", { regex: false }),
@@ -156,7 +159,7 @@ test("counts cover every line and include disabled filters", () => {
 });
 
 test("excluded lines are removed and never used as field providers", () => {
-  const view = computeView(
+  const view = scanAndResolve(
     ["drop 12.0 E boom"],
     compileAll([
       filter("x", "drop", { regex: false, exclude: true }),

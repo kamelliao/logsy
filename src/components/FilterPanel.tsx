@@ -574,6 +574,8 @@ interface FilterRowProps {
   /** 0-based position in the set; shown as a 1-based "#N" serial (matches the timeline). */
   index: number;
   count: number;
+  /** No bit set yet — the count is a placeholder, not a result. */
+  scanning: boolean;
   /** Rust refused this filter's pattern, so the JS engine scans it (see `jsScanned`). */
   slowScan: boolean;
   /** Names of this filter's fields already plotted as a timeline track (stable ref). */
@@ -633,6 +635,7 @@ const FilterRowCells = memo(
     f,
     index,
     count,
+    scanning,
     slowScan,
     trackedFields,
     api,
@@ -644,6 +647,7 @@ const FilterRowCells = memo(
     f: Filter;
     index: number;
     count: number;
+    scanning: boolean;
     slowScan: boolean;
     trackedFields: string[];
     api: RowApi;
@@ -786,8 +790,15 @@ const FilterRowCells = memo(
               </span>
             )}
 
-            <div className={"fr-count" + (f.exclude ? " ex" : "")}>
-              <b>{count.toLocaleString()}</b>
+            <div
+              className={
+                "fr-count" +
+                (f.exclude ? " ex" : "") +
+                (scanning ? " scanning" : "")
+              }
+              title={scanning ? "Still scanning this filter" : undefined}
+            >
+              {scanning ? <b>···</b> : <b>{count.toLocaleString()}</b>}
               <span className="fr-hits">&nbsp;hits</span>
             </div>
 
@@ -925,6 +936,7 @@ const FilterRowCells = memo(
     sameFilter(prev.f, next.f) &&
     prev.index === next.index &&
     prev.count === next.count &&
+    prev.scanning === next.scanning &&
     prev.slowScan === next.slowScan &&
     prev.trackedFields === next.trackedFields &&
     prev.dragging === next.dragging &&
@@ -949,6 +961,7 @@ const FilterRow = memo(
     selectMode,
     selected,
     flashing,
+    scanning,
     slowScan,
     api,
   }: FilterRowProps) {
@@ -981,6 +994,7 @@ const FilterRow = memo(
           f={f}
           index={index}
           count={count}
+          scanning={scanning}
           slowScan={slowScan}
           trackedFields={trackedFields}
           api={api}
@@ -996,6 +1010,7 @@ const FilterRow = memo(
     sameFilter(prev.f, next.f) &&
     prev.index === next.index &&
     prev.count === next.count &&
+    prev.scanning === next.scanning &&
     prev.slowScan === next.slowScan &&
     prev.trackedFields === next.trackedFields &&
     prev.searching === next.searching &&
@@ -1387,6 +1402,10 @@ interface FilterPanelProps {
   file: LogFile;
   set: FilterSet;
   counts: Record<string, number>;
+  /** Filters with no match bit set yet — Phase A has not reached them. Their `counts`
+   *  entry is a placeholder zero, so the row must NOT render it as a result: "0 hits"
+   *  and "not scanned yet" look identical in the number and mean opposite things. */
+  pending?: ReadonlySet<string>;
   /** Filters whose pattern the Rust scanner refused, leaving it to the JS engine.
    *  Those are the only ones that cost real time on a big log — everything else is
    *  scanned in one RegexSet pass — so the row says so rather than leaving a user
@@ -1414,6 +1433,7 @@ export function FilterPanel({
   file,
   set,
   counts,
+  pending,
   jsScanned,
   style,
   onToggleTimelineTrack,
@@ -1860,6 +1880,7 @@ export function FilterPanel({
         f={f}
         index={indexById.get(f.id) ?? -1}
         count={counts[f.id] ?? 0}
+        scanning={pending?.has(f.id) ?? false}
         slowScan={jsScanned?.has(f.id) ?? false}
         trackedFields={trackedByFilter.get(f.id) ?? NO_TRACKED_FIELDS}
         searching={searching}

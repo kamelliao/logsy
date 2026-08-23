@@ -1561,10 +1561,15 @@ export function LogView({
     onExportView?.(base + ".filtered.log", text);
   }
 
-  // Counted once in computeView — scanning view.rows here would run on every
+  // Counted once in `resolve` — scanning view.rows here would run on every
   // render, i.e. on every scroll step.
   const matchedCount = view.matchedCount;
   const hiddenByExclude = view.excludedCount;
+  // While Phase A is still running these two are lower bounds, not results. Saying so
+  // is the difference between "the log has 12 matches" and "12 so far" — the second
+  // number is about to change, and a settled-looking figure that then moves is worse
+  // than one that admits it is provisional.
+  const scanning = view.pending.size > 0;
 
   const virtualItems = rowVirtualizer.getVirtualItems();
   const totalSize = rowVirtualizer.getTotalSize();
@@ -1672,10 +1677,25 @@ export function LogView({
           <b>{visible.length.toLocaleString()}</b>
           {" / " + view.rows.length.toLocaleString() + " lines"}
           {view.hasHighlights && (
-            <span>
+            <span
+              className={scanning ? "lv-provisional" : undefined}
+              title={
+                scanning
+                  ? `${view.pending.size} filter(s) still being scanned`
+                  : undefined
+              }
+            >
               {"  ·  "}
               <b>{matchedCount.toLocaleString()}</b>
-              {" matched"}
+              {scanning ? " matched so far…" : " matched"}
+            </span>
+          )}
+          {view.pendingExcludes && (
+            <span
+              style={{ color: "var(--warn, #a16207)" }}
+              title="Lines an exclude filter would hide are still showing"
+            >
+              {"  ·  excludes still applying…"}
             </span>
           )}
           {hiddenByExclude > 0 && (

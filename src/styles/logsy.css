@@ -3892,6 +3892,22 @@ button {
   background: #fbe3e1;
   color: var(--error);
 }
+/* A count that Phase A is still adding to. Dimmed so it does not read as settled. */
+.lv-provisional {
+  opacity: 0.72;
+  font-style: italic;
+}
+
+/* No bit set yet: the number is a placeholder, so it is dimmed and replaced by a
+   ticker. "0 hits" and "not scanned yet" must not look the same. */
+.fr-count.scanning {
+  color: var(--text-3);
+  opacity: 0.7;
+}
+.fr-count.scanning b {
+  letter-spacing: 1px;
+}
+
 /* Rust refused this pattern, so the JS engine scans it. Amber rather than red: the
    filter works, it is just the one paying for the open. */
 .fr-flag.slow {

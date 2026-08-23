@@ -425,6 +425,25 @@ export interface ViewResult {
   /** Lines hidden by enabled exclude filters. */
   excludedCount: number;
   /**
+   * Filters whose match bit set is not available yet, by id.
+   *
+   * `resolve` never scans — a missing bit set is reported, not computed — so a
+   * pending filter contributes no winner, no exclusion and no count, and its
+   * `counts` entry is a placeholder zero rather than a result. The UI has to
+   * render these as "still scanning", NOT as "no matches": the two look identical
+   * in `counts` and mean opposite things.
+   */
+  pending: ReadonlySet<string>;
+  /**
+   * At least one ENABLED EXCLUDE filter is pending.
+   *
+   * Called out separately because it is a different kind of wrong. A pending highlight
+   * costs a missing colour — the view is incomplete. A pending exclude shows lines
+   * that should be hidden — the view is incorrect. Phase A scans excludes first to
+   * keep this window short, and the log header says so while it lasts.
+   */
+  pendingExcludes: boolean;
+  /**
    * Lazily extract a row's parsed fields by line number. Fields are no longer
    * computed for every line up front — only the rows that actually need them
    * (compare table, an expanded row) call this. Returns undefined when the line

@@ -1,7 +1,7 @@
 import { test, expect } from "bun:test";
 import {
   compileAll,
-  computeView,
+  scanAndResolve,
   coerceValue,
   coerceTime,
   guessUnit,
@@ -38,7 +38,7 @@ function filter(
   };
 }
 const viewOf = (lines: string[], filters: Filter[]) =>
-  computeView(lines, compileAll(filters));
+  scanAndResolve(lines, compileAll(filters));
 const track = (
   filterId: string,
   timeField: string,

@@ -671,7 +671,20 @@ export function scanAll(lines: string[], compiled: CompiledFilter[]): void {
   for (const c of compiled) if (isUsable(c)) matchBitsFor(lines, c.re!);
 }
 
-export function computeView(
+/**
+ * Phase B of the match pipeline: turn cached match bit sets plus a filter list into
+ * the view. See docs/design-match.md.
+ *
+ * **Pure, and it never scans.** A filter whose bit set is missing is reported in
+ * `pending`, not computed here. That is the whole point of the split: scanning inside
+ * a render is what froze the window for seconds, and every mitigation for it —
+ * slicing, yielding, cancellation — had to be threaded through code that only wanted
+ * to resolve. Filling the cache is `ensureMatched`'s job, before this runs.
+ *
+ * Everything here depends only on what a filter OPERATION changes (order, enabled,
+ * exclude, colour), which is why reordering and toggling cost a resolve and no IPC.
+ */
+export function resolve(
   lines: string[],
   compiled: CompiledFilter[],
 ): ViewResult {
@@ -706,9 +719,22 @@ export function computeView(
   // Keep each usable filter's match bit set so a row can later report *all* the
   // highlight filters it matched (not just the colour winner) on demand.
   const usableBits: Uint8Array[] = new Array(usable.length);
+  // Stands in for a pending filter's bits: shared and never written, so a filter that
+  // has not been scanned yet reads as "matches nothing" everywhere downstream while
+  // `pending` carries the fact that that is not an answer.
+  const NO_BITS = new Uint8Array((n + 7) >> 3);
+  const pending = new Set<string>();
+  let pendingExcludes = false;
   for (let u = usable.length - 1; u >= 0; u--) {
     const c = usable[u];
-    const { bits, count } = matchBitsFor(lines, c.re!);
+    const hit = cachedMatchBits(lines, c.re!.source, c.re!.flags);
+    if (!hit) {
+      pending.add(c.f.id);
+      if (c.f.enabled && c.f.exclude) pendingExcludes = true;
+      usableBits[u] = NO_BITS;
+      continue;
+    }
+    const { bits, count } = hit;
     usableBits[u] = bits;
     counts[c.f.id] = count;
     if (!c.f.enabled) continue;
@@ -782,7 +808,26 @@ export function computeView(
     excludedCount,
     fieldsFor,
     matchedFiltersFor,
+    pending,
+    pendingExcludes,
   };
+}
+
+/**
+ * Scan whatever is missing, then resolve — Phase A and Phase B back to back.
+ *
+ * **For tests and benchmarks only.** The app never calls this: scanning inside a
+ * render is the thing `resolve`'s purity exists to prevent, and Phase A is driven by
+ * `ensureMatched` where it can be sliced, cancelled and reported on. The deliberately
+ * awkward name is the reminder — reaching for "computeView" should not get you a
+ * function that blocks for seconds.
+ */
+export function scanAndResolve(
+  lines: string[],
+  compiled: CompiledFilter[],
+): ViewResult {
+  scanAll(lines, compiled);
+  return resolve(lines, compiled);
 }
 
 // --- Timeline: extract events from the lines the user added ----------------

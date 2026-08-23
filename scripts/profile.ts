@@ -14,11 +14,11 @@
 //
 // Only the scan differs; every other stage is the same work in both columns. The
 // match scan is measured directly (`scanAll`) rather than derived by subtracting a
-// warm `computeView` from a cold one, which buys a cross-check the report prints:
-// `scan + compose` and a cold `computeView` are three separately measured numbers
+// warm `scanAndResolve` from a cold one, which buys a cross-check the report prints:
+// `scan + compose` and a cold `scanAndResolve` are three separately measured numbers
 // that have to agree, and a subtraction could never disagree.
 //
-// The `computeView` split matters because its two costs differ by ~60× and map to
+// The `scanAndResolve` split matters because its two costs differ by ~60× and map to
 // two different things a user does — the cold path is opening a file or adding a
 // filter (O(lines × filters)), the compose path is toggling or recolouring one. The
 // cache is keyed by the lines array's *identity*, so every cold benchmark hands its
@@ -51,7 +51,7 @@ import { Command, InvalidArgumentError, Option } from "commander";
 
 import {
   compileAll,
-  computeView,
+  scanAndResolve,
   scanAll,
   segments,
   scanMatches,
@@ -78,7 +78,7 @@ const program = new Command()
   .name("profile")
   .description(
     "Benchmark Logsy's log-processing pipeline against a synthetic firmware log.\n" +
-      "computeView is reported cold (no cached match bits — opening a file) and warm\n" +
+      "scanAndResolve is reported cold (no cached match bits — opening a file) and warm\n" +
       "(bits cached — toggling a filter); the Rust scanner runs too, so the open-a-file\n" +
       "model reflects what a user actually waits for.",
   )
@@ -563,8 +563,8 @@ const NAME = {
   split: "js: splitLines",
   compile: "js: compileAll",
   scan: "js: match scan",
-  cold: "js: computeView (cold)",
-  warm: "js: computeView (compose)",
+  cold: "js: scanAndResolve (cold)",
+  warm: "js: scanAndResolve (compose)",
   fields: "js: fieldsFor × all rows",
   segments: "js: segments × 1000 rows",
   preview: "js: scanMatches (preview)",
@@ -595,7 +595,7 @@ stats.push(
   }),
 );
 
-// 3. The scan phase on its own — the O(lines × filters) half of a cold computeView,
+// 3. The scan phase on its own — the O(lines × filters) half of a cold scanAndResolve,
 //    measured directly rather than derived, so `scan + compose ≈ cold` below is a
 //    check that can actually fail. Fresh array per run to miss the cache.
 stats.push(
@@ -612,14 +612,14 @@ stats.push(
   ),
 );
 
-// 4. computeView with a cold cache — scan + compose in one call, which is what the
+// 4. scanAndResolve with a cold cache — scan + compose in one call, which is what the
 //    app pays when nothing primed it. Kept as its own row so it can be checked
 //    against the two stages measured separately.
 stats.push(
   bench<string[]>(
     NAME.cold,
     (fresh) => {
-      computeView(fresh, compiled);
+      scanAndResolve(fresh, compiled);
     },
     {
       setup: () => lines.slice(),
@@ -630,13 +630,13 @@ stats.push(
 );
 
 // Prime `lines` itself, then measure the compose-only pass over cached bits.
-const view = computeView(lines, compiled);
+const view = scanAndResolve(lines, compiled);
 
-// 5. computeView over a warm cache — the compose pass alone. This is what the app
+// 5. scanAndResolve over a warm cache — the compose pass alone. This is what the app
 //    pays per open once Rust has primed, and per filter toggle thereafter.
 stats.push(
   bench(NAME.warm, () => {
-    computeView(lines, compiled);
+    scanAndResolve(lines, compiled);
   }),
 );
 
@@ -975,13 +975,13 @@ if (JSON_OUT) {
   }
 
   // Cross-check: the scan and compose stages are measured on their own, and a cold
-  // `computeView` does both in one call. They should agree. When they don't, one of
+  // `scanAndResolve` does both in one call. They should agree. When they don't, one of
   // the three numbers is measuring something other than what its name says — so a
   // drift is the one result in this report that is worth an attention colour.
   const parts = scanMs + composeMs;
   const drift = Math.abs(parts - cold.median) / cold.median;
   const check =
-    `  cross-check: scan + compose = ${ms(parts)} vs computeView (cold) ` +
+    `  cross-check: scan + compose = ${ms(parts)} vs scanAndResolve (cold) ` +
     `${ms(cold.median)}`;
   console.log(
     "\n" +

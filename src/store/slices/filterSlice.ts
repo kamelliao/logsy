@@ -17,10 +17,6 @@ import {
 import { activeFile, activeSet } from "@/state/selectors";
 import type { Store } from "@/store";
 
-// Bumped by every set switch. A switch awaits the pre-scan before committing, so
-// without this a slow scan could land after a later switch and steal the selection.
-let switchSeq = 0;
-
 // Open accepts native Logsy JSON plus TextAnalysisTool.NET (.tat/.xml) for import;
 // Save always writes Logsy JSON, so it only offers .json.
 const OPEN_DIALOG_FILTERS = [
@@ -146,11 +142,10 @@ export function createFilterActions(
     // to a set — or to one sharing patterns with the current one — hits throughout
     // and `primeSet` returns without any IPC at all.
     switchSet: async (gid) => {
-      const seq = ++switchSeq;
-      await get().primeSet?.(gid);
-      // The user picked another set while we scanned; that later switch owns the
-      // selection now, and applying this one would yank them back.
-      if (seq !== switchSeq) return;
+      // Nothing to wait for any more: selecting the set is a state change, and the
+      // matching it needs is driven by App's Phase A effect off the new filter list —
+      // the same path an add or an edit takes. Filters that have not been scanned yet
+      // render as pending rather than holding the switch back.
       patch(
         (s) => {
           const f = activeFile(s);

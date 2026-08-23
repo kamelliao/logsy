@@ -2,7 +2,7 @@ import { test, expect, mock } from "bun:test";
 import {
   cacheKey,
   compileAll,
-  computeView,
+  scanAndResolve,
   primeMatchCache,
   hasMatchBits,
 } from "@/lib/engine";
@@ -61,7 +61,7 @@ function bitsFor(lines: string[], re: RegExp): Uint8Array {
   return bits;
 }
 
-test("primed bit sets drive computeView without re-scanning", () => {
+test("primed bit sets drive scanAndResolve without re-scanning", () => {
   const lines = [...LINES];
   const f: Filter = makeFilter("error");
   const compiled = compileAll([f]);
@@ -76,7 +76,7 @@ test("primed bit sets drive computeView without re-scanning", () => {
   ]);
   expect(hasMatchBits(lines, re)).toBe(true);
 
-  const view = computeView(lines, compiled);
+  const view = scanAndResolve(lines, compiled);
   expect(view.counts[f.id]).toBe(42);
   // The bits themselves are real, so the per-row verdicts stay correct:
   // case-insensitive "error" wins lines 1 and 3.
@@ -86,7 +86,7 @@ test("primed bit sets drive computeView without re-scanning", () => {
   expect(view.matchedCount).toBe(2);
 });
 
-test("hasMatchBits agrees with what computeView actually looks up", () => {
+test("hasMatchBits agrees with what scanAndResolve actually looks up", () => {
   // These two read the same cache through different call paths; when their key
   // formats drifted apart, hasMatchBits reported hits the engine never got.
   const lines = [...LINES];
@@ -95,7 +95,7 @@ test("hasMatchBits agrees with what computeView actually looks up", () => {
   const re = compiled[0].re!;
 
   expect(hasMatchBits(lines, re)).toBe(false);
-  computeView(lines, compiled); // engine scans and caches under its own key
+  scanAndResolve(lines, compiled); // engine scans and caches under its own key
   expect(hasMatchBits(lines, re)).toBe(true);
 });
 
@@ -107,7 +107,7 @@ test("a primed cache produces the same view as a cold scan", () => {
   ];
   const compiled = compileAll(filters);
 
-  const cold = computeView([...LINES], compiled);
+  const cold = scanAndResolve([...LINES], compiled);
 
   const primed = [...LINES];
   primeMatchCache(
@@ -119,7 +119,7 @@ test("a primed cache produces the same view as a cold scan", () => {
       count: 0, // counts are reported straight through; checked separately below
     })),
   );
-  const warm = computeView(primed, compiled);
+  const warm = scanAndResolve(primed, compiled);
 
   expect(warm.rows.map((r) => r.winner?.f.id ?? null)).toEqual(
     cold.rows.map((r) => r.winner?.f.id ?? null),
@@ -143,7 +143,7 @@ test("bit sets of the wrong length are ignored, not trusted", () => {
   ]);
   expect(hasMatchBits(lines, re)).toBe(false);
   // The engine still gets the right answer by scanning itself.
-  expect(computeView(lines, compiled).counts[f.id]).toBe(2);
+  expect(scanAndResolve(lines, compiled).counts[f.id]).toBe(2);
 });
 
 test("priming never overwrites a bit set the engine computed itself", () => {
@@ -152,11 +152,11 @@ test("priming never overwrites a bit set the engine computed itself", () => {
   const compiled = compileAll([f]);
   const re = compiled[0].re!;
 
-  computeView(lines, compiled); // engine scans and caches
+  scanAndResolve(lines, compiled); // engine scans and caches
   primeMatchCache(lines, [
     { source: re.source, flags: re.flags, bits: new Uint8Array(1), count: 999 },
   ]);
-  expect(computeView(lines, compiled).counts[f.id]).toBe(2); // not 999
+  expect(scanAndResolve(lines, compiled).counts[f.id]).toBe(2); // not 999
 });
 
 test("the cache is keyed by lines identity, so another file is unaffected", () => {
@@ -201,7 +201,7 @@ test("scanAndPrime downgrades to a JS scan when the shell has no scan_lines", as
     await scanAndPrime("/x.log", undefined, lines, scanPlan(compiled)),
   ).toBeNull();
   expect(hasMatchBits(lines, compiled[0].re!)).toBe(false);
-  expect(computeView(lines, compiled).counts[f.id]).toBe(2);
+  expect(scanAndResolve(lines, compiled).counts[f.id]).toBe(2);
 });
 
 test("scanPlan scans a shared pattern once", () => {
@@ -272,7 +272,7 @@ test("decomposeAnd accepts only what is exactly equivalent", () => {
 test("a lookahead conjunction is assembled from its branches, not scanned", async () => {
   // The branches come back from the scanner; the conjunction never goes to it at all.
   // Its bits have to be the AND — and they have to land under the key the ENGINE looks
-  // the original pattern up by, or computeView just silently rescans it.
+  // the original pattern up by, or scanAndResolve just silently rescans it.
   const lines = [...LINES];
   const both = makeFilter("(?=.*error)(?=.*three)", { regex: true });
   const compiled = compileAll([both]);
@@ -295,7 +295,7 @@ test("a lookahead conjunction is assembled from its branches, not scanned", asyn
   expect(jsScannedFilters(lines, [both]).size).toBe(0);
 
   // "error" hits lines 1 and 3; "three" hits line 3; the AND is line 3 alone.
-  const view = computeView(lines, compiled);
+  const view = scanAndResolve(lines, compiled);
   expect(view.counts[both.id]).toBe(1);
   expect(view.rows[2].winner?.f.id).toBe(both.id);
   expect(view.rows[0].winner).toBeNull();
@@ -346,7 +346,7 @@ test("the JS fallback scan agrees with a straight scan", async () => {
   const compiled = compileAll([f]);
   await scanRemainingInJs(lines, [f]);
   expect(hasMatchBits(lines, compiled[0].re!)).toBe(true);
-  expect(computeView(lines, compiled).counts[f.id]).toBe(2);
+  expect(scanAndResolve(lines, compiled).counts[f.id]).toBe(2);
 });
 
 test("a branch that is also a filter of its own is not treated as branch-only", () => {
@@ -385,5 +385,5 @@ test("a line separator in the file refuses the composition instead of over-match
   // …and it is reported as JS-scanned, so the badge tells the user why.
   expect(jsScannedFilters(lines, [both])).toEqual(new Set([both.id]));
   // The engine then scans it itself and gets the right answer: line 2 only.
-  expect(computeView(lines, compiled).counts[both.id]).toBe(1);
+  expect(scanAndResolve(lines, compiled).counts[both.id]).toBe(1);
 });

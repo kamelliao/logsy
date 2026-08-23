@@ -94,10 +94,8 @@ export interface Store
    * useLogFiles' cache rather than the store. A no-op until bound, and resolves
    * immediately when every pattern is cached already.
    */
-  primeSet?: (setId: string) => Promise<void>;
   setRuntime: (rt: {
     confirm?: (opts: ConfirmOptions) => Promise<boolean>;
-    primeSet?: (setId: string) => Promise<void>;
   }) => void;
 
   // ---- undo engine ----

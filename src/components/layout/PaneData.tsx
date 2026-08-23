@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import type { Filter, LogFile, Marker, ViewResult } from "@/types";
-import { compileAll, computeView } from "@/lib/engine";
+import { compileAll, resolve } from "@/lib/engine";
+import { useEnsureMatched } from "@/hooks/useEnsureMatched";
 
 /** Everything one split pane needs to render its document. */
 export interface PaneBundle {
@@ -65,9 +66,19 @@ export function PaneData({
   const ownFilters = override ? EMPTY_FILTERS : (filters ?? EMPTY_FILTERS);
   const ownLines = override ? EMPTY_LINES : lines;
   const compiled = useMemo(() => compileAll(ownFilters), [ownFilters]);
+  // A background pane shows its OWN document and filter set, which nothing else runs
+  // Phase A for. `ensureMatched` serialises per lines array, so two panes on the same
+  // file cooperate rather than scanning it twice.
+  const matchVersion = useEnsureMatched(
+    file?.path,
+    file?.encodingOverride,
+    ownLines,
+    ownFilters,
+  );
   const view = useMemo(
-    () => computeView(ownLines, compiled),
-    [ownLines, compiled],
+    () => resolve(ownLines, compiled),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- matchVersion tracks the cache
+    [ownLines, compiled, matchVersion],
   );
   const compareLines = useMemo(
     () => new Set(override ? EMPTY_NUMS : compareLineNums),

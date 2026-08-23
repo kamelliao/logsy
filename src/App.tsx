@@ -23,21 +23,21 @@ import { invoke } from "@tauri-apps/api/core";
 import { getVersion } from "@tauri-apps/api/app";
 import { save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import type { FilterGroup, Pane, PaneSignal } from "@/types";
+import type { Filter, FilterGroup, Pane, PaneSignal } from "@/types";
 import { DEFAULT_PALETTE } from "@/lib/palette";
 import type { PaletteEntry } from "@/types";
 
 /** Stable empty array — a pane with no compare/timeline lines must not hand
  *  PaneData a fresh `[]` each render (it would re-memo its Sets every time). */
 const EMPTY_NUMS: number[] = [];
+// Stable identity: a file with no filter set must not restart Phase A every render.
+const EMPTY_FILTERS: Filter[] = [];
 
-import { compileAll, computeView } from "@/lib/engine";
-import { finishOpenTiming } from "@/lib/openTiming";
-import {
-  jsScannedFilters,
-  primeFilters,
-  scanRemainingInJs,
-} from "@/lib/scanPrime";
+import { compileAll, resolve } from "@/lib/engine";
+import { finishOpenTiming, recordScanStages } from "@/lib/openTiming";
+import { jsScannedFilters } from "@/lib/scanPrime";
+import { useEnsureMatched } from "@/hooks/useEnsureMatched";
+import type { EnsureResult } from "@/lib/match/ensure";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { LogView } from "@/components/LogView";
 import {
@@ -331,73 +331,63 @@ export function App() {
     () => compileAll(set?.filters ?? []),
     [set?.filters],
   );
-  // Timed for the open-perf log line: this is the cost the Rust pre-scan exists to
-  // remove, so it's the one number that says whether priming worked on a given open.
-  // Written to a ref from inside the memo (a measurement, not state — it must not
-  // re-render) and picked up by the effect below, which runs after this render.
-  const viewMsRef = useRef(0);
-  const view = useMemo(() => {
-    const t0 = performance.now();
-    const v = computeView(lines, compiled);
-    viewMsRef.current = performance.now() - t0;
-    return v;
-  }, [lines, compiled]);
-  // Which filters the Rust scanner refused, so the panel can say which ones the JS
-  // engine is scanning. Recomputed with the view because priming always completes
-  // before these lines reach the store — so by this render the answer is already in.
+  // Phase A for the active document. Covers every filter operation and every file
+  // change, because both land in the two arrays this depends on.
+  const fileId = file?.id;
+  const matchVersion = useEnsureMatched(
+    file?.path,
+    file?.encodingOverride,
+    lines,
+    set?.filters ?? EMPTY_FILTERS,
+    useCallback(
+      (scan: EnsureResult) => {
+        // Phase A's half of the open record — `view_ms` used to be the whole story
+        // and now is not: the log is on screen long before this.
+        if (!fileId) return;
+        recordScanStages(fileId, {
+          patterns: scan.requested,
+          primed: scan.primed,
+          composed: scan.composed,
+          fallback: scan.fallback,
+          rejected: scan.rejected,
+          jsScanned: scan.jsScanned,
+          readMs: scan.readMs,
+          splitMs: scan.splitMs,
+          scanMs: scan.scanMs,
+          primeMs: scan.primeMs,
+          jsScanMs: scan.jsScanMs,
+        });
+      },
+      [fileId],
+    ),
+  );
+
+  // Phase B: pure, and it never scans. `matchVersion` is in the deps because the bit
+  // sets it reads live outside React.
+  const view = useMemo(
+    () => resolve(lines, compiled),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- matchVersion tracks the cache
+    [lines, compiled, matchVersion],
+  );
+  // Which filters the fast scanner refused, so the panel can say which ones are being
+  // scanned the slow way. Follows the cache, hence `matchVersion`.
   const jsScanned = useMemo(
     () => jsScannedFilters(lines, set?.filters ?? []),
-    [lines, set?.filters],
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- matchVersion tracks the cache
+    [lines, set?.filters, matchVersion],
   );
-  // Emits only for a file with a pending open record, so filter toggles and tab
-  // switches (which also recompute the view) are no-ops here.
+  // The open record completes when the view has nothing left pending — Phase A is
+  // done. `view` alone no longer marks the end of an open: the log is on screen long
+  // before it is fully scanned, which is the point.
   useEffect(() => {
-    if (file) finishOpenTiming(file.id, viewMsRef.current);
+    if (file && view.pending.size === 0) finishOpenTiming(file.id);
   }, [file, view]);
-
-  // Warm a filter set's match cache before `switchSet` activates it — otherwise the
-  // render that follows scans every filter over every line on the main thread, the
-  // same cost the Rust pre-scan removes from opening a file. Lives here because it
-  // needs the active file's lines, which the store has no access to.
-  //
-  // Only the patterns not already cached are sent, so switching back to a set (or to
-  // one sharing patterns with the current one) costs nothing and does no IPC at all.
-  const primeSet = useCallback(
-    async (setId: string) => {
-      // Read the live document rather than closing over render state: this callback
-      // is handed to the store once, and a stale filter list here would scan the
-      // wrong patterns. It also keeps the callback identity stable, so editing a
-      // filter doesn't rebind it on every keystroke.
-      const store = useStore.getState();
-      const f = activeFile(store.doc); // the same file switchSet will act on
-      const target = store.doc.filterSets.find((g) => g.id === setId);
-      if (!f || !target) return;
-      const lines = linesFor(f.id);
-      await primeFilters(
-        f.path,
-        f.encodingOverride,
-        lines,
-        target.filters,
-        // Shown only when patterns actually need scanning, so a cache-hit switch
-        // doesn't flash the overlay. (Shares the label with filter-file loading —
-        // they can't overlap, both being user-initiated and awaited.)
-        () => store.setLoadingLabel("filters"),
-      );
-      // The patterns Rust refuses are deliberately left uncached by `primeFilters`,
-      // so without this the render after a switch would scan them synchronously —
-      // the very freeze this callback exists to avoid, just moved to a different
-      // trigger. Sliced here for the same reason it is sliced on the open path.
-      await scanRemainingInJs(lines, target.filters);
-      store.setLoadingLabel(null);
-    },
-    [linesFor],
-  );
 
   // The filter slice's collaborators can't be store state (a React/UI primitive and
   // a closure over the lines cache), so bind them into the store.
   useEffect(() => {
-    useStore.getState().setRuntime({ confirm: appConfirm, primeSet });
-  }, [appConfirm, primeSet]);
+    useStore.getState().setRuntime({ confirm: appConfirm });
+  }, [appConfirm]);
 
   // ---------- compare / timeline / bookmarks ----------
   const {
@@ -452,10 +442,11 @@ export function App() {
     if (!soloFilterId) return null;
     const c = compiled.find((x) => x.f.id === soloFilterId);
     if (!c || !c.re || !c.ok) return null;
-    return computeView(lines, [
+    return resolve(lines, [
       { ...c, f: { ...c.f, enabled: true, exclude: false } },
     ]);
-  }, [soloFilterId, compiled, lines]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- matchVersion tracks the cache
+  }, [soloFilterId, compiled, lines, matchVersion]);
   const logView = soloView ?? view;
   const effectiveViewMode: "all" | "matches" = soloView
     ? "matches"
@@ -1151,6 +1142,7 @@ export function App() {
         file={file!}
         set={set!}
         counts={view.counts}
+        pending={view.pending}
         jsScanned={jsScanned}
         onToggleTimelineTrack={toggleTimelineTrack}
         onCompareFilter={compareFilter}

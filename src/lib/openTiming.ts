@@ -15,32 +15,22 @@
 // filter pattern. The log is meant to be shareable, and both can carry internal terms.
 import { info } from "@tauri-apps/plugin-log";
 
+/**
+ * The IO half, known the moment the log is on screen. Phase A's numbers arrive later,
+ * through `recordScanStages` — the two used to be one record because the open blocked
+ * until the scan finished, and it no longer does.
+ */
 export interface OpenStages {
   /** File name only — never the path. */
   name: string;
   bytes: number;
   lines: number;
   encoding: string;
-  patterns: number;
-  primed: number;
-  /** Of `primed`, how many were assembled from branch bit sets rather than scanned. */
-  composed: number;
-  fallback: number;
-  rejected: number;
-  /** Patterns Rust couldn't take, scanned in JS — sliced, off the render path. */
-  jsScanned: number;
-  /** Rust-side stages, reported back in the scan blob's header. */
-  readMs: number;
-  splitMs: number;
-  scanMs: number;
   /** `read_text_file` round trip: the disk read plus shipping the text over IPC. */
   ipcMs: number;
   jsSplitMs: number;
-  /** The `scan_lines` round trip, verification and cache priming. */
-  primeMs: number;
-  /** The sliced JS scan of whatever Rust couldn't take. Time the user waits in the
-   *  loading overlay — but interruptible, unlike the `view` it used to land in. */
-  jsScanMs: number;
+  /** Read + split: when the log first appears, unscanned. */
+  visibleMs: number;
   /** When the open began, for the total. */
   startedAt: number;
 }
@@ -49,9 +39,38 @@ export interface OpenStages {
 // view never arrives (file closed mid-open), so this can't grow.
 const pending = new Map<string, OpenStages>();
 
+/** What Phase A cost, filled in when `ensureMatched` finishes for this file. */
+export interface ScanStages {
+  patterns: number;
+  primed: number;
+  /** Of `primed`, how many were assembled from branch bit sets rather than scanned. */
+  composed: number;
+  fallback: number;
+  rejected: number;
+  /** Patterns the fast scanner refused, scanned in JS — sliced, off the render path. */
+  jsScanned: number;
+  /** Rust-side stages, reported back in the scan blob's header. */
+  readMs: number;
+  splitMs: number;
+  scanMs: number;
+  /** The `scan_lines` round trip, verification and cache priming. */
+  primeMs: number;
+  /** The sliced JS scan of whatever the fast scanner refused. */
+  jsScanMs: number;
+}
+
+// Phase A's numbers, by file id, until the record they belong to is emitted.
+const scans = new Map<string, ScanStages>();
+
 /** Record the IO stages for a file that just landed; completed by `finishOpenTiming`. */
 export function beginOpenTiming(fileId: string, stages: OpenStages): void {
   pending.set(fileId, stages);
+}
+
+/** Record what Phase A cost. Emitting waits for this — without it the line would say
+ *  a file opened in 20 ms and omit the two seconds of scanning that followed. */
+export function recordScanStages(fileId: string, scan: ScanStages): void {
+  if (pending.has(fileId)) scans.set(fileId, scan);
 }
 
 /**
@@ -77,10 +96,14 @@ function pair(key: string, value: string | number): string {
  * two ways: by eye when a user sends the file back, and by `grep event=open_file`
  * (or a two-line script) when comparing many opens.
  */
-export function finishOpenTiming(fileId: string, viewMs: number): void {
+export function finishOpenTiming(fileId: string): void {
   const s = pending.get(fileId);
-  if (!s) return;
+  const scan = scans.get(fileId);
+  // Both halves or nothing: a record emitted before Phase A reported would be a lie
+  // by omission, and this is called on every view change.
+  if (!s || !scan) return;
   pending.delete(fileId);
+  scans.delete(fileId);
   const ms = (v: number) => Math.round(v);
   info(
     [
@@ -91,18 +114,20 @@ export function finishOpenTiming(fileId: string, viewMs: number): void {
       pair("encoding", s.encoding),
       // The scan outcome is bracketed onto the filter count it breaks down, so the
       // three numbers read as one fact rather than three loose fields.
-      `${pair("filters", s.patterns)} (${pair("primed", s.primed)} ` +
-        `${pair("composed", s.composed)} ` +
-        `${pair("fallback", s.fallback)} ${pair("rejected", s.rejected)} ` +
-        `${pair("js", s.jsScanned)})`,
-      pair("read_ms", ms(s.readMs)),
+      `${pair("filters", scan.patterns)} (${pair("primed", scan.primed)} ` +
+        `${pair("composed", scan.composed)} ` +
+        `${pair("fallback", scan.fallback)} ${pair("rejected", scan.rejected)} ` +
+        `${pair("js", scan.jsScanned)})`,
+      pair("read_ms", ms(scan.readMs)),
       pair("ipc_ms", ms(s.ipcMs)),
       pair("js_split_ms", ms(s.jsSplitMs)),
-      pair("rust_split_ms", ms(s.splitMs)),
-      pair("scan_ms", ms(s.scanMs)),
-      pair("prime_ms", ms(s.primeMs)),
-      pair("js_scan_ms", ms(s.jsScanMs)),
-      pair("view_ms", ms(viewMs)),
+      pair("rust_split_ms", ms(scan.splitMs)),
+      pair("scan_ms", ms(scan.scanMs)),
+      pair("prime_ms", ms(scan.primeMs)),
+      pair("js_scan_ms", ms(scan.jsScanMs)),
+      // The two numbers `view_ms` used to conflate. The log is on screen after
+      // `visible_ms`; it is fully scanned after `total_ms`.
+      pair("visible_ms", ms(s.visibleMs)),
       pair("total_ms", ms(performance.now() - s.startedAt)),
     ].join(" "),
     // Telemetry must never break an open: no shell (browser dev, e2e), no logging.
@@ -112,4 +137,5 @@ export function finishOpenTiming(fileId: string, viewMs: number): void {
 /** Drop a pending record without emitting it (the open was abandoned). */
 export function cancelOpenTiming(fileId: string): void {
   pending.delete(fileId);
+  scans.delete(fileId);
 }
