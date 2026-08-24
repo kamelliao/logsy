@@ -197,8 +197,8 @@ test("a slow read keeps the UI usable and does not steal the active file", async
     };
   });
   await openSecondLog(page, tauri, "/logs/c.log", "c1\nc2");
-  // The passive indicator shows, but the app stays clickable.
-  await expect(page.locator(".busy-overlay.passive")).toBeVisible();
+  // The one loading overlay shows over the log panel, but the sidebar stays live.
+  await expect(page.locator(".busy-overlay")).toBeVisible();
   await page.locator(".file-item", { hasText: "sample.log" }).click();
   await expect(logRow(page, 1)).toContainText("boot: starting up");
   // When the read lands, c.log appears but must not yank the user to it.

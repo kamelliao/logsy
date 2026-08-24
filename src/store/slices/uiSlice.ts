@@ -1,6 +1,19 @@
 import type { StoreSet } from "@/store";
 import type { EditingState } from "@/store/slices/filterSlice";
 
+/** One in-flight task shown by the loading overlay. */
+export interface BusyTask {
+  /** Identity for `endBusy` — never reused, so a stale clear can't hit a new task. */
+  token: number;
+  /** What the card says, e.g. "Opening app.log". The "…" is added by the overlay. */
+  label: string;
+  /** Abandon the task. Absent when it genuinely can't be stopped. */
+  cancel?: () => void;
+}
+
+// Monotonic, module-level: tokens must stay unique across store resets too.
+let busyToken = 0;
+
 /** Non-persisted, transient UI state that several panels/modals read off the store. */
 export interface UiSlice {
   /** The draft open in the filter editor modal (null when closed). */
@@ -22,11 +35,19 @@ export interface UiSlice {
   packsOpen: boolean;
   setPacksOpen: (v: boolean) => void;
   togglePacks: () => void;
-  /** Label for a store-driven loading overlay (reading a filter/pack file from
-   *  disk), or null when idle. Mirrors useLogFiles' `busy` for the file-open
-   *  overlay, but for actions that live in the store rather than that hook. */
-  loadingLabel: string | null;
-  setLoadingLabel: (v: string | null) => void;
+  /**
+   * Every in-flight blocking task, oldest first. The ONE loading overlay (rendered
+   * over the log panel, see LoadingOverlay) shows the last entry, so a task that
+   * starts while another is running takes the card and hands it back when it ends.
+   * Owning them all here is what makes the overlay single: the file read, the
+   * filter/pack read and anything added later push onto the same stack.
+   */
+  busyStack: BusyTask[];
+  /** Push a task and return its token. `cancel` gets a Cancel button on the card. */
+  beginBusy: (label: string, cancel?: () => void) => number;
+  /** Pop the task with this token. A token that's already gone is a no-op, so a
+   *  late clean-up can never wipe a newer task's overlay. */
+  endBusy: (token: number) => void;
   /** File ids, most-recently-viewed first — Quick Open's default ordering. Session
    *  state, not persisted: after a reload the file order stands in for it. */
   fileMru: string[];
@@ -51,8 +72,18 @@ export function createUiSlice(set: StoreSet): UiSlice {
     packsOpen: false,
     setPacksOpen: (v) => set({ packsOpen: v }),
     togglePacks: () => set((s) => ({ packsOpen: !s.packsOpen })),
-    loadingLabel: null,
-    setLoadingLabel: (v) => set({ loadingLabel: v }),
+    busyStack: [],
+    beginBusy: (label, cancel) => {
+      const token = ++busyToken;
+      set((s) => ({ busyStack: [...s.busyStack, { token, label, cancel }] }));
+      return token;
+    },
+    endBusy: (token) =>
+      set((s) =>
+        s.busyStack.some((b) => b.token === token)
+          ? { busyStack: s.busyStack.filter((b) => b.token !== token) }
+          : {},
+      ),
     fileMru: [],
     touchFileMru: (id) =>
       set((s) =>

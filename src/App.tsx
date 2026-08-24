@@ -65,7 +65,8 @@ import { PaneData, type PaneBundle } from "@/components/layout/PaneData";
 import { Titlebar } from "@/components/layout/Titlebar";
 import { GotoDialog } from "@/components/dialogs/GotoDialog";
 import { QuickOpenDialog } from "@/components/dialogs/QuickOpenDialog";
-import { Overlays } from "@/components/layout/Overlays";
+import { LoadingOverlay } from "@/components/layout/LoadingOverlay";
+import type { BusyTask } from "@/store/slices/uiSlice";
 import { useFontZoom } from "@/hooks/useFontZoom";
 import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 import { useMenuDefs } from "@/hooks/useMenuDefs";
@@ -110,8 +111,11 @@ export function App() {
   }, []);
   const editing = useStore((s) => s.editing);
   const setEditing = useStore((s) => s.setEditing);
-  // Store-driven loading overlay for reading a filter/pack file from disk.
-  const loadingLabel = useStore((s) => s.loadingLabel);
+  // Top of the busy stack — the task the one loading overlay shows. Every disk
+  // read (log, filter, pack) pushes onto it; see uiSlice's `busyStack`.
+  const storeBusy = useStore(
+    (s) => s.busyStack[s.busyStack.length - 1] ?? null,
+  );
   // A request to scroll+flash a filter row (e.g. clicking a Compare group header).
   // The bumping nonce re-triggers the flash even when the same id is re-requested.
   const [filterFlash, setFilterFlash] = useState<{
@@ -309,7 +313,6 @@ export function App() {
   const {
     lines,
     linesFor,
-    busy,
     dragOver,
     openScreen,
     setOpenScreen,
@@ -317,10 +320,25 @@ export function App() {
     deleteFile,
     deleteFiles,
     openFiles,
-    cancelOpen,
     loadPaths,
     setFileEncoding,
   } = useLogFiles({ file, paneFileIds, osDropRef, osDragRef });
+
+  // The single loading overlay's task. A real disk read (anything on the store's
+  // busy stack) wins; failing that, the file switch — which is not IO at all but a
+  // deferred render, so it has no token of its own, and "Cancel" means going back to
+  // the file still on screen (`deferredFile` is the OLD one; the deferral is exactly
+  // what this overlay covers). Phase A scanning is deliberately not here: its view is
+  // usable while it runs, and LogView already says "matched so far…".
+  const busy: BusyTask | null =
+    storeBusy ??
+    (isSwitchingFile && deferredFile
+      ? {
+          token: -1,
+          label: `Loading ${liveActiveFile?.name ?? ""}`,
+          cancel: () => selectFile(deferredFile.id),
+        }
+      : null);
 
   // Every pane mutation (focus, tabs, split/close, drag-between-panes, sizes). Built
   // here because its actions route through `selectFile` — the layout itself was read
@@ -1029,6 +1047,7 @@ export function App() {
                   {tabs}
                   <div className="lv-wrap">
                     {lv}
+                    <LoadingOverlay busy={busy} />
                     {dropHint?.kind === "center" && (
                       <div className="lv-split-preview center">
                         <div className="pane-drop-card">
@@ -1056,7 +1075,10 @@ export function App() {
                 onPointerDownCapture={() => split.focusPane(pane.id)}
               >
                 {tabs}
-                {lv}
+                <div className="lv-wrap">
+                  {lv}
+                  {isFocused && <LoadingOverlay busy={busy} />}
+                </div>
                 {dropHint?.kind === "pane" && dropHint.pane === pane.id && (
                   <div className="pane-drop-hint">
                     <div className="pane-drop-card">
@@ -1320,6 +1342,10 @@ export function App() {
                 onClick={() => void openFiles()}
                 title="Click to open a log file, or drop one here"
               >
+                {/* The empty workspace stands in for the log panel, so the one
+                    overlay belongs here too — this is the slot the very first
+                    file is being read into. */}
+                <LoadingOverlay busy={busy} />
                 <div className="ew-card">
                   <div className="ew-icon">
                     <FolderOpen size={40} />
@@ -1368,13 +1394,6 @@ export function App() {
           {settingsOpen && (
             <SettingsDialog onClose={() => setSettingsOpen(false)} />
           )}
-
-          <Overlays
-            busy={busy}
-            onCancelBusy={cancelOpen}
-            loadingLabel={loadingLabel}
-            isSwitchingFile={isSwitchingFile}
-          />
 
           {openMenu && (
             <MenuPopup

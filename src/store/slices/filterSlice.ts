@@ -504,9 +504,17 @@ export function createFilterActions(
       // the disk read (a large filter file, or one on a network share) but also
       // applying the import, which recomputes the view over every log line. Keep
       // it up until the applied view has painted, matching the log-file feedback.
-      get().setLoadingLabel(baseName(path));
+      //
+      // Cancel can only be honoured at a yield point, and only BEFORE the import is
+      // applied: once the set has been replaced there is nothing left to abandon.
+      // Every `await nextPaint()` below is therefore also a cancellation check.
+      let cancelled = false;
+      const token = get().beginBusy(`Loading ${baseName(path)}`, () => {
+        cancelled = true;
+      });
       try {
         await nextPaint(); // let the overlay paint before the read/apply blocks
+        if (cancelled) return;
         let text: string;
         // read_text_file returns { text, encoding } — pull the text out (passing
         // the whole object to JSON.parse below would silently fail the load).
@@ -537,8 +545,12 @@ export function createFilterActions(
         }
 
         // Yield again so the overlay is on screen before the synchronous apply +
-        // view recompute freezes the main thread.
+        // view recompute freezes the main thread. Last chance to cancel.
         await nextPaint();
+        if (cancelled) {
+          toast(`Loading ${baseName(path)} was cancelled.`);
+          return;
+        }
 
         if (mode === "append") {
           // Fresh ids so the merged-in filters/groups/tracks never collide with
@@ -584,7 +596,7 @@ export function createFilterActions(
         // Clear after one more paint so the applied view renders under the
         // overlay instead of flashing the old view for a frame.
         await nextPaint();
-        get().setLoadingLabel(null);
+        get().endBusy(token);
       }
     },
     // "Load filters": pick a file, then load it into the current set.

@@ -48,8 +48,6 @@ export interface LogFilesApi {
   /** Lines of ANY loaded file by id (for the split view's second pane). Reads the
    *  same in-memory cache as `lines`; re-derives when `linesVersion` changes. */
   linesFor: (fileId: string | null | undefined) => string[];
-  /** Set while a log file is being read from disk — drives the loading overlay. */
-  busy: { name: string } | null;
   /** True while a genuine file drag is over the window. */
   dragOver: boolean;
   /** When true, show the blank "open a file" drop screen instead of the workspace. */
@@ -61,7 +59,8 @@ export interface LogFilesApi {
   deleteFiles: (fids: string[]) => Promise<void>;
   openFiles: () => Promise<void>;
   /** Abandon the in-flight file open: the disk read can't be killed, but its
-   *  result is dropped (no file added) and the loading overlay clears. */
+   *  result is dropped (no file added) and the loading overlay clears. Exposed
+   *  because it is also the Cancel the overlay card offers. */
   cancelOpen: () => void;
   /** `setId`: the filter set the new documents open on (a pane drop passes that
    *  pane's set); defaults to the active file's. */
@@ -93,8 +92,30 @@ export function useLogFiles({
   // Bumped by the "Retry" on a cancelled restore — the only way to re-run an effect
   // whose other deps (the active file's id and path) are unchanged by cancelling.
   const [reloadNonce, setReloadNonce] = useState(0);
-  // When set, a log file is being read from disk — drives the loading overlay.
-  const [busy, setBusy] = useState<{ name: string } | null>(null);
+  // Reads push a task onto the store's busy stack — the single loading overlay
+  // renders whatever is on top. `busyRef` holds the token of THIS hook's task so
+  // every exit path (finish, error, cancel, unmount) can pop exactly its own.
+  const beginBusy = useStore((s) => s.beginBusy);
+  const endBusy = useStore((s) => s.endBusy);
+  const busyRef = useRef(0);
+  const startBusy = useCallback(
+    (label: string, cancel?: () => void) => {
+      endBusy(busyRef.current);
+      busyRef.current = beginBusy(label, cancel);
+      return busyRef.current;
+    },
+    [beginBusy, endBusy],
+  );
+  // A caller with a token of its own (the restore effect, whose clean-up may run
+  // long after another read has taken the card) pops only that task.
+  const stopBusy = useCallback(
+    (token?: number) => {
+      const t = token ?? busyRef.current;
+      endBusy(t);
+      if (busyRef.current === t) busyRef.current = 0;
+    },
+    [endBusy],
+  );
   const [dragOver, setDragOver] = useState(false);
   // When set, the center shows a blank "open a file" drop screen instead of the
   // active workspace (triggered by the sidebar's Open File button).
@@ -128,8 +149,8 @@ export function useLogFiles({
   const openCancelRef = useRef(0);
   const cancelOpen = useCallback(() => {
     openCancelRef.current++;
-    setBusy(null);
-  }, []);
+    stopBusy();
+  }, [stopBusy]);
 
   const selectFile = (fid: string) => {
     setOpenScreen(false);
@@ -210,7 +231,7 @@ export function useLogFiles({
             if (activate) setState((s) => ({ ...s, activeFileId: already.id }));
             continue;
           }
-          setBusy({ name: baseName(path) });
+          startBusy(`Opening ${baseName(path)}`, cancelOpen);
           // The busy overlay is non-blocking, so the user may switch files while
           // this one reads — snapshot the selection nonce to detect it. The cancel
           // nonce is snapshotted too: the Cancel button bumps it to abandon the open.
@@ -297,12 +318,12 @@ export function useLogFiles({
           );
         }
       } finally {
-        setBusy(null);
+        stopBusy();
       }
       setLinesVersion((v) => v + 1);
       if (lastErr) toast.error("Could not open file: " + lastErr);
     },
-    [patchState, pushRecent],
+    [patchState, pushRecent, startBusy, stopBusy, cancelOpen],
   );
 
   const openFiles = useCallback(async () => {
@@ -322,7 +343,7 @@ export function useLogFiles({
       if (!f || !f.path) return;
       const { path, name } = f;
       const encodeAt = openCancelRef.current;
-      setBusy({ name });
+      startBusy(`Re-decoding ${name}`, cancelOpen);
       await nextPaint();
       let res: { text: string; encoding: string };
       try {
@@ -331,7 +352,7 @@ export function useLogFiles({
           { path, encoding: label ?? undefined },
         );
       } catch (e) {
-        setBusy(null);
+        stopBusy();
         toast.error(`Could not re-decode ${name}: ${String(e)}`);
         return;
       }
@@ -340,7 +361,7 @@ export function useLogFiles({
       // it — a new cache key with nothing in it. App's effect re-runs Phase A for the
       // new array; the re-decoded log is on screen before it does.
       if (openCancelRef.current !== encodeAt) {
-        setBusy(null);
+        stopBusy();
         toast(`Re-decoding ${name} was cancelled.`);
         return;
       }
@@ -366,9 +387,9 @@ export function useLogFiles({
         },
       }));
       setLinesVersion((v) => v + 1);
-      setBusy(null);
+      stopBusy();
     },
-    [patchState, setState],
+    [patchState, setState, startBusy, stopBusy, cancelOpen],
   );
 
   // On restart the persisted file list has paths but no cached lines; reload the
@@ -380,7 +401,7 @@ export function useLogFiles({
     const reloadAt = openCancelRef.current;
     // Show the loading overlay: the read can be slow (a large file, or one on a
     // network share), and without feedback the blank workspace looks stuck.
-    setBusy({ name });
+    const busyToken = startBusy(`Loading ${name}`, cancelOpen);
     (async () => {
       // Timed like a normal open: a slow restore is just as visible to the user,
       // and this path reads the file the user last had open — often the big one.
@@ -403,7 +424,7 @@ export function useLogFiles({
         // the ACTIVE file blank with no way back (this effect keys on the file's id
         // and path, neither of which a cancel changes) — so offer the retry.
         if (openCancelRef.current !== reloadAt) {
-          setBusy(null);
+          stopBusy(busyToken);
           toast(`Loading ${name} was cancelled.`, {
             action: {
               label: "Retry",
@@ -438,12 +459,12 @@ export function useLogFiles({
       } catch (e) {
         if (!cancelled) toast.error(`Could not reload ${name}: ${String(e)}`);
       } finally {
-        if (!cancelled) setBusy(null);
+        if (!cancelled) stopBusy(busyToken);
       }
     })();
     return () => {
       cancelled = true;
-      setBusy(null);
+      stopBusy(busyToken);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [file?.id, file?.path, reloadNonce]);
@@ -572,7 +593,6 @@ export function useLogFiles({
   return {
     lines,
     linesFor,
-    busy,
     dragOver,
     openScreen,
     setOpenScreen,

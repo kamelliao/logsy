@@ -4539,6 +4539,8 @@ button {
 
 /* empty workspace (no file open) — doubles as a click/drop target to open files */
 .empty-workspace {
+  /* Stands in for the log panel, and hosts the loading overlay in that role. */
+  position: relative;
   flex: 1;
   display: grid;
   place-items: center;
@@ -6428,38 +6430,25 @@ button {
 }
 
 /* ============================================================
-   Loading overlay (reading a log from disk)
+   Loading overlay (one card, scoped to the log panel)
    ============================================================ */
+/* Absolute, not fixed: it covers the log lines only. The sidebar, the tab strip
+   and the filter panel stay live, so a slow read never stops the user from
+   switching file or filter set. Its parent (.lv-wrap) is already positioned. */
 .busy-overlay {
-  position: fixed;
+  position: absolute;
   inset: 0;
-  z-index: 650;
+  /* Above everything inside the log view (the hover toolbar is the highest, at
+     70) but below the packs drawer (99) and the portalled modal scrim (100) —
+     .lv-wrap has no z-index of its own, so these all share one stacking order. */
+  z-index: 80;
   display: grid;
   place-items: center;
   background: rgba(15, 18, 22, 0.32);
   backdrop-filter: blur(1.5px);
   animation: fade 0.12s ease;
 }
-/* Passive variant: a click-through status card (no input trap, no dimming),
-   parked bottom-center so it doesn't sit over the text being read. Used for
-   the log-file read, which must not lock the user out of the app. */
-.busy-overlay.passive {
-  pointer-events: none;
-  background: transparent;
-  backdrop-filter: none;
-  place-items: end center;
-  padding-bottom: 26px;
-}
-.busy-overlay.passive .busy-card {
-  flex-direction: row;
-  gap: 12px;
-  padding: 12px 12px 12px 20px;
-  border: 1px solid var(--border-strong);
-  /* The overlay is click-through, but the card holds the Cancel button — let it
-     take pointer input again. */
-  pointer-events: auto;
-}
-/* Cancel button on the passive open-file card — abandons a slow/stuck read. */
+/* Cancel button on the card — abandons a read that's dragging on. */
 .busy-cancel {
   padding: 4px 12px;
   border: 1px solid var(--border-strong);
@@ -6473,28 +6462,27 @@ button {
 .busy-cancel:hover {
   background: var(--row-hover);
 }
-.busy-overlay.passive .busy-spinner {
-  width: 18px;
-  height: 18px;
-  border-width: 2px;
-}
+/* One card for every task: spinner, label, and Cancel when the task can be
+   abandoned — laid out in a row so the button sits beside the text. */
 .busy-card {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
   gap: 14px;
-  padding: 28px 44px;
+  padding: 14px 14px 14px 22px;
+  border: 1px solid var(--border-strong);
   border-radius: 14px;
   background: var(--panel-bg);
   box-shadow: var(--shadow-modal);
 }
 .busy-spinner {
-  width: 30px;
-  height: 30px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  border: 3px solid var(--border-strong);
-  border-top-color: #2c6ce6;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent-bg);
   animation: spin 0.7s linear infinite;
+  flex: none;
 }
 .busy-text {
   font-size: 13px;
