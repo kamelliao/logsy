@@ -41,7 +41,7 @@ import type {
   Filter as FilterCfg,
   PaneSignal,
 } from "@/types";
-import { escapeRegex } from "@/lib/engine";
+import { escapeRegex } from "@/lib/match/compile";
 import {
   MARKER_ICONS,
   MarkerGlyph,

@@ -1,5 +1,6 @@
 import { test, expect, mock } from "bun:test";
-import { compileAll, resolve } from "@/lib/engine";
+import { compileAll } from "@/lib/match/compile";
+import { resolve } from "@/lib/match/resolve";
 import { makeFilter } from "@/lib/defaults";
 
 // Phase A's driver (docs/design-match.md). No Tauri shell here, so everything falls to

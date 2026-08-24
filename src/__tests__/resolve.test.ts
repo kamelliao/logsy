@@ -1,5 +1,7 @@
 import { test, expect } from "bun:test";
-import { compileAll, scanAndResolve, resolve, scanAll } from "@/lib/engine";
+import { scanAll } from "@/lib/match/cache";
+import { compileAll } from "@/lib/match/compile";
+import { resolve, scanAndResolve } from "@/lib/match/resolve";
 import { makeFilter } from "@/lib/defaults";
 import type { Filter } from "@/types";
 

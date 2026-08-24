@@ -33,9 +33,10 @@ const EMPTY_NUMS: number[] = [];
 // Stable identity: a file with no filter set must not restart Phase A every render.
 const EMPTY_FILTERS: Filter[] = [];
 
-import { compileAll, resolve } from "@/lib/engine";
+import { compileAll } from "@/lib/match/compile";
+import { resolve } from "@/lib/match/resolve";
 import { finishOpenTiming, recordScanStages } from "@/lib/openTiming";
-import { jsScannedFilters } from "@/lib/scanPrime";
+import { jsScannedFilters } from "@/lib/match/prime";
 import { useEnsureMatched } from "@/hooks/useEnsureMatched";
 import type { EnsureResult } from "@/lib/match/ensure";
 import { Sidebar } from "@/components/layout/Sidebar";
@@ -238,7 +239,7 @@ export function App() {
   }, []);
 
   // The active file, derived from a *deferred* active-file id for the same reason
-  // `set` is (below): switching to another open tab re-runs computeView over a
+  // `set` is (below): switching to another open tab re-runs `resolve` over a
   // large file — heavy work React can't defer through a transition now the doc
   // lives in a Zustand store (useSyncExternalStore). useDeferredValue lets the old
   // file (and its lines/view) stay on screen, dimmed, until the background render

@@ -1,19 +1,17 @@
-// Bridge to the Rust `scan_lines` command: run a file's filters through one
-// RegexSet pass on worker threads and prime the JS match cache with the packed bit
-// sets, so the first `computeView` over that file never does the cold
-// O(lines × filters) scan. That scan is the single dominant cost of opening a large
-// log (measured ~1.3 s for 200k lines × 100 filters, against ~21 ms in Rust).
+// The Rust side of Phase A: hand `scan_lines` a file's patterns and prime the match
+// cache with the packed bit sets it returns. See docs/design-match.md.
+//
+// Rust scans one Regex per pattern across worker threads — 97 ms for 92k lines × 119
+// patterns, against seconds for the same work in a backtracking JS engine, which is
+// the entire reason this bridge exists.
 //
 // Every failure path here is a downgrade, never an error: a missing Tauri shell, a
-// line-count disagreement, an unsupported pattern or a failed spot-check just
-// leaves those bit sets uncomputed and `computeView` scans them itself.
+// line-count disagreement, an unsupported pattern or a failed spot-check just leaves
+// those bit sets uncomputed. `resolve` then reports the filter as pending and
+// `scanRemainingInJs` picks it up — nothing is ever wrong, only slower.
 import { invoke } from "@tauri-apps/api/core";
-import {
-  cacheKey,
-  compileAll,
-  hasMatchBits,
-  primeMatchCache,
-} from "@/lib/engine";
+import { cacheKey, hasMatchBits, primeMatchCache } from "@/lib/match/cache";
+import { compileAll } from "@/lib/match/compile";
 import { yieldToEventLoop } from "@/lib/paint";
 import type { CompiledFilter, Filter } from "@/types";
 
@@ -54,7 +52,7 @@ export function scanSpecs(compiled: CompiledFilter[]): ScanSpec[] {
 }
 
 // --- which patterns Rust could not take -------------------------------------
-// Keyed by the lines array, exactly like the match cache in engine.ts, so a closed
+// Keyed by the lines array, exactly like the match cache in match/cache.ts, so a closed
 // file's record is garbage-collected with it. This is the only way to know a pattern
 // is being scanned in JS: Rust reports it by INDEX in a blob that is thrown away
 // immediately, and the resulting view looks identical either way — only slower.
@@ -158,7 +156,7 @@ const HEADER = 28;
 /**
  * Scan `path` for `specs` and prime the match cache for `lines`.
  *
- * `lines` must be the array `computeView` will run on (the cache is keyed by array
+ * `lines` must be the array `resolve` will run on (the cache is keyed by array
  * identity) and `encoding` must be what `read_text_file` was given, so Rust decodes
  * and splits identically. Returns null when nothing could be primed — the caller
  * carries on and lets the JS engine scan.
@@ -179,12 +177,12 @@ export async function scanAndPrime(
       splitMs: 0,
       scanMs: 0,
     };
-  // Every bail-out below leaves the WHOLE batch to `computeView`, so record that
+  // Every bail-out below leaves the WHOLE batch to the JS scanner, so record that
   // before returning: a caller that only sees `null` cannot tell which patterns are
   // now going to cost it seconds.
   const allToJs = () => {
     // The branches AND the conjunctions they stand for: `specs` holds only the former,
-    // but the key `computeView` looks a conjunction up by is the latter. Marking only
+    // but the key the engine looks a conjunction up by is the latter. Marking only
     // `specs` gave every ordinary filter the badge and none of the expensive ones —
     // in exactly the case (no shell, line-count mismatch) where everything is JS-scanned.
     markJsScanned(lines, specs);
@@ -292,7 +290,7 @@ export interface JsScanResult {
  * Scan the patterns still missing from the match cache, in slices, yielding between
  * them.
  *
- * This is the same work `computeView` would otherwise do — but `computeView` runs
+ * This is the same work `resolve` used to do inline — but a resolve runs
  * inside a render, synchronously, so a filter set holding one pattern Rust can't take
  * froze the window for as long as that scan took (measured 1779 ms for a single
  * lookahead over 92k lines, and there is no upper bound: it is the user's regex). A
@@ -371,7 +369,7 @@ export interface PrimeOutcome {
  * **Never throws.** Priming is an optimisation: callers await it on the critical path
  * of opening a file or switching a set, and a failure here must leave them slower,
  * not broken. Anything that goes wrong simply leaves those bit sets uncomputed for
- * `computeView` to scan itself.
+ * the JS scanner to do itself.
  *
  * `onScanStart` fires only when there is real work — it lets a caller show a
  * progress affordance without flashing it on a switch that was a pure cache hit.

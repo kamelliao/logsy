@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 // Performance profiler for Logsy's hot path — the pure log-processing pipeline
-// in src/lib/engine.ts. The UI stays responsive only if these functions can chew
+// in src/lib/match/. The UI stays responsive only if these functions can chew
 // through a large firmware log across many filters in well under a frame, so
 // this script benchmarks them in isolation (no React, no Tauri) and reports
 // timings + throughput.
@@ -32,7 +32,7 @@
 // on the open path). Anything qualifying the numbers is printed above the summary so
 // the summary stays the final block on screen.
 //
-// `--no-rust` drops the second column when you are iterating on engine.ts alone.
+// `--no-rust` drops the second column when you are iterating on the JS side alone.
 //
 //   bun run scripts/profile.ts                       # defaults
 //   bun run scripts/profile.ts --lines=500000        # bigger log
@@ -57,10 +57,10 @@ import {
   scanMatches,
   deriveFields,
   primeMatchCache,
-} from "../src/lib/engine.ts";
+} from "../src/lib/match/compile.ts";
 import { splitLines } from "../src/lib/lines.ts";
-import { scanSpecs, verify } from "../src/lib/scanPrime.ts";
-import type { ScanSpec } from "../src/lib/scanPrime.ts";
+import { scanSpecs, verify } from "../src/lib/match/prime.ts";
+import type { ScanSpec } from "../src/lib/match/prime.ts";
 import { makeFilter } from "../src/lib/defaults.ts";
 import type { Filter } from "../src/types.ts";
 

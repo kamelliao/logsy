@@ -7,15 +7,8 @@ import type {
   TimelineSource,
   TimeMarker,
 } from "@/types";
-import {
-  buildTimeline,
-  laneColor,
-  guessUnit,
-  isTimeLike,
-  isValidFormat,
-  coerceTime,
-  timelineExcludeKey,
-} from "@/lib/engine";
+import { coerceTime, guessUnit, isTimeLike, isValidFormat } from "@/lib/fields";
+import { buildTimeline, laneColor, timelineExcludeKey } from "@/lib/timeline";
 import { withSet } from "@/state/selectors";
 import { useStore } from "@/store";
 import type { PanelTab } from "@/hooks/useDockLayout";

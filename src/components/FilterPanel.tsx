@@ -78,7 +78,7 @@ import type {
   FilterLabelMode,
   FilterPack,
 } from "@/types";
-import { trackFieldsOf } from "@/lib/engine";
+import { trackFieldsOf } from "@/lib/timeline";
 import { exportPayload } from "@/lib/filterFile";
 import { useStore } from "@/store";
 import { Button } from "@/components/ui/button";

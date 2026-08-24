@@ -1,4 +1,4 @@
-// Inverse of buildPattern (src/lib/generalize.ts): reconstruct the chip tokens
+// Inverse of buildPattern (src/lib/pattern/build.ts): reconstruct the chip tokens
 // from a regex the builder itself emitted, so an existing filter can be edited
 // with the Pattern builder again. This deliberately only understands
 // buildPattern's restricted grammar — a flat concatenation of escaped literals,
@@ -12,13 +12,13 @@
 // `[`, `(?<`), while exact literals always escape them (`\.`, `\[`, `\(`, `\\`).
 // So a literal run can never be mistaken for a general form.
 
-import { escapeRegex } from "@/lib/engine";
+import { escapeRegex } from "@/lib/match/compile";
 import {
   GenToken,
   GenKind,
   buildPattern,
   generalPattern,
-} from "@/lib/generalize";
+} from "@/lib/pattern/build";
 
 interface Seg {
   kind: GenKind;

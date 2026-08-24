@@ -56,7 +56,7 @@ import type {
   EventShape,
   TimeMarker,
 } from "@/types";
-import { trackFieldsOf } from "@/lib/engine";
+import { trackFieldsOf } from "@/lib/timeline";
 import {
   Select,
   SelectContent,

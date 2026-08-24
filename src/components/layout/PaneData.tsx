@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from "react";
 import type { Filter, LogFile, Marker, ViewResult } from "@/types";
-import { compileAll, resolve } from "@/lib/engine";
+import { compileAll } from "@/lib/match/compile";
+import { resolve } from "@/lib/match/resolve";
 import { useEnsureMatched } from "@/hooks/useEnsureMatched";
 
 /** Everything one split pane needs to render its document. */

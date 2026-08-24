@@ -6,7 +6,7 @@ import {
   mergeTokens,
   splitToken,
   type GenToken,
-} from "@/lib/generalize";
+} from "@/lib/pattern/build";
 
 const kinds = (s: string) => tokenize(s).map((t) => `${t.kind}:${t.raw}`);
 

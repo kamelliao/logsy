@@ -5,7 +5,7 @@ import type { Filter, FilterSet, FilterLayout } from "@/types";
 import { uid, makeFilter, normalizeState } from "@/lib/defaults";
 import { baseName } from "@/lib/path";
 import { nextPaint } from "@/lib/paint";
-import { tokenize, buildPattern } from "@/lib/generalize";
+import { tokenize, buildPattern } from "@/lib/pattern/build";
 import {
   buildGroupFromImport,
   exportPayload,

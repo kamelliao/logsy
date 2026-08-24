@@ -135,7 +135,7 @@ export function useLogFiles({
     setOpenScreen(false);
     selectNonceRef.current++;
     useStore.getState().touchFileMru(fid);
-    // The heavy re-render this triggers (computeView over the switched-to file)
+    // The heavy re-render this triggers (a `resolve` over the switched-to file)
     // is deferred in render via App's deferred active-file id (isSwitchingFile),
     // not here — a transition can't defer this Zustand (useSyncExternalStore)
     // update.

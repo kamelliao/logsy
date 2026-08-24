@@ -7,7 +7,7 @@ import type {
   EventShape,
 } from "@/types";
 import { makeFilter, uid, filterFromTatAttrs } from "@/lib/defaults";
-import { guessUnit } from "@/lib/engine";
+import { guessUnit } from "@/lib/fields";
 
 /**
  * Parse a TextAnalysisTool.NET (.tat) filter file so users of that tool can

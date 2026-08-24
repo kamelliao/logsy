@@ -1,18 +1,17 @@
 import { test, expect } from "bun:test";
 import {
-  compileAll,
-  scanAndResolve,
-  coerceValue,
   coerceTime,
+  coerceValue,
   guessUnit,
-  buildTimeline,
-  trackFieldsOf,
-  parseDateTime,
-  parseFormat,
-  isValidFormat,
   isDateLike,
   isTimeLike,
-} from "@/lib/engine";
+  isValidFormat,
+  parseDateTime,
+  parseFormat,
+} from "@/lib/fields";
+import { compileAll } from "@/lib/match/compile";
+import { scanAndResolve } from "@/lib/match/resolve";
+import { buildTimeline, trackFieldsOf } from "@/lib/timeline";
 import { normalizeState } from "@/lib/defaults";
 import type { Filter, FieldDef, TimelineSource, AppState } from "@/types";
 
@@ -74,7 +73,7 @@ test("coerceValue stays legacy (no scaling) when no unit is given", () => {
 
 // --- absolute date+time stamps (Android logcat / ISO / syslog) --------------
 
-// Year-less formats assume `ASSUMED_YEAR` (see engine.ts); everything is UTC.
+// Year-less formats assume `ASSUMED_YEAR` (see lib/fields.ts); everything is UTC.
 const ASSUMED_YEAR = 2026;
 
 test("parseDateTime handles Android logcat (year-less MM-DD HH:MM:SS.mmm)", () => {

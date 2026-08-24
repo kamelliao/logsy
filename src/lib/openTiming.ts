@@ -9,7 +9,7 @@
 //
 // The stages are measured in two different places: the IO ones by `useLogFiles` when
 // the file lands, and `view` by App on the render that follows. So a record is opened
-// here when the file is ready and completed once its first `computeView` has run.
+// here when the file is ready and completed once Phase A reports for it.
 //
 // Deliberately records the bare file name and pattern counts only — never a path or a
 // filter pattern. The log is meant to be shareable, and both can carry internal terms.

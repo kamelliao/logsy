@@ -5,7 +5,7 @@ import {
   useRef,
   type ReactNode,
 } from "react";
-import { tokenizeRegex, type RegexToken } from "@/lib/regexHighlight";
+import { tokenizeRegex, type RegexToken } from "@/lib/pattern/highlight";
 
 interface RegexInputProps {
   value: string;

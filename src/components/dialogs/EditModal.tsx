@@ -12,13 +12,9 @@ import {
   X,
 } from "lucide-react";
 import type { Filter, FilterGroup, FieldType, PaletteEntry } from "@/types";
-import {
-  compile,
-  scanMatches,
-  groupSegments,
-  deriveFields,
-  escapeRegex,
-} from "@/lib/engine";
+import { deriveFields } from "@/lib/fields";
+import { compile, escapeRegex } from "@/lib/match/compile";
+import { groupSegments, scanMatches } from "@/lib/segments";
 import {
   tokenize,
   buildPattern,
@@ -28,8 +24,8 @@ import {
   splitToken,
   type GenToken,
   type GenState,
-} from "@/lib/generalize";
-import { reparsePattern } from "@/lib/reparse";
+} from "@/lib/pattern/build";
+import { reparsePattern } from "@/lib/pattern/parse";
 import { TEXT_SWATCHES, BG_SWATCHES } from "@/lib/palette";
 
 /** First line matching `re` (early-exit), or null. Used to dress reconstructed

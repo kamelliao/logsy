@@ -1,11 +1,7 @@
 import { test, expect } from "bun:test";
-import {
-  compile,
-  deriveFields,
-  coerceValue,
-  compileAll,
-  scanAndResolve,
-} from "@/lib/engine";
+import { coerceValue, deriveFields } from "@/lib/fields";
+import { compile, compileAll } from "@/lib/match/compile";
+import { scanAndResolve } from "@/lib/match/resolve";
 import type { Filter, FieldDef } from "@/types";
 
 function filter(

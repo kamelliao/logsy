@@ -1,16 +1,13 @@
 import { test, expect, mock } from "bun:test";
-import {
-  compileAll,
-  scanAndResolve,
-  primeMatchCache,
-  hasMatchBits,
-} from "@/lib/engine";
+import { hasMatchBits, primeMatchCache } from "@/lib/match/cache";
+import { compileAll } from "@/lib/match/compile";
+import { scanAndResolve } from "@/lib/match/resolve";
 import {
   jsScannedFilters,
   scanPlan,
   scanRemainingInJs,
   scanSpecs,
-} from "@/lib/scanPrime";
+} from "@/lib/match/prime";
 import { makeFilter } from "@/lib/defaults";
 import type { Filter } from "@/types";
 
@@ -167,7 +164,7 @@ test("scanAndPrime downgrades to a JS scan when the shell has no scan_lines", as
   mock.module("@tauri-apps/api/core", () => ({
     invoke: () => Promise.reject(new Error("no such command")),
   }));
-  const { scanAndPrime } = await import("@/lib/scanPrime");
+  const { scanAndPrime } = await import("@/lib/match/prime");
   const lines = [...LINES];
   const f = makeFilter("error");
   const compiled = compileAll([f]);
@@ -198,7 +195,7 @@ test("a pattern the shell can't scan is named back to the user", async () => {
   mock.module("@tauri-apps/api/core", () => ({
     invoke: () => Promise.reject(new Error("no such command")),
   }));
-  const { scanAndPrime } = await import("@/lib/scanPrime");
+  const { scanAndPrime } = await import("@/lib/match/prime");
   const lines = [...LINES];
   const filters = [makeFilter("error"), makeFilter("warn")];
   const compiled = compileAll(filters);

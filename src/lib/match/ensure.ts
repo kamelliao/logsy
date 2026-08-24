@@ -8,7 +8,7 @@
 //
 // It never throws: Phase A is an optimisation over `resolve` reporting the filter as
 // pending, so a failure has to leave callers slower, not broken.
-import { primeFilters, scanRemainingInJs } from "@/lib/scanPrime";
+import { primeFilters, scanRemainingInJs } from "@/lib/match/prime";
 import type { Filter } from "@/types";
 
 export interface EnsureResult {

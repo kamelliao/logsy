@@ -5,7 +5,7 @@
 // Why this exists: opening a log primes the JS match cache with bit sets computed in
 // Rust (see docs/perf-large-file-open.md). If the two engines ever disagree about
 // which lines a pattern matches, the symptom is silently wrong highlight colours —
-// no error, no crash, and the runtime spot-check in scanPrime.ts only downgrades
+// no error, no crash, and the runtime spot-check in match/prime.ts only downgrades
 // quietly on the user's machine. `scan.rs`'s pattern translation (ASCII vs Unicode
 // mode) is the part most likely to drift, so it needs a test that fails loudly here.
 //

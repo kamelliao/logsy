@@ -130,17 +130,32 @@ Telemetry follows: `view_ms` stops being meaningful as one number and becomes
 ```
 src-tauri/src/matching/       Phase A, entirely (`match` is a keyword)
   syntax.rs      the JS regex semantics table + THE tokenizer (one, not five)
-  translate.rs   js pattern -> Runnable | Unsupported(reason)
-                   Runnable::Direct(Regex)
-                   Runnable::Conjunction(Vec<Regex>)   ← (?=.*A)(?=.*B) is a TRANSLATION,
-                                                          not a third route
+  translate.rs   js pattern -> Runnable::Direct | Runnable::Conjunction | Unsupported
   scan.rs        parallel scan + wire format
 
-src/lib/match/
-  cache.ts       bit set cache (and the bit set ops, in one place)
-  ensure.ts      the Phase A driver: IPC, verify, sliced JS fallback, cancellation
-  resolve.ts     Phase B: today's computeView with the scanning removed
+src/lib/match/                the pipeline, and only the pipeline
+  compile.ts     Filter -> RegExp (the one place that decides the cache key)
+  cache.ts       the bit sets — the boundary itself
+  prime.ts       the Rust bridge: IPC, wire decode, verify, sliced JS fallback
+  ensure.ts      the Phase A driver — the only entry point
+  resolve.ts     Phase B: pure, never scans
+
+src/lib/pattern/              AUTHORING a regex, not running one
+  build.ts       selected log text -> a regex (the chips UI)
+  parse.ts       a regex -> chips (build.ts's inverse)
+  highlight.ts   render a pattern string for the user
+
+src/lib/                      downstream of matching, or unrelated to it
+  segments.ts    which CHARACTERS matched, for painting a visible row
+  fields.ts      named capture groups + time coercion
+  timeline.ts    events from the lines a user added to a track
 ```
+
+The split of `src/lib/pattern/` from `src/lib/match/` is the one worth stating out
+loud: those files all manipulate regexes, but they compose and display them rather
+than decide what they mean, so they are not a sixth copy of the tokenizer problem and
+must not be folded into `matching/`. `fuzzy.ts` is not in either list — it ranks file
+names for the Quick Open palette and contains no regex at all.
 
 `syntax.rs` is not hand-mirrored in TypeScript. `scripts/crosscheck.ts` compares the
 table against real JS `RegExp` behaviour, entry by entry — two hand-written copies are
@@ -195,10 +210,7 @@ fixture; none was a rewrite.
 
 ## Still open
 
-- `engine.ts` still houses ~370 lines of field parsing / time coercion and ~110 of
-  timeline, neither of which has anything to do with matching. Pure readability, no
-  defect evidence — lowest priority, and deliberately not bundled with the above.
-- `regexHighlight.ts` keeps its own walker. That one renders a pattern FOR THE USER
+- `pattern/highlight.ts` keeps its own walker. That one renders a pattern FOR THE USER
   rather than deciding what it means, so it is a different concern, not a fifth copy.
 - The `(?i:)` case-folding gap (`k` also matching U+212A) is unchanged. The frontend's
   spot-check downgrades it to a JS scan rather than a wrong highlight.
