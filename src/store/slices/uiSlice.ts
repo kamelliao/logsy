@@ -52,6 +52,9 @@ export interface UiSlice {
    *  state, not persisted: after a reload the file order stands in for it. */
   fileMru: string[];
   touchFileMru: (id: string) => void;
+  /** Drop closed files from the MRU, so "the file before this one" can never
+   *  name a log that is no longer open. */
+  forgetFileMru: (ids: string[]) => void;
 }
 
 export function createUiSlice(set: StoreSet): UiSlice {
@@ -91,5 +94,12 @@ export function createUiSlice(set: StoreSet): UiSlice {
           ? {}
           : { fileMru: [id, ...s.fileMru.filter((x) => x !== id)] },
       ),
+    forgetFileMru: (ids) =>
+      set((s) => {
+        const gone = new Set(ids);
+        return s.fileMru.some((id) => gone.has(id))
+          ? { fileMru: s.fileMru.filter((id) => !gone.has(id)) }
+          : {};
+      }),
   };
 }

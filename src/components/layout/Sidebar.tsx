@@ -51,6 +51,7 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "@/store";
 import { useClampedPopup } from "@/hooks/useClampedPopup";
 import { UNGROUPED } from "@/store/slices/fileGroupSlice";
+import { sidebarFileOrder } from "@/state/selectors";
 import {
   Tooltip,
   TooltipContent,
@@ -803,10 +804,7 @@ export function Sidebar({
 
   // Every file, in the order the document holds them (groups first, then the loose
   // ones) — a multi-row drag carries its files in this order.
-  const docOrder = [
-    ...groups.flatMap((g) => baseMap[g.id]),
-    ...baseMap[UNGROUPED],
-  ];
+  const docOrder = sidebarFileOrder(state);
   // The subset of those actually on screen: a collapsed group's files are not. This is
   // what a Shift range and Ctrl+A walk — neither may reach a row you can't see.
   const visibleOrder = [

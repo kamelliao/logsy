@@ -10,6 +10,7 @@ import { splitLines } from "@/lib/lines";
 import { nextPaint } from "@/lib/paint";
 import { beginOpenTiming, cancelOpenTiming } from "@/lib/openTiming";
 import { useStore } from "@/store";
+import { sidebarFileOrder } from "@/state/selectors";
 
 // In-memory log contents, keyed by file id. Log bodies are *not* persisted to
 // localStorage (they can be huge) — on restart we reload them from `file.path`.
@@ -181,11 +182,26 @@ export function useLogFiles({
       danger: true,
     });
     if (!ok) return;
+    // Where to land when the log being closed is the active one: the row ABOVE it
+    // in the sidebar. Closing a log reads as a step back UP the list, so the
+    // landing spot has to be positional — where the user's eye already is — not
+    // the top of the list, and not some file they happened to visit earlier
+    // (this used to prefer `fileMru`, which could jump them across the sidebar).
+    // Sidebar order is grouped, so it is NOT `files` order — see the selector.
+    // Closing the very first row has nothing above it; step down instead.
+    const order = sidebarFileOrder(getDoc());
+    const survives = (id: string) => !ids.has(id);
+    const closedAt = order.indexOf(getDoc().activeFileId ?? "");
+    const nextActive =
+      order.slice(0, Math.max(0, closedAt)).filter(survives).at(-1) ??
+      order.slice(closedAt + 1).find(survives) ??
+      order.find(survives) ??
+      null;
     patchState(
       (s) => {
         s.files = s.files.filter((x) => !ids.has(x.id));
         if (s.activeFileId && ids.has(s.activeFileId))
-          s.activeFileId = s.files[0]?.id ?? null;
+          s.activeFileId = nextActive;
         for (const id of ids) {
           delete linesStore[id];
           // Closed before its first view: no timing to report.
@@ -194,6 +210,7 @@ export function useLogFiles({
       },
       { undoable: false },
     );
+    useStore.getState().forgetFileMru([...ids]);
   };
 
   const deleteFile = (fid: string) => deleteFiles([fid]);

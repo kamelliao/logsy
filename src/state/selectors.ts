@@ -36,3 +36,24 @@ export function activeSet(s: AppState): FilterSet | null {
     null
   );
 }
+
+/**
+ * Every open file id in the order the SIDEBAR lists them: each group's files in
+ * group order, then the ungrouped ones last.
+ *
+ * Not `s.files` order — moving a file into a group moves its row without moving
+ * the entry in the document — so anything that means "the row above this one"
+ * (closing a log lands on it) has to walk this, not the array.
+ */
+export function sidebarFileOrder(s: AppState): string[] {
+  const groups = s.fileGroups ?? [];
+  const byGroup = new Map<string, string[]>(groups.map((g) => [g.id, []]));
+  const loose: string[] = [];
+  for (const f of s.files) {
+    // A groupId pointing at a group that no longer exists reads as ungrouped,
+    // which is exactly where the sidebar draws it.
+    const bucket = f.groupId ? byGroup.get(f.groupId) : undefined;
+    (bucket ?? loose).push(f.id);
+  }
+  return [...groups.flatMap((g) => byGroup.get(g.id) ?? []), ...loose];
+}

@@ -174,9 +174,15 @@ export function useSplitView({ selectFile }: Deps) {
       closePane(paneId);
       return;
     }
+    // Closing the tab you are looking at lands on the tab to its LEFT — the same
+    // positional step back the sidebar's close makes (the row above the closed
+    // one). Where the user was earlier doesn't come into it: the landing spot has
+    // to be where their eye already is. The first tab has nothing to its left, so
+    // that one steps right instead.
+    const at = g.tabs.indexOf(fileId);
     const nextActive =
       g.active === fileId
-        ? (remaining[remaining.length - 1] ?? null)
+        ? (g.tabs[at - 1] ?? g.tabs[at + 1] ?? null)
         : g.active;
     edit((v) => ({
       ...v,

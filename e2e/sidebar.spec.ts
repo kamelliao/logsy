@@ -102,6 +102,32 @@ test.describe("sidebar", () => {
     await expect(page.locator(".file-item .file-name")).toHaveText("wifi.log");
   });
 
+  test("closing the active log lands on the row above it, not the first", async ({
+    page,
+    tauri,
+  }) => {
+    await openMany(page, tauri, ["a.log", "b.log", "c.log"]);
+    const row = (name: string) =>
+      page.locator(".file-item").filter({ hasText: name });
+    // Visit a.log, then c.log: the most recently *visited* file is now a.log, two
+    // rows away. Closing c.log must still land on b.log — the row above it.
+    await row("a.log").click();
+    await row("c.log").click();
+    await row("c.log").click({ button: "middle" });
+    await confirmDialog(page, "Close");
+    await expect(page.locator(".file-item.active .file-name")).toHaveText(
+      "b.log",
+    );
+
+    // The first row has nothing above it, so that one steps down instead.
+    await row("a.log").click();
+    await row("a.log").click({ button: "middle" });
+    await confirmDialog(page, "Close");
+    await expect(page.locator(".file-item.active .file-name")).toHaveText(
+      "b.log",
+    );
+  });
+
   test("the arrow keys walk the list, Enter opens, Shift extends", async ({
     page,
     tauri,
