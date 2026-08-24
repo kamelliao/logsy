@@ -510,7 +510,6 @@ button {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-width: 360px;
 }
 .file-tip-name {
   font-weight: 600;
@@ -518,7 +517,6 @@ button {
 .file-tip-path {
   font-size: 11px;
   opacity: 0.75;
-  word-break: break-all;
 }
 .file-tip-meta {
   font-size: 11px;
@@ -6056,7 +6054,14 @@ button {
   padding: 5px 9px;
   border-radius: 6px;
   box-shadow: var(--shadow-pop);
-  white-space: nowrap;
+  /* The popup is shrink-to-fit, so the cap has to live HERE: a child capping its
+     own width just leaves the text painting outside the black box (nowrap text
+     doesn't compress, and it can't wrap either). Every short label is well under
+     360px, so none of them wrap; a long file path now does, instead of running
+     off the card and off the window. */
+  max-width: min(360px, calc(100vw - 16px));
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 @theme inline {
