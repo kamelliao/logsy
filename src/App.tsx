@@ -347,7 +347,6 @@ export function App() {
         recordScanStages(fileId, {
           patterns: scan.requested,
           primed: scan.primed,
-          composed: scan.composed,
           fallback: scan.fallback,
           rejected: scan.rejected,
           jsScanned: scan.jsScanned,

@@ -43,8 +43,6 @@ const pending = new Map<string, OpenStages>();
 export interface ScanStages {
   patterns: number;
   primed: number;
-  /** Of `primed`, how many were assembled from branch bit sets rather than scanned. */
-  composed: number;
   fallback: number;
   rejected: number;
   /** Patterns the fast scanner refused, scanned in JS — sliced, off the render path. */
@@ -115,7 +113,6 @@ export function finishOpenTiming(fileId: string): void {
       // The scan outcome is bracketed onto the filter count it breaks down, so the
       // three numbers read as one fact rather than three loose fields.
       `${pair("filters", scan.patterns)} (${pair("primed", scan.primed)} ` +
-        `${pair("composed", scan.composed)} ` +
         `${pair("fallback", scan.fallback)} ${pair("rejected", scan.rejected)} ` +
         `${pair("js", scan.jsScanned)})`,
       pair("read_ms", ms(scan.readMs)),

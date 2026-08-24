@@ -15,8 +15,6 @@ export interface EnsureResult {
   /** Distinct patterns handed to the fast scanner (0 when everything was cached). */
   requested: number;
   primed: number;
-  /** Of `primed`, assembled from branch bit sets rather than scanned. */
-  composed: number;
   fallback: number;
   rejected: number;
   /** Patterns the fast scanner refused, scanned here in slices instead. */
@@ -36,7 +34,6 @@ export interface EnsureResult {
 const NOTHING: EnsureResult = {
   requested: 0,
   primed: 0,
-  composed: 0,
   fallback: 0,
   rejected: 0,
   jsScanned: 0,

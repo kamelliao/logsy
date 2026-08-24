@@ -199,8 +199,9 @@ fn sniff_bomless_utf16(bytes: &[u8]) -> Option<&'static encoding_rs::Encoding> {
   }
 }
 
-mod scan;
-use scan::{scan_text, ScanSpec};
+mod matching;
+use matching::scan::scan_text;
+use matching::translate::ScanSpec;
 
 /// Scan a file's lines against `patterns` and return the packed match bit sets.
 ///

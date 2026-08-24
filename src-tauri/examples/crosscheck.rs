@@ -19,18 +19,19 @@
 //! stdin:  {"text": "...", "patterns": [{"source": "...", "ci": true}, ...]}
 //! stdout: the raw blob, exactly as `scan_lines` would return it over IPC.
 //!
-//! Includes the app's own `scan.rs` via `#[path]` rather than duplicating it — the
-//! whole point is to test the code that actually ships. (That's also why `scan.rs`
-//! is a standalone module with no tauri dependency.)
-#[path = "../src/scan.rs"]
-mod scan;
+//! Includes the app's own matching modules via `#[path]` rather than duplicating them
+//! — the whole point is to test the code that actually ships. (That's also why they
+//! carry no tauri dependency.)
+#[path = "../src/matching/mod.rs"]
+mod matching;
+use matching::{scan, translate};
 
 use std::io::{Read, Write};
 
 #[derive(serde::Deserialize)]
 struct Input {
     text: String,
-    patterns: Vec<scan::ScanSpec>,
+    patterns: Vec<translate::ScanSpec>,
 }
 
 fn main() {

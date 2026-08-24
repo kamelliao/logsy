@@ -1,13 +1,11 @@
 import { test, expect, mock } from "bun:test";
 import {
-  cacheKey,
   compileAll,
   scanAndResolve,
   primeMatchCache,
   hasMatchBits,
 } from "@/lib/engine";
 import {
-  decomposeAnd,
   jsScannedFilters,
   scanPlan,
   scanRemainingInJs,
@@ -27,30 +25,6 @@ const LINES = [
   "GAMMA error three",
   "delta",
 ];
-
-/** A `scan_lines` blob for `specs`, in the wire format `scan_text` emits. */
-function blobFor(
-  lines: string[],
-  specs: { source: string; ci: boolean }[],
-): ArrayBuffer {
-  const nBytes = (lines.length + 7) >> 3;
-  const buf = new ArrayBuffer(28 + specs.length * 4 + specs.length * nBytes);
-  const dv = new DataView(buf);
-  dv.setUint32(0, lines.length, true);
-  dv.setUint32(4, specs.length, true);
-  dv.setUint32(8, nBytes, true);
-  dv.setUint32(12, 0, true); // no fallbacks
-  const u8 = new Uint8Array(buf);
-  const off = 28 + specs.length * 4;
-  specs.forEach((sp, k) => {
-    const bits = bitsFor(lines, new RegExp(sp.source, sp.ci ? "gi" : "g"));
-    let count = 0;
-    for (const b of bits) for (let i = 0; i < 8; i++) if (b & (1 << i)) count++;
-    dv.setUint32(28 + k * 4, count, true);
-    u8.set(bits, off + k * nBytes);
-  });
-  return buf;
-}
 
 function bitsFor(lines: string[], re: RegExp): Uint8Array {
   const bits = new Uint8Array((lines.length + 7) >> 3);
@@ -210,12 +184,11 @@ test("scanPlan scans a shared pattern once", () => {
     makeFilter("warn"),
     makeFilter("ERROR"), // same source+flags as the first
   ];
-  const { specs, compositions } = scanPlan(compileAll(filters));
+  const { specs } = scanPlan(compileAll(filters));
   expect(specs).toEqual([
     { source: "ERROR", ci: true },
     { source: "warn", ci: true },
   ]);
-  expect(compositions).toEqual([]);
 });
 
 test("a pattern the shell can't scan is named back to the user", async () => {
@@ -240,65 +213,6 @@ test("a pattern the shell can't scan is named back to the user", async () => {
   // Keyed by the lines array, exactly like the match cache — a different file that
   // happens to hold equal strings must not inherit the verdict.
   expect(jsScannedFilters([...LINES], filters).size).toBe(0);
-});
-
-test("decomposeAnd accepts only what is exactly equivalent", () => {
-  expect(decomposeAnd("(?=.*a)(?=.*b)")).toEqual(["a", "b"]);
-  expect(decomposeAnd("(?=.*a)(?=.*b)(?=.*c)")).toEqual(["a", "b", "c"]);
-  expect(decomposeAnd("(?=.*a)(?=.*b).*")).toEqual(["a", "b"]); // a bare `.*` tail is a no-op
-  expect(decomposeAnd("(?=.*(a|b))(?=.*c)")).toEqual(["(a|b)", "c"]); // nested groups
-  expect(decomposeAnd("(?=.*[)])(?=.*b)")).toEqual(["[)]", "b"]); // `)` inside a class
-  // …and the rejections, each of which would be a WRONG bit set if accepted.
-  expect(decomposeAnd("(?=.*a)")).toBeNull(); // one branch is not a conjunction
-  expect(decomposeAnd("^(?=.*a)(?=.*b)")).toBeNull(); // anchored: p = 0 no longer free
-  expect(decomposeAnd("(?=.*a)(?=.*b)tail")).toBeNull(); // a consuming tail
-  expect(decomposeAnd(String.raw`(?=.*(a))(?=.*\1)`)).toBeNull(); // backref can't span a split
-  expect(decomposeAnd("(?=.*^a)(?=.*b)")).toBeNull(); // re-anchored inside a branch
-  expect(decomposeAnd("(?=.*a)(?=.*b")).toBeNull(); // unbalanced
-  expect(decomposeAnd("plain")).toBeNull();
-  // A top-level `|` breaks the "p = 0 is the weakest position" argument outright:
-  // /(?=.*a|b)(?=.*c|d)/ does NOT match "cb", but the AND of /a|b/ and /c|d/ does.
-  expect(decomposeAnd("(?=.*a|b)(?=.*c|d)")).toBeNull();
-  expect(decomposeAnd("(?=.*wifi|wlan)(?=.*down)")).toBeNull();
-  // …but a `|` nested inside a group or a class is still covered by the `.*`.
-  expect(decomposeAnd("(?=.*(a|b))(?=.*c)")).toEqual(["(a|b)", "c"]);
-  expect(decomposeAnd("(?=.*[a|b])(?=.*c)")).toEqual(["[a|b]", "c"]);
-  // Lazy `.*?` is the same yes/no answer, so it is taken — with the `?` consumed,
-  // not left on the front of the branch.
-  expect(decomposeAnd("(?=.*?a)(?=.*b)")).toEqual(["a", "b"]);
-  expect(decomposeAnd("(?=.**a)(?=.*b)")).toBeNull();
-});
-
-test("a lookahead conjunction is assembled from its branches, not scanned", async () => {
-  // The branches come back from the scanner; the conjunction never goes to it at all.
-  // Its bits have to be the AND — and they have to land under the key the ENGINE looks
-  // the original pattern up by, or scanAndResolve just silently rescans it.
-  const lines = [...LINES];
-  const both = makeFilter("(?=.*error)(?=.*three)", { regex: true });
-  const compiled = compileAll([both]);
-  const plan = scanPlan(compiled);
-  expect(plan.specs).toEqual([
-    { source: "error", ci: true },
-    { source: "three", ci: true },
-  ]);
-  expect(plan.compositions).toHaveLength(1);
-
-  mock.module("@tauri-apps/api/core", () => ({
-    invoke: (
-      _cmd: string,
-      args: { patterns: { source: string; ci: boolean }[] },
-    ) => Promise.resolve(blobFor(lines, args.patterns)),
-  }));
-  const { scanAndPrime } = await import("@/lib/scanPrime");
-  const res = await scanAndPrime("/x.log", undefined, lines, plan);
-  expect(res?.composed).toBe(1);
-  expect(jsScannedFilters(lines, [both]).size).toBe(0);
-
-  // "error" hits lines 1 and 3; "three" hits line 3; the AND is line 3 alone.
-  const view = scanAndResolve(lines, compiled);
-  expect(view.counts[both.id]).toBe(1);
-  expect(view.rows[2].winner?.f.id).toBe(both.id);
-  expect(view.rows[0].winner).toBeNull();
 });
 
 // A pattern that is slow on purpose: an unbounded quantified class that can never
@@ -347,43 +261,4 @@ test("the JS fallback scan agrees with a straight scan", async () => {
   await scanRemainingInJs(lines, [f]);
   expect(hasMatchBits(lines, compiled[0].re!)).toBe(true);
   expect(scanAndResolve(lines, compiled).counts[f.id]).toBe(2);
-});
-
-test("a branch that is also a filter of its own is not treated as branch-only", () => {
-  // Branch bit sets are kept out of the shared cache, so getting this wrong would
-  // silently stop caching a real filter — and the LRU it protects is the reason the
-  // distinction exists at all.
-  const plan = scanPlan(
-    compileAll([
-      makeFilter("(?=.*wifi)(?=.*down)", { regex: true }),
-      makeFilter("wifi"), // the same pattern, wanted directly
-    ]),
-  );
-  expect(plan.branchOnly).toEqual(new Set([cacheKey("down", "gi")]));
-});
-
-test("a line separator in the file refuses the composition instead of over-matching", async () => {
-  // `.` never crosses U+2028, so `(?=.*a)(?=.*b)` is FALSE on "a<U+2028>b" while both
-  // branches are true. Composing there would set a bit the filter does not match, and
-  // verify() samples — it would not reliably catch it.
-  const SEP = String.fromCharCode(0x2028);
-  const lines = ["alpha" + SEP + "beta", "alpha beta", "neither"];
-  const both = makeFilter("(?=.*alpha)(?=.*beta)", { regex: true });
-  const compiled = compileAll([both]);
-  const plan = scanPlan(compiled);
-  expect(plan.compositions).toHaveLength(1);
-
-  mock.module("@tauri-apps/api/core", () => ({
-    invoke: (
-      _cmd: string,
-      args: { patterns: { source: string; ci: boolean }[] },
-    ) => Promise.resolve(blobFor(lines, args.patterns)),
-  }));
-  const { scanAndPrime } = await import("@/lib/scanPrime");
-  const res = await scanAndPrime("/x.log", undefined, lines, plan);
-  expect(res?.composed).toBe(0);
-  // …and it is reported as JS-scanned, so the badge tells the user why.
-  expect(jsScannedFilters(lines, [both])).toEqual(new Set([both.id]));
-  // The engine then scans it itself and gets the right answer: line 2 only.
-  expect(scanAndResolve(lines, compiled).counts[both.id]).toBe(1);
 });

@@ -10,7 +10,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   cacheKey,
-  cachedMatchBits,
   compileAll,
   hasMatchBits,
   primeMatchCache,
@@ -25,210 +24,28 @@ export interface ScanSpec {
   ci: boolean;
 }
 
-/**
- * A pattern whose bits are ASSEMBLED from other patterns' bits rather than scanned.
- *
- * Only one shape qualifies today: a conjunction of lookaheads, `(?=.*A)(?=.*B)…` —
- * how users spell "this line contains all of these". Rust's engine can never take a
- * lookahead, and a backtracking JS engine is at its worst on exactly this shape
- * (1779 ms for ONE such filter over 92k × 180-char lines), so it was the last
- * expensive thing left on the JS scanner.
- *
- * The rewrite is exact, not an approximation. For an unanchored boolean test,
- * `(?=.*B₁)…(?=.*Bₙ)` matches iff there is SOME start p at which every `.*Bᵢ`
- * matches — and p = 0 is the weakest such position, so it succeeds iff every Bᵢ
- * occurs anywhere in the line. That is the AND of the branches' bit sets.
- */
-export interface Composition {
-  /** The pattern the user wrote — the cache key the assembled bits are stored under. */
-  source: string;
-  flags: string;
-  /** The branch patterns, each scanned as an ordinary spec. */
-  parts: { source: string; flags: string }[];
-}
-
 export interface ScanPlan {
   specs: ScanSpec[];
-  /** Patterns to assemble from `specs` once those are primed. */
-  compositions: Composition[];
-  /**
-   * Cache keys that exist ONLY to feed a composition. They are never looked up by
-   * `computeView`, so they must not enter the shared per-file match cache — its LRU
-   * holds 300 entries, and a set with many conjunctions would evict the bit sets of
-   * real filters (which the JS pass would then re-scan, evicting more).
-   */
-  branchOnly: Set<string>;
 }
 
 /**
- * Whether `src` has a `|` outside any group or character class.
+ * Dedupe the compiled filters into the distinct patterns to scan, in filter order.
  *
- * This is the guard the whole rewrite rests on. `(?=.*B)` is equivalent to "B occurs
- * somewhere" only because the `.*` covers ALL of B — and a top-level `|` splits it, so
- * the `.*` reaches only the first alternative. `(?=.*a|b)` means "a occurs somewhere,
- * OR b matches right here", which depends on the position the way the rest of the
- * shape deliberately does not.
- *
- * Concretely: `/(?=.*a|b)(?=.*c|d)/.test("cb")` is false, but the AND of `/a|b/` and
- * `/c|d/` over "cb" is true. That is a bit set claiming lines the filter does not
- * match — and `verify()` samples, so it would not reliably catch it.
+ * A pattern is sent as the user wrote it. What it takes to RUN it — spelling `\d` out,
+ * splitting a lookahead conjunction into branches — belongs to the translation on the
+ * other side, which is the only place that knows what a JS regex means.
  */
-function hasTopLevelAlternation(src: string): boolean {
-  let depth = 0;
-  let inClass = false;
-  for (let i = 0; i < src.length; i++) {
-    const c = src[i];
-    if (c === "\\") {
-      i++;
-      continue;
-    }
-    if (inClass) {
-      if (c === "]") inClass = false;
-      continue;
-    }
-    if (c === "[") inClass = true;
-    else if (c === "(") depth++;
-    else if (c === ")") depth--;
-    else if (c === "|" && depth === 0) return true;
-  }
-  return false;
-}
-
-/**
- * Split `(?=.*A)(?=.*B)…` into its branch bodies, or null when the pattern is not
- * exactly that shape.
- *
- * Deliberately narrow: anything it accepts has to be EXACTLY equivalent as a boolean
- * test, and a rejection costs only what the pattern costs today. So it wants two or
- * more `(?=.*…)` groups, an optional `.*` tail, and nothing else — no leading anchor
- * (which would break the "take p = 0" argument), no backreference (which cannot span
- * a split), and no `^` inside a body.
- */
-export function decomposeAnd(source: string): string[] | null {
-  const bodies: string[] = [];
-  let i = 0;
-  while (source.startsWith("(?=.*", i)) {
-    // Walk to the `)` that closes this group, skipping escapes and character classes
-    // so a `)` written inside either doesn't end it early.
-    let depth = 0;
-    let j = i;
-    let inClass = false;
-    for (; j < source.length; j++) {
-      const c = source[j];
-      if (c === "\\") {
-        j++;
-        continue;
-      }
-      if (inClass) {
-        if (c === "]") inClass = false;
-        continue;
-      }
-      if (c === "[") inClass = true;
-      else if (c === "(") depth++;
-      else if (c === ")" && --depth === 0) break;
-    }
-    if (j >= source.length) return null; // unbalanced
-    // `.*?` is the same set of matches as `.*` for a yes/no test, so take the lazy
-    // form too — but only that one. Slicing a fixed `"(?=.*".length` left the `?` on
-    // the front of the branch, which is not a pattern at all.
-    let start = i + "(?=.*".length;
-    if (source[start] === "?") start++;
-    else if ("*+{".includes(source[start] ?? "")) return null;
-    const body = source.slice(start, j);
-    // `^` re-anchors inside the lookahead; a backreference cannot survive the split;
-    // a top-level `|` breaks the whole argument (see `hasTopLevelAlternation`).
-    if (
-      !body.length ||
-      body.includes("^") ||
-      /\\[1-9]/.test(body) ||
-      hasTopLevelAlternation(body)
-    )
-      return null;
-    bodies.push(body);
-    i = j + 1;
-  }
-  if (bodies.length < 2) return null; // not the AND idiom
-  const tail = source.slice(i);
-  if (tail !== "" && tail !== ".*") return null;
-  return bodies;
-}
-
-/**
- * Dedupe the compiled filters into what actually has to be scanned, in filter order,
- * plus the patterns to be assembled from those afterwards.
- *
- * A conjunction of lookaheads contributes its branches to `specs` and itself to
- * `compositions`, so it is never sent to a scanner that cannot take it.
- */
-// JS `.` matches anything EXCEPT a line terminator, and a line already split on
-// CR/LF can still contain U+2028 or U+2029. `.*B` from position 0 cannot reach past
-// one, so `(?=.*B)` stops meaning "B occurs anywhere" and the AND over-matches:
-// `/(?=.*alpha)(?=.*beta)/` is FALSE on "alpha\u2028beta" while both branches are
-// true. (Astral characters are fine — `.` matches each surrogate half, so containment
-// still holds.) Neither `contains(B)` nor `^.*B` is exact once a separator is present,
-// so the composition is simply refused for such a file. Costs 2-4 ms over 92k lines,
-// once, and only when there is a composition to protect.
-const separatorScan = new WeakMap<readonly string[], boolean>();
-
-function hasLineSeparator(lines: string[]): boolean {
-  const seen = separatorScan.get(lines);
-  if (seen !== undefined) return seen;
-  let found = false;
-  for (let i = 0; i < lines.length; i++) {
-    const l = lines[i];
-    if (l.indexOf("\u2028") >= 0 || l.indexOf("\u2029") >= 0) {
-      found = true;
-      break;
-    }
-  }
-  separatorScan.set(lines, found);
-  return found;
-}
-
 export function scanPlan(compiled: CompiledFilter[]): ScanPlan {
   const seen = new Set<string>();
   const specs: ScanSpec[] = [];
-  const compositions: Composition[] = [];
-  const composed = new Set<string>();
-  // A key can be wanted both ways — `wifi` as a filter of its own and as a branch of
-  // `(?=.*wifi)(?=.*down)` — so "branch only" is the difference, taken at the end.
-  const asFilter = new Set<string>();
-  const asBranch = new Set<string>();
-  // A spec the plan needs, shared with any filter that already asked for it. Branch
-  // patterns go through here too, so a branch that duplicates an ordinary filter
-  // (`wifi` alongside `(?=.*wifi)(?=.*down)`) is scanned once, not twice.
-  const want = (source: string, flags: string): void => {
-    const key = cacheKey(source, flags);
-    if (seen.has(key)) return;
-    seen.add(key);
-    specs.push({ source, ci: flags.includes("i") });
-  };
   for (const c of compiled) {
     if (!c.re || c.empty || !c.ok) continue;
-    const { source, flags } = c.re;
-    const bodies = decomposeAnd(source);
-    if (bodies) {
-      // The pattern itself is never sent to Rust — its branches are, and its bits are
-      // assembled from theirs afterwards.
-      for (const b of bodies) {
-        want(b, flags);
-        asBranch.add(cacheKey(b, flags));
-      }
-      if (!composed.has(cacheKey(source, flags))) {
-        composed.add(cacheKey(source, flags));
-        compositions.push({
-          source,
-          flags,
-          parts: bodies.map((b) => ({ source: b, flags })),
-        });
-      }
-      continue;
-    }
-    want(source, flags);
-    asFilter.add(cacheKey(source, flags));
+    const key = cacheKey(c.re.source, c.re.flags);
+    if (seen.has(key)) continue; // same source+flags shares one cache entry
+    seen.add(key);
+    specs.push({ source: c.re.source, ci: c.re.flags.includes("i") });
   }
-  const branchOnly = new Set([...asBranch].filter((k) => !asFilter.has(k)));
-  return { specs, compositions, branchOnly };
+  return { specs };
 }
 
 /** Dedupe the compiled filters into the patterns worth scanning, in filter order. */
@@ -323,7 +140,6 @@ export interface PrimeResult {
   /** Patterns whose bit sets are now cached. */
   primed: number;
   /** Of those, how many were ASSEMBLED from branch bit sets rather than scanned. */
-  composed: number;
   /** Patterns Rust reported it could not scan (unsupported syntax). */
   fallback: number;
   /** Patterns whose bit sets failed the spot-check and were dropped. */
@@ -353,11 +169,10 @@ export async function scanAndPrime(
   lines: string[],
   plan: ScanPlan,
 ): Promise<PrimeResult | null> {
-  const { specs, compositions, branchOnly } = plan;
+  const { specs } = plan;
   if (!specs.length)
     return {
       primed: 0,
-      composed: 0,
       fallback: 0,
       rejected: 0,
       readMs: 0,
@@ -372,13 +187,7 @@ export async function scanAndPrime(
     // but the key `computeView` looks a conjunction up by is the latter. Marking only
     // `specs` gave every ordinary filter the badge and none of the expensive ones —
     // in exactly the case (no shell, line-count mismatch) where everything is JS-scanned.
-    markJsScanned(lines, [
-      ...specs,
-      ...compositions.map((c) => ({
-        source: c.source,
-        ci: c.flags.includes("i"),
-      })),
-    ]);
+    markJsScanned(lines, specs);
     return null;
   };
   let buf: ArrayBuffer;
@@ -450,71 +259,11 @@ export async function scanAndPrime(
     }
     entries.push({ source: specs[k].source, flags, bits, count: counts[k] });
   }
-  // Branch bit sets are read once, right below, and then never again — keeping them
-  // out of the shared cache is what stops a conjunction-heavy set from evicting the
-  // filters the view actually reads.
-  const branchBits = new Map<string, { bits: Uint8Array; count: number }>();
-  const toPrime = entries.filter((e) => {
-    const key = cacheKey(e.source, e.flags);
-    if (!branchOnly.has(key)) return true;
-    branchBits.set(key, { bits: e.bits, count: e.count });
-    return false;
-  });
-  primeMatchCache(lines, toPrime);
+  primeMatchCache(lines, entries);
 
-  // Assemble the composed patterns from the branches just primed (or already cached).
-  // A branch that fell back leaves its conjunction unassembled — `computeView` then
-  // scans the pattern the user wrote, exactly as it did before.
-  let composed = 0;
-  // One separator anywhere in the file invalidates every conjunction in it (see
-  // `hasLineSeparator`), so the check is hoisted out of the loop.
-  const unsound = compositions.length > 0 && hasLineSeparator(lines);
-  for (const comp of compositions) {
-    const spec = { source: comp.source, ci: comp.flags.includes("i") };
-    if (unsound) {
-      toJs.push(spec);
-      continue;
-    }
-    const parts = comp.parts.map(
-      (p) =>
-        branchBits.get(cacheKey(p.source, p.flags)) ??
-        cachedMatchBits(lines, p.source, p.flags),
-    );
-    if (parts.some((b) => !b)) {
-      toJs.push(spec);
-      continue;
-    }
-    const bits = parts[0]!.bits.slice();
-    for (let k = 1; k < parts.length; k++) {
-      const b = parts[k]!.bits;
-      for (let i = 0; i < bits.length; i++) bits[i] &= b[i];
-    }
-    let count = 0;
-    for (let i = 0; i < bits.length; i++) count += POPCOUNT[bits[i]];
-    let re: RegExp;
-    try {
-      re = new RegExp(comp.source, comp.flags);
-    } catch {
-      toJs.push(spec);
-      continue;
-    }
-    // The same spot-check every scanned pattern gets. It is what turns the rewrite
-    // from an argument into a checked claim: if the decomposition were ever wrong for
-    // a shape `decomposeAnd` accepts, this downgrades instead of mis-highlighting.
-    if (!verify(lines, re, bits)) {
-      rejected++;
-      toJs.push(spec);
-      continue;
-    }
-    primeMatchCache(lines, [
-      { source: comp.source, flags: comp.flags, bits, count },
-    ]);
-    composed++;
-  }
   markJsScanned(lines, toJs);
   return {
-    primed: toPrime.length + composed,
-    composed,
+    primed: entries.length,
     fallback: nFallback,
     rejected,
     readMs,
@@ -644,7 +393,7 @@ export async function primeFilters(
   if (!plan.specs.length) return { requested: 0, result: null };
   // Conjunctions never reach the scanner, but they are patterns the user has and
   // `primed` counts them — leaving them out made the log line read `primed` > `filters`.
-  const requested = plan.specs.length + plan.compositions.length;
+  const requested = plan.specs.length;
   onScanStart?.();
   try {
     return {

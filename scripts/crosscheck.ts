@@ -345,6 +345,21 @@ compare(
   ],
 );
 
+// Lookahead CONJUNCTIONS are scanned now — decomposed into their branches on the Rust
+// side — so they belong in the agreement check rather than the refusal list. The AND
+// rewrite is exact only for this shape, which is why the near-misses sit beside it.
+compare(
+  "lookahead conjunctions",
+  "wifi is down\nwifi is up\nbt is down\nneither here\nwifi down wifi\n",
+  [
+    { source: "(?=.*wifi)(?=.*down)", ci: true },
+    { source: "(?=.*wifi)(?=.*down)(?=.*is)", ci: true },
+    { source: "(?=.*wifi)(?=.*down).*", ci: true },
+    { source: "(?=.*(wifi|bt))(?=.*down)", ci: true },
+    { source: "(?=.*?wifi)(?=.*down)", ci: true },
+  ],
+);
+
 // The protection has to be shown to fire, not merely to exist: if these ever get
 // scanned instead of refused, the guarantee above is worthless.
 expectFallback("unsupported syntax", "foobar\nxy\naa\nword here\n", [
@@ -359,6 +374,10 @@ expectFallback("unsupported syntax", "foobar\nxy\naa\nword here\n", [
   { source: "\\p{L}.*", ci: false }, // JS reads a literal `p`; Rust reads a class
   { source: "[a[b].*", ci: false }, // JS: literal `[`. Rust: a nested class
   { source: "[a&&b].*", ci: false }, // JS: literal `&`. Rust: intersection
+  // Shapes the conjunction rewrite must NOT take: each would give a different answer.
+  { source: "(?=.*a|b)(?=.*c|d)", ci: false }, // top-level `|` escapes the `.*`
+  { source: "^(?=.*a)(?=.*b)", ci: false }, // anchored: position 0 is no longer free
+  { source: "(?=.*a)(?=.*b)tail", ci: false }, // a consuming tail
 ]);
 
 // --- report -----------------------------------------------------------------

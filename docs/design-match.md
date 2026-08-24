@@ -1,9 +1,10 @@
 # Design: the match pipeline — two phases, one boundary
 
-Status: **design agreed 2026-08-23, not started.** Supersedes the ad-hoc structure that
-`engine.ts` / `scanPrime.ts` / `scan.rs` grew into. The perf work that prompted it
-(RegexSet → per-Regex, JS class rewriting, lookahead composition, sliced JS fallback) is
-in the working tree, uncommitted, and is the input to step 0 below.
+Status: **implemented 2026-08-24**, branch `perf/match-pipeline`. Steps 0–5 below are
+done; what remains is listed at the end.
+
+    time to visible    3547 ms -> 27 ms
+    time to complete   3547 ms -> 290 ms
 
 ## Why
 
@@ -127,7 +128,7 @@ Telemetry follows: `view_ms` stops being meaningful as one number and becomes
 ## Modules
 
 ```
-src-tauri/src/match/          Phase A, entirely
+src-tauri/src/matching/       Phase A, entirely (`match` is a keyword)
   syntax.rs      the JS regex semantics table + THE tokenizer (one, not five)
   translate.rs   js pattern -> Runnable | Unsupported(reason)
                    Runnable::Direct(Regex)
@@ -175,21 +176,32 @@ maintained by hand in several places" or "a leg someone forgot to call".
 
 ## Migration order
 
-Each step is independently verifiable against the existing crosscheck harness and the
-92k-line fixture; none of them is a rewrite.
+Each step was verifiable on its own against the crosscheck harness and the 92k-line
+fixture; none was a rewrite.
 
-0. **Fix the `.` translation** (`.` → `[^\n\r\x{2028}\x{2029}]`). This is review finding
-   #6 — a live correctness bug producing silently wrong highlights — and it is also the
-   first line of `syntax.rs`. Then commit the current perf work as a checkpoint: 1200
-   uncommitted lines make `git bisect` useless for everything that follows.
-1. **`resolve.ts`** — lift the scanning out of `computeView`. Biggest payoff, easiest to
-   verify: a pure function whose output can be diffed against the current one over the
-   fixture, for every combination of order/enabled/exclude.
-2. **`ensure.ts`** — one Phase A driver; rewire all seven operations through it.
-3. **Progressive render** — lines first, pending filters, excludes-first ordering.
-4. **`syntax.rs`** — the single tokenizer and semantics table, with crosscheck comparing
-   it against JS entry by entry.
-5. **`translate.rs`** — move `decomposeAnd` into Rust; delete the JS composition code.
+0. **The `.` translation** (`.` becomes `[^\n\r\x{2028}\x{2029}]`) — a live correctness bug
+   producing silently wrong highlights, and also the first line of `syntax.rs`. The perf
+   work was then committed as a checkpoint, so `git bisect` stays usable. DONE
+1. **`resolve`** — the scanning lifted out of `computeView`. Verified against an
+   independent oracle (walk the filters, first enabled non-exclude match wins) over
+   every combination of order/enabled/exclude, rather than against the old
+   implementation, so a shared misunderstanding could not pass. DONE
+2. **`ensureMatched` + `useEnsureMatched`** — one Phase A driver, every operation
+   through it. `primeSet`, its store hook and `switchSet`'s sequence guard deleted. DONE
+3. **Progressive render** — lines first, pending filters, excludes scanned first. DONE
+4. **`matching/syntax.rs`** — one tokenizer and one semantics table. DONE
+5. **`matching/translate.rs`** — `decomposeAnd` moved to Rust; the JS composition code
+   (`Composition`, `branchOnly`, `POPCOUNT`, `hasLineSeparator`, the AND pass) deleted. DONE
 
-Steps 4 and 5 are where the remaining review findings stop being individually worth
-fixing — several of them are in code these steps delete.
+## Still open
+
+- `engine.ts` still houses ~370 lines of field parsing / time coercion and ~110 of
+  timeline, neither of which has anything to do with matching. Pure readability, no
+  defect evidence — lowest priority, and deliberately not bundled with the above.
+- `regexHighlight.ts` keeps its own walker. That one renders a pattern FOR THE USER
+  rather than deciding what it means, so it is a different concern, not a fifth copy.
+- The `(?i:)` case-folding gap (`k` also matching U+212A) is unchanged. The frontend's
+  spot-check downgrades it to a JS scan rather than a wrong highlight.
+- Of the last review round's findings, three were in code these steps deleted; the rest
+  — `primeSet`'s staleness, the Retry-nonce binding, the slice budget resetting per
+  pattern — went with the rewrite of the paths that had them.
